@@ -62,6 +62,15 @@ compatibility:
 - Compute SHA-256 per file, not a single concatenated hash
 - If `version` is missing from frontmatter, ask the user; do not default to `1.0.0`
 
+**Version format — use semver (MAJOR.MINOR.PATCH):**
+- MAJOR: breaking changes to SKILL.md structure, output format, or removed procedure steps
+- MINOR: new procedure steps, new reference files, expanded output contract
+- PATCH: typos, wording fixes, example updates that don't change behavior
+
+**Required vs optional fields:**
+- Required: `name`, `version`, `description`, `license`, `compatibility`. If any required field is missing, **stop and report the specific missing field** — never silently default or skip.
+- Optional: `resources`, `scripts`, `evals`. Omit from manifest if the skill folder doesn't contain them.
+
 ## 3. Generate client overlays (only when needed)
 
 If the skill has client-specific frontmatter or path differences:
@@ -76,6 +85,12 @@ Skip this step entirely when the skill is client-agnostic.
 - Name: `<name>-<version>.tar.gz`
 - Include: `manifest.yaml`, `SKILL.md`, and every file listed in the manifest
 - Exclude: `.git/`, `node_modules/`, `__pycache__/`, `.DS_Store`
+
+**Pre-archive validation checklist:**
+- SKILL.md must be present and parseable — valid YAML frontmatter + Markdown body
+- Every file listed in `manifest.yaml` `files:` must exist on disk
+- No files in the archive root that aren't listed in the manifest — stray files indicate an incomplete manifest or leftover artifacts. Scan the folder and reject or warn.
+- Total uncompressed size: warn if >100KB. Skills should be lean; large archives usually indicate reference material that should be extracted or binary files that don't belong.
 
 ## 5. Verify the archive
 

@@ -80,6 +80,12 @@ The `--client` flag selects the default install path for the target agent client
 - **Overwrite protection**: Scripts abort if the destination directory already exists. Never force-overwrite without explicit user confirmation.
 - **Path traversal**: Scripts validate that skill paths are relative and inside the target directory. Do not bypass this by constructing absolute paths.
 - **Source trust**: Only install skills from repositories the user explicitly identifies. Do not auto-discover and install skills without user approval.
+- **Pre-install verification (URL/GitHub sources)**:
+  1. Verify the repository is not archived (archived repos receive no maintenance).
+  2. Check the SKILL.md has valid YAML frontmatter (`name` and `description` fields present and non-empty).
+  3. If the skill has a `scripts/` directory, scan each script file for: shell commands with `sudo`, network calls to non-origin URLs, file operations outside the skill directory. Flag any found and ask user to confirm before proceeding.
+- **Post-install verification**: Run `cat SKILL.md | head -5` to confirm frontmatter parsed correctly. Check that the skill directory appears at the expected client skill path.
+- **If verification fails**: Remove the installed skill directory immediately. Report which specific check failed and stop.
 - **Archive extraction**: The zip extractor rejects archives containing paths that escape the destination directory.
 - **Credentials**: Scripts use `GITHUB_TOKEN` / `GH_TOKEN` if set. Never log or echo token values.
 

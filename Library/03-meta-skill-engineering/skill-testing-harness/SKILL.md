@@ -46,6 +46,14 @@ File: `evals/trigger-positive.jsonl`
 
 Each line is a JSON object for a prompt that SHOULD activate the skill. Include 8–15 cases covering core use cases, edge cases, and paraphrasings.
 
+**Positive cases must cover these categories:**
+- **(a) Exact match:** Prompts that directly mirror a "When to use" bullet
+- **(b) Paraphrase:** Same intent expressed with different vocabulary
+- **(c) Indirect:** Requests that imply the skill's purpose without naming it (e.g., describing a problem the skill solves)
+- **(d) Multi-step:** Requests where this skill is one component of a larger task
+
+Aim for at least 2 cases per category. If a category produces fewer than 2 natural cases, the skill's trigger surface may be too narrow — note this in the README.
+
 ```jsonl
 {"prompt": "Create a new skill for handling PDF extraction", "expected": "trigger", "category": "core", "notes": "Direct request matching primary use case"}
 {"prompt": "I need a reusable procedure for database migrations", "expected": "trigger", "category": "indirect", "notes": "Implicit skill creation — repeated task pattern"}
@@ -65,6 +73,14 @@ Each line is a JSON object for a prompt that SHOULD activate the skill. Include 
 File: `evals/trigger-negative.jsonl`
 
 Each line is a JSON object for a prompt that should NOT activate the skill. Include 8–15 cases covering adjacent skills, out-of-scope tasks, and common confusion.
+
+**Negative cases must cover these categories:**
+- **(a) Anti-match:** Prompts that directly mirror a "Do NOT use when" bullet
+- **(b) Near-miss:** Tasks from adjacent skills that share vocabulary (e.g., "evaluate" vs "build evaluation for")
+- **(c) Similar vocabulary, different intent:** Requests using words like "test" or "eval" that mean something else in context
+- **(d) Overly broad:** Vague requests that superficially match but shouldn't trigger (e.g., "improve this skill" — too broad for a test harness)
+
+**Minimum distribution across all trigger cases:** 60% positive, 30% negative, 10% edge-case (ambiguous intent where `expected` may be `"trigger"` or `"no_trigger"` depending on interpretation — document the rationale in `notes`).
 
 ```jsonl
 {"prompt": "Fix the trigger description on this skill", "expected": "no_trigger", "better_skill": "skill-trigger-optimization", "notes": "Trigger fix, not test creation"}
@@ -86,9 +102,15 @@ File: `evals/output-tests.jsonl`
 
 Each line defines a prompt with expected output characteristics.
 
+**Output quality assertions should check:**
+- **(a) Required sections present:** Every section named in the skill's output contract must appear
+- **(b) No hallucinated sections:** Flag any output section not specified in the output contract
+- **(c) Output length within range:** Set `min_cases` / expected line counts based on the skill's complexity. A skill with 3 procedure steps shouldn't produce 200-line output.
+- **(d) Concrete vs vague language:** Flag if >30% of output sentences use hedge words ("consider", "may want to", "could potentially", "it might be useful to"). Skills should produce decisions, not suggestions.
+
 ```jsonl
-{"prompt": "Create trigger tests for skill-authoring", "expected_files": ["evals/trigger-positive.jsonl", "evals/trigger-negative.jsonl"], "required_patterns": ["\"expected\": \"trigger\"", "\"expected\": \"no_trigger\""], "forbidden_patterns": ["TODO", "placeholder"], "min_cases": 5}
-{"prompt": "Build a full test harness for the pdf-extraction skill", "expected_files": ["evals/trigger-positive.jsonl", "evals/trigger-negative.jsonl", "evals/output-tests.jsonl", "evals/README.md"], "required_patterns": ["\"category\""], "forbidden_patterns": [], "min_cases": 8}
+{"prompt": "Create trigger tests for skill-authoring", "expected_files": ["evals/trigger-positive.jsonl", "evals/trigger-negative.jsonl"], "required_patterns": ["\"expected\": \"trigger\"", "\"expected\": \"no_trigger\""], "forbidden_patterns": ["TODO", "placeholder", "consider adding"], "min_cases": 5}
+{"prompt": "Build a full test harness for the pdf-extraction skill", "expected_files": ["evals/trigger-positive.jsonl", "evals/trigger-negative.jsonl", "evals/output-tests.jsonl", "evals/README.md"], "required_patterns": ["\"category\""], "forbidden_patterns": ["may want to", "could potentially"], "min_cases": 8}
 ```
 
 ## Step 5 — Create test fixtures (if needed)
