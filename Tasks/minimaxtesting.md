@@ -1,4 +1,4 @@
-1. Minimax M-2.5 Agent Testing
+Minimax M-2.5 Agent Testing
 
 We have had issues around this model related to its temperature config (see the report in research - gpttalker-agent-failure-analysis)
 
@@ -33,3 +33,5 @@ Folder structure:
 
 etc etc
 
+
+As this is ran in opencode, you are not to run these agents or perform the tests. I will do this.
