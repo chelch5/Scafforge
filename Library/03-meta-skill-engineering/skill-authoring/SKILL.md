@@ -92,6 +92,16 @@ Flag a description if it: is under 12 words, has no action verb first, has no co
 | `license` | Recommended | Default: Apache-2.0 |
 | `compatibility.clients` | Recommended | Which agent clients support this skill |
 
+## Common authoring mistakes
+
+Watch for these — they are the most frequent causes of weak skills from new authors:
+
+1. **Writing a tutorial instead of a procedure.** Symptoms: "Let me explain…", background history sections, technology overviews. A skill is an operating manual, not a textbook. Cut everything the agent doesn't need mid-task.
+2. **Describing goals instead of steps.** Symptoms: "Ensure quality", "Optimize performance" with no HOW. Every step must be a concrete verb the agent can execute: Read, Write, List, Check, Run.
+3. **Copying reference material inline.** Symptom: SKILL.md >200 lines filled with lookup tables, API schemas, or configuration catalogs. Extract to `references/` and link from the procedure.
+4. **Writing the description last.** The description should be written FIRST — it defines the scope everything else must serve. Writing it last leads to scope drift where the body outgrows the description.
+5. **Forgetting negative boundaries.** Every skill must say what it's NOT for with named alternatives. Without this, hosts cannot distinguish adjacent skills and routing degrades.
+
 ## Step 4 — Write the body sections
 
 Every SKILL.md body contains these sections in order:

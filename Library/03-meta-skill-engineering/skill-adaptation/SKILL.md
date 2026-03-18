@@ -51,6 +51,20 @@ procedure and safety constraints intact.
    - Safety constraints and quality checks
    - The fundamental problem being solved
 
+   **Always check these as candidate invariants:**
+   - Skill name pattern (the naming convention, not the specific name)
+   - Output artifact format and required sections
+   - Failure handling table structure and coverage
+   - "Do NOT use when" boundaries — these define the skill's identity
+
+   **These are NEVER invariants** (they exist to be adapted):
+   - Specific tool or command names
+   - File paths, glob patterns, directory structures
+   - Code examples and inline snippets
+   - Technology-specific terminology and jargon
+
+   **Heuristic:** For each line, ask: "If I remove or change this, does it change what the skill DOES (its purpose and contracts) or only HOW it does it (its implementation details)?" Lines that change what it does are invariants. Lines that change how it does it are adaptation points.
+
 5. **Produce the adapted SKILL.md:**
    - Preserve frontmatter structure
    - Update `description` if the context change affects routing
@@ -58,10 +72,17 @@ procedure and safety constraints intact.
    - Replace or add context-specific examples where the skill uses few-shot patterns
    - Do NOT add provenance/history sections to the adapted skill
 
-6. **Validate — zero dangling references:**
+6. **Validate the adaptation:**
+
+   **Zero dangling references:**
    - Every tool/command reference exists in the target environment
    - Every file path pattern matches the target structure
    - No leftover references to the source context survive
+
+   **Procedure integrity check:**
+   - Walk through each procedure step mentally with a real task from the target context. If a step doesn't make sense or produces no useful result in the new context, the adaptation is incomplete.
+   - Verify every step still produces a concrete artifact or decision — not just "do the equivalent thing".
+   - Check for target-context-specific failure modes the original skill didn't need to cover. For example, porting from npm to pnpm may introduce phantom dependency issues that need a new failure-handling entry.
 
 # Output contract
 

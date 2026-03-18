@@ -46,6 +46,12 @@ Do NOT use when:
    - **Scope**: e.g. `skill-review-quick`, `skill-review-thorough`
    - **Domain**: e.g. `skill-api-rest`, `skill-api-graphql`
 
+   **Axis selection priority** (when multiple axes seem viable):
+   1. Prefer the axis that produces the **fewest variants** while still eliminating conditional branches.
+   2. If two axes produce the same variant count, prefer the axis whose variants have the **most distinct trigger vocabularies** (easier routing — fewer false positives).
+   3. If still tied, prefer: **Stack > Domain > Platform > Scope**. Stack splits tend to have the cleanest boundaries because different stacks use different terminology.
+   4. **Red flag:** If any axis produces >5 variants, the skill may need hierarchical organization (umbrella router + sub-skills) instead of a flat split.
+
 3. **Define variants**
    - Each variant passes the "one sentence" test — scope fits in a single clear sentence
    - Each has distinct, non-overlapping triggers

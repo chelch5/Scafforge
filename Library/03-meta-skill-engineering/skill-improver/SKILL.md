@@ -47,6 +47,27 @@ Do not use when:
 
 Choose the lightest mode that solves the real problem.
 
+## Mode selection guide
+
+Choose Mode 1 (Surgical edit) when:
+- Specific failure report with reproduction steps
+- Single section identified as the problem
+- Skill works correctly for most cases
+- Fix is isolated (changing one step, tightening one description, adding one failure case)
+
+Choose Mode 2 (Structural refactor) when:
+- Multiple anti-patterns detected (3+ from skill-anti-patterns scan)
+- Section ordering contradicts logical flow
+- Content is scattered across wrong sections (procedure content in Purpose, routing content in Procedure)
+- Skill grew organically and needs reorganization
+
+Choose Mode 3 (Package upgrade) when:
+- Skill needs new resources (references, scripts, evals) that don't exist yet
+- Skill exists as SKILL.md only but complexity justifies support files
+- Existing support files are outdated or broken
+
+When in doubt: Start with Mode 1. If Mode 1 changes touch >30% of the file, switch to Mode 2.
+
 ## Mode 1 — Surgical edit
 
 Use when the skill is broadly sound and mainly needs better trigger wording, clearer steps, stronger output contract, or removal of fluff.

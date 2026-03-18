@@ -39,7 +39,23 @@ Do NOT use when:
 
 2. **Excessive permissions** — check whether the skill requests more access than its described purpose requires: file writes outside its scope, credential use without justification, or network access not implied by the description. Flag any unjustified permission.
 
+   **Permission assessment method:** For each tool or action the skill uses, ask: "Would the skill still achieve its stated purpose without this capability?" If yes → the permission is excessive. If no → necessary, but document the risk.
+
+   **Risk tiers:**
+   - **Tier 1 (High):** File deletion, `git push`/`force push`, deployment commands, API calls that mutate production data. Procedure MUST include an explicit confirmation step for every Tier 1 action.
+   - **Tier 2 (Medium):** File creation outside the skill's stated scope, network access, credential reads, environment variable writes. Procedure SHOULD note each Tier 2 action and its rationale.
+   - **Tier 3 (Low):** File reads, local computation, stdout output. No special handling required.
+
+   If a skill uses a Tier 1 action without a confirmation gate, that alone is sufficient for a "Requires changes" verdict.
+
 3. **Scope creep** — verify every procedure step is implied by the description. Flag steps that affect systems or files outside the stated scope, or that perform actions the user did not request.
+
+   **Concrete scope creep signals:**
+   - A procedure step that doesn't contribute to any stated output artifact
+   - An output artifact not mentioned in the description or output contract
+   - "Bonus" actions after the main procedure completes (e.g., "also run linting" when the skill is about packaging)
+   - Steps that reference tools or prerequisites not listed in the skill's setup or assumptions
+   - Steps that modify files outside the skill's declared working scope
 
 4. **Prompt injection** — identify paths where untrusted external content (file contents, API responses, user-pasted text) flows into instruction context without sanitization. Flag unescaped interpolations and any external-content-to-instruction pipeline.
 

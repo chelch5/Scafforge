@@ -40,11 +40,26 @@ Split large reference material out of a SKILL.md into a `references/` directory 
    - API documentation excerpts
    - Configuration templates
    - Extended case studies
+   - Example collections with >3 examples of the same pattern
+   - Format specifications (JSONL schemas, YAML structures, etc.)
 
-2. **Classify each block**:
-   - Needed every invocation → keep inline
-   - Lookup / reference material → extract
-   - Shared across skills → extract to a shared location
+2. **Classify each block** using these rules:
+
+   **Reference material → extract:**
+   - Lookup tables, enum listings, API schema dumps
+   - Example collections (>3 examples demonstrating the same pattern)
+   - Configuration templates and boilerplate
+   - Format specifications the agent consults only for specific sub-cases
+
+   **Core procedure → keep inline:**
+   - Decision logic and conditional branches
+   - Ordered steps the agent must follow every time
+   - Output format definitions (the contract, not examples of it)
+   - Failure handling tables
+
+   **Heuristic:** If the content is consulted on every invocation → keep inline. If consulted only for specific sub-cases → extract.
+
+   **Size rule:** Any individual reference block >20 lines should be extracted unless it IS the skill's primary procedure. A 40-line lookup table is an extraction candidate; a 40-line decision tree is not.
 
 3. **Create `references/` directory** with descriptive filenames:
    ```
@@ -69,6 +84,7 @@ Split large reference material out of a SKILL.md into a `references/` directory 
    - SKILL.md is understandable without reading any reference file
    - All procedure steps remain inline
    - Every reference file is signposted from SKILL.md
+   - **Reference link quality check:** Read SKILL.md top-to-bottom. For every line that says "see references/X.md", verify it tells the agent (a) WHEN to consult it (what condition or sub-case triggers the lookup) and (b) WHAT to look for (a one-line summary of what the reference contains). If either is missing, the reference link is broken — add a summary line. Bad: `Full schema: see references/schema.json`. Good: `When validating output format, consult the full JSON schema: references/schema.json (defines required fields, types, and nesting for the trigger-test JSONL format).`
 
 # Output contract
 

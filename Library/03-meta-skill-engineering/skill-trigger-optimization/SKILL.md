@@ -59,6 +59,26 @@ Fix skill routing by rewriting the `description` field and "When to use" / "Do N
    - **Exclude**: Generic filler ("helps with", "assists in").
    - **Exclude**: Marketing language ("powerful", "comprehensive").
 
+   **Worked example — transforming a bad description into a good one:**
+
+   Before (bad):
+   ```yaml
+   description: >-
+     Help with testing stuff. Use when you want to test.
+   ```
+   Problems: No action verb, no concrete scope, no negative boundary, would trigger on any testing question.
+
+   After (good):
+   ```yaml
+   description: >-
+     Create test infrastructure for a skill — trigger tests in JSONL format,
+     output format assertions, and baseline comparisons. Use when building evals
+     for a new or refined skill, when a skill lacks an evals/ directory, or when
+     the user says "create tests for this skill". Do not use for running existing
+     tests (skill-evaluation) or comparing variants (skill-benchmarking).
+   ```
+   Transforms applied: Action verb ("Create"), specific scope ("test infrastructure for a skill"), concrete triggers (3 "when" cases), negative boundary (2 "do not" cases with referrals).
+
 5. **Add explicit anti-triggers**
    - Format: "Do not use for [confusion case] (use `alternative-skill`)."
    - Cover the 2–3 most common false-positive scenarios.

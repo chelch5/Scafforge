@@ -9,7 +9,7 @@ Audit, clean, and verify all 19 skills from `LibraryUnverified/03-meta-skill-eng
 - **Input**: 19 unverified skills from external source (Codex skill ecosystem)
 - **Output**: 16 verified skills in `Library/03-meta-skill-engineering/`
 - **Deleted**: 3 skills (merged or redundant)
-- **Total SKILL.md lines**: 2,244 → 1,902 (15% reduction while adding missing content)
+- **Total SKILL.md lines**: 2,244 → 2,095 (7% reduction after structural cleanup + functional enrichment)
 
 ---
 
@@ -253,4 +253,118 @@ Note: `skill-reference-extraction` was *applied* as a check (Step 4 of every aud
 | 15 | skill-trigger-optimization | 104 | Verified |
 | 16 | skill-variant-splitting | 110 | Verified |
 
-**Total**: 1,902 lines across 16 skills (down from 2,244 across 19).
+**Total**: 1,895 lines across 16 skills (down from 2,244 across 19).
+
+---
+
+## Post-Audit Review Pass
+
+A code review (Opus 4.6) found 8 issues. All fixed:
+
+### Issue 1 + 3 (Critical/High): skill-authoring workflows/ taught wrong format
+- **Problem**: 10 workflow files, 2 templates, and 10/11 references taught XML-tag format (`<objective>`, `<routing>`, etc.) contradicting the Markdown-heading format used by every skill in this library. 3 workflows referenced non-existent `references/use-xml-tags.md`.
+- **Fix**: Deleted `workflows/` (10 files), `templates/` (2 files), and 10/11 reference files. Kept only `references/best-practices.md` (format-neutral, Markdown headings, host-agnostic).
+
+### Issue 2 (High): skill-installer scripts Codex-bound
+- **Problem**: Both Python scripts defaulted to `~/.codex/skills/`, `openai/skills` repo, and `codex` user-agent strings.
+- **Fix**: Added `--client` flag (copilot/codex/opencode/claude-code/gemini-cli) to both scripts. Defaults to `copilot`. Centralized client path mapping in `github_utils.py`. Fixed user-agent strings to `scafforge-*`. Updated SKILL.md to document the flag.
+
+### Issue 4 (Medium): skill-improver version mismatch
+- **Fix**: Added 0.2.0 entry to CHANGELOG.md documenting the audit changes.
+
+### Issue 5 (Medium): skill-improver manifest missing codex client
+- **Fix**: Added `codex` to manifest.yaml clients list.
+
+### Issue 6 (Medium): YAML scalar style inconsistency
+- **Fix**: Normalized `skill-benchmarking`, `skill-trigger-optimization`, `skill-lifecycle-management` to `>-` (folded, strip) matching the other 13 skills.
+
+### Issue 7 (Medium): skill-authoring taught stripped metadata blocks
+- **Fix**: Removed `metadata` block from the Step 3 YAML template and removed all `metadata.*` rows from the field table.
+
+### Issue 8 (Low): Surviving hedge verbs
+- **Fix**: `skill-lifecycle-management` "Ensure" → "Set". `skill-testing-harness` "consider merging" → "merge via skill-variant-splitting or widen the trigger set".
+
+---
+
+## Phase 6: Functional Improvement Pass
+
+After structural cleanup, an honest assessment revealed the skills had been **normalized but not functionally improved** — cleaner format, better triggers, but the actual procedures, decision logic, and domain expertise were unchanged. This phase addressed that gap with targeted enrichments to all 16 skills.
+
+### Approach
+For each skill, identified the specific functional weakness (vague decision criteria, missing worked examples, thin procedure steps) and added concrete domain knowledge. Changes were surgical — only touching sections that needed enrichment, not rewriting what was already good.
+
+### Skills used
+- **skill-improver** (Mode 1 — surgical edit): Each skill got targeted fixes, not structural rewrites
+- **skill-anti-patterns** (AP-3 check): Verified enrichments added procedural value, not just more words
+- **skill-evaluation** (conceptual): Applied the "does each step produce a concrete artifact or decision?" test
+
+### Changes by skill
+
+**Audit tools (5 skills):**
+
+| Skill | Functional Improvement |
+|---|---|
+| **skill-anti-patterns** | Added severity tags (CRITICAL/HIGH/MEDIUM/LOW) to all 12 anti-patterns with cause rationale. Added "Quick scan priority" with 5-min/15-min/triage shortcuts — routing-critical APs first |
+| **skill-trigger-optimization** | Added worked example showing bad→good description transformation with explicit annotation of each transform applied |
+| **skill-improver** | Added signal-based mode selection guide with concrete indicators for Mode 1/2/3 and a 30% escalation heuristic |
+| **skill-reference-extraction** | Added reference-vs-core distinction heuristic (consulted-every-time vs sub-case-only), 20-line extraction threshold, reference link quality check |
+| **skill-safety-review** | Added 3-tier risk classification (High: file deletion/deployment, Medium: file creation/network, Low: reads/computation) with per-tier action requirements. Added 5 concrete scope-creep signals |
+
+**Authoring & operations (6 skills):**
+
+| Skill | Functional Improvement |
+|---|---|
+| **skill-authoring** | Added "Common authoring mistakes" section: 5 anti-patterns (tutorial-not-procedure, goals-not-steps, inline-reference-bloat, description-last, missing-negatives) with symptoms |
+| **skill-catalog-curation** | Added action-signature extraction method for duplicate detection (verb+object grouping, >50% trigger overlap threshold). Added 3 concrete discoverability thresholds |
+| **skill-lifecycle-management** | Enriched promotion criteria: draft→beta requires diverse prompts (core/edge/negative), beta→stable requires ≥10 cases at ≥90% + 2 real-project uses. Added deprecation protocol |
+| **skill-adaptation** | Added concrete invariant identification method (always-check list, never-invariant list, does-vs-how heuristic). Added post-adaptation validation walk-through |
+| **skill-variant-splitting** | Added axis selection priority: fewest-variants-first, distinct-trigger-vocabulary tiebreaker, Stack>Domain>Platform>Scope default, >5-variants red flag |
+| **skill-installer** | Added pre-install verification (archived check, frontmatter validation, scripts/ scanning) and post-install verification steps with fail-fast removal |
+
+**Evaluation & packaging (5 skills):**
+
+| Skill | Functional Improvement |
+|---|---|
+| **skill-evaluation** | Added test case construction guide: derive positives from "When to use", negatives from "Do NOT use" + adjacent skills. Anti-pattern: don't include skill names in test prompts |
+| **skill-benchmarking** | Added blind comparison protocol, 4-dimension scoring rubric (correctness/completeness/conciseness/actionability), token-efficiency tiebreaker, round-robin pairwise for >2 variants |
+| **skill-testing-harness** | Added 4 categories each for positive and negative cases with 2-per-category minimums. Added 60/30/10 distribution rule. Output tests check for hallucinated sections and 30% hedge-word threshold |
+| **skill-packaging** | Added semver guidance (MAJOR/MINOR/PATCH criteria), required-vs-optional field rules, pre-archive validation checklist (parseable SKILL.md, manifest matching, no stray files, 100KB warning) |
+| **skill-provenance** | Added investigation techniques: git blame for origin, URL scanning for evidence sources, tool/path/extension scanning for encoded assumptions |
+
+### Metrics
+- **Lines**: 1,895 → 2,095 (+200 lines, all functional content)
+- **Skills improved**: 16/16
+- **New decision criteria added**: 23 (concrete thresholds, heuristics, classification tiers)
+- **Worked examples added**: 2 (skill-trigger-optimization, skill-reference-extraction)
+- **No frontmatter changes** — all structural normalization from Phase 4 preserved
+- **No stale references introduced** — verified post-improvement
+
+---
+
+## Final Summary
+
+### Total transformation: LibraryUnverified → Library
+
+| Metric | Before | After |
+|---|---|---|
+| Skills | 19 | 16 |
+| Total SKILL.md lines | 2,244 | 2,095 |
+| Codex-specific artifacts | ~60 files | 0 |
+| Stale cross-references | 18 | 0 |
+| Frontmatter format | inconsistent | normalized (4-field) |
+| Severity/priority guidance | 0 skills | 1 (skill-anti-patterns) |
+| Worked examples | 0 skills | 2 (skill-trigger-optimization, skill-reference-extraction) |
+| Concrete decision thresholds | sparse | 23 new criteria across 16 skills |
+| Mode/variant selection guides | 0 | 2 (skill-improver, skill-variant-splitting) |
+
+### What changed functionally
+- Every skill now has concrete decision criteria where it previously had vague guidance
+- Audit tools (anti-patterns, safety-review) now have severity classification and triage shortcuts
+- Skills that make choices (improver mode, variant axis, lifecycle promotion) now have signal-based decision guides
+- Test-related skills (evaluation, benchmarking, testing-harness) now teach HOW to construct effective test cases
+- Safety and packaging skills now have concrete verification checklists
+
+### What was preserved
+- All genuinely useful content from deleted skills (merged into surviving counterparts)
+- All host-agnostic auxiliary files (scripts, references, evals) from skill-improver and skill-authoring
+- All cross-references updated to point to correct surviving skills
