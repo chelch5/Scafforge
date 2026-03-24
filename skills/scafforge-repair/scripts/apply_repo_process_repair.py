@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+AUDIT_SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts"
+if str(AUDIT_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(AUDIT_SCRIPT_DIR))
+
 from audit_repo_process import audit_repo
 
 
@@ -37,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stack-label", default="framework-agnostic", help="Stack label for regenerated process docs.")
     parser.add_argument(
         "--change-summary",
-        default="Deterministic workflow-engine surfaces replaced by repo-process-doctor.",
+        default="Deterministic Scafforge managed workflow surfaces refreshed by scafforge-repair.",
         help="Summary stored in workflow-state and repair history.",
     )
     parser.add_argument("--skip-verify", action="store_true", help="Skip the post-repair audit.")
