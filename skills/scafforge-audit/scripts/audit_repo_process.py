@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +48,12 @@ ARTIFACT_PATH_DRIFT_PATTERNS = (
     r"\.opencode/state/artifacts/<ticket-id>/(planning|implementation|review|qa|handoff)\.md",
 )
 DEPRECATED_WORKFLOW_TERMS = ("ready_for_planning", "code_review", "security_review")
+DIAGNOSIS_REPORTS = {
+    "report_1": "01-initial-codebase-review.md",
+    "report_2": "02-scafforge-process-failures.md",
+    "report_3": "03-scafforge-prevention-actions.md",
+    "report_4": "04-live-repo-repair-plan.md",
+}
 
 
 @dataclass
@@ -847,6 +855,184 @@ def audit_eager_skill_loading(root: Path, findings: list[Finding]) -> None:
         )
 
 
+def _run(cmd: list[str], cwd: Path, timeout: int = 30) -> tuple[int, str]:
+    """Run a subprocess and return (returncode, combined output). Never raises."""
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode, (result.stdout + result.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return -1, f"[timeout after {timeout}s]"
+    except FileNotFoundError:
+        return -1, f"[command not found: {cmd[0]}]"
+    except Exception as exc:  # noqa: BLE001
+        return -1, f"[error: {exc}]"
+
+
+def _detect_python(root: Path) -> str | None:
+    """Return the Python executable to use for this repo (uv run python > python3 > python)."""
+    uv = root / ".venv" / "bin" / "python"
+    if uv.exists():
+        return str(uv)
+    for candidate in ("python3", "python"):
+        rc, _ = _run([candidate, "--version"], root, timeout=5)
+        if rc == 0:
+            return candidate
+    return None
+
+
+def _detect_pytest(root: Path) -> str | None:
+    """Return the pytest executable to use for this repo."""
+    venv_pytest = root / ".venv" / "bin" / "pytest"
+    if venv_pytest.exists():
+        return str(venv_pytest)
+    rc, _ = _run(["pytest", "--version"], root, timeout=5)
+    if rc == 0:
+        return "pytest"
+    return None
+
+
+def audit_python_execution(root: Path, findings: list[Finding]) -> None:
+    """Check that a Python project can actually import its main modules and collect tests.
+
+    This catches runtime errors (NameError, FastAPIError, broken DI patterns, etc.)
+    that are invisible to workflow-structure checks.
+    Only runs when pyproject.toml or setup.py is present in the repo root.
+    """
+    if not (root / "pyproject.toml").exists() and not (root / "setup.py").exists():
+        return
+
+    python = _detect_python(root)
+    if python is None:
+        return  # No Python available — skip silently
+
+    src_candidates: list[Path] = []
+    for name in ("src", "app", "lib"):
+        candidate = root / name
+        if candidate.is_dir():
+            src_candidates.append(candidate)
+
+    # --- Import check for each top-level package under src/ ---
+    import_errors: list[str] = []
+    for src_dir in src_candidates:
+        for pkg in sorted(src_dir.iterdir()):
+            if not pkg.is_dir() or not (pkg / "__init__.py").exists():
+                continue
+            module = f"{src_dir.name}.{pkg.name}"
+            rc, output = _run(
+                [python, "-c", f"import {module}"],
+                root,
+                timeout=20,
+            )
+            if rc != 0:
+                # Trim to first error line to keep evidence compact
+                first_error = next(
+                    (ln for ln in output.splitlines() if "Error" in ln or "error" in ln),
+                    output.splitlines()[-1] if output.splitlines() else output,
+                )
+                import_errors.append(f"{module}: {first_error}")
+
+    if import_errors:
+        add_finding(
+            findings,
+            Finding(
+                code="EXEC001",
+                severity="error",
+                problem="One or more Python packages fail to import — the service cannot start.",
+                root_cause=(
+                    "Runtime errors (NameError, FastAPIError, missing dependency, broken DI pattern, etc.) "
+                    "that are invisible to static analysis prevent module load. "
+                    "Common causes: TYPE_CHECKING-guarded names used in runtime annotations, "
+                    "FastAPI dependency functions with non-Pydantic parameter types, circular imports."
+                ),
+                files=[str(src_dir) for src_dir in src_candidates],
+                safer_pattern=(
+                    "Verify every import succeeds: `python -c 'from src.<pkg>.main import app'`. "
+                    "Use string annotations (`-> \"TypeName\"`) for TYPE_CHECKING-only imports. "
+                    "Use `request: Request` (not `app: FastAPI`) in FastAPI dependency functions."
+                ),
+                evidence=import_errors,
+            ),
+        )
+
+    # --- pytest --collect-only to catch test collection errors ---
+    pytest = _detect_pytest(root)
+    if pytest is None:
+        return
+
+    tests_dir = root / "tests"
+    if not tests_dir.exists():
+        return
+
+    rc, output = _run(
+        [pytest, str(tests_dir), "--collect-only", "-q", "--tb=no"],
+        root,
+        timeout=60,
+    )
+
+    # pytest exits 2 on collection error, 4 if no tests found, 0/1 for pass/fail
+    collection_errors = [
+        ln for ln in output.splitlines()
+        if "ERROR" in ln or "error" in ln.lower() and "collect" in ln.lower()
+    ]
+    if rc == 2 or collection_errors:
+        add_finding(
+            findings,
+            Finding(
+                code="EXEC002",
+                severity="error",
+                problem="pytest cannot collect tests — at least one test file has an import or syntax error.",
+                root_cause=(
+                    "A test file imports a broken module (e.g. the node agent with a broken DI pattern), "
+                    "preventing the entire test suite from running. "
+                    "This means QA was never actually executed against these tests."
+                ),
+                files=[str(tests_dir)],
+                safer_pattern=(
+                    "Run `pytest tests/ --collect-only` and fix all collection errors before marking QA done. "
+                    "A QA artifact that claims tests passed when pytest cannot even collect is invalid."
+                ),
+                evidence=(collection_errors or output.splitlines())[:5],
+            ),
+        )
+
+    # --- Check for failing tests (exit code 1 = tests ran but some failed) ---
+    if rc == 1:
+        # Run with short output to count failures
+        rc2, output2 = _run(
+            [pytest, str(tests_dir), "-q", "--tb=no", "--no-header"],
+            root,
+            timeout=120,
+        )
+        # Find summary line e.g. "20 failed, 84 passed in 1.31s"
+        summary_lines = [ln for ln in output2.splitlines() if "failed" in ln or "passed" in ln or "error" in ln]
+        failed_count_match = re.search(r"(\d+) failed", output2)
+        failed_count = int(failed_count_match.group(1)) if failed_count_match else "unknown"
+        add_finding(
+            findings,
+            Finding(
+                code="EXEC003",
+                severity="warning",
+                problem=f"Test suite has failures: {failed_count} test(s) failed.",
+                root_cause=(
+                    "Tests were marked done in QA artifacts without verifying the full suite passes. "
+                    "Failing tests indicate incomplete implementations, broken contracts, or regressions."
+                ),
+                files=[str(tests_dir)],
+                safer_pattern=(
+                    "Run `pytest tests/ -v` and fix all failures before marking a ticket done. "
+                    "QA artifacts must include pytest output showing 0 failures."
+                ),
+                evidence=summary_lines[:5],
+            ),
+        )
+
+
 def audit_repo(root: Path) -> list[Finding]:
     findings: list[Finding] = []
     audit_status_model(root, findings)
@@ -871,6 +1057,7 @@ def audit_repo(root: Path) -> list[Finding]:
     audit_read_only_write_language(root, findings)
     audit_over_scoped_commands(root, findings)
     audit_eager_skill_loading(root, findings)
+    audit_python_execution(root, findings)
     return findings
 
 
@@ -906,12 +1093,237 @@ def render_markdown(root: Path, findings: list[Finding]) -> str:
     return "\n".join(lines)
 
 
+def severity_rank(severity: str) -> int:
+    return {"error": 0, "warning": 1, "info": 2}.get(severity, 3)
+
+
+def findings_by_severity(findings: list[Finding]) -> dict[str, list[Finding]]:
+    grouped: dict[str, list[Finding]] = {"error": [], "warning": [], "info": []}
+    for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
+        grouped.setdefault(finding.severity, []).append(finding)
+    return grouped
+
+
+def infer_surface(finding: Finding) -> str:
+    joined = " ".join(finding.files)
+    if any(token in joined for token in (".opencode/tools/", ".opencode/commands/", "docs/process/", ".opencode/state/")):
+        return "repo-scaffold-factory managed template surfaces"
+    if any(token in joined for token in (".opencode/agents/", ".opencode/skills/")):
+        return "project-skill-bootstrap and agent-prompt-engineering surfaces"
+    if "tickets/" in joined or "status" in finding.code or "ticket" in finding.code:
+        return "ticket-pack-builder and ticket contract surfaces"
+    if finding.code.startswith("EXEC"):
+        return "generated repo implementation and validation surfaces"
+    return "scafforge-audit diagnosis contract"
+
+
+def prevention_action(finding: Finding) -> str:
+    if finding.code.startswith("EXEC"):
+        return "Tighten generated review and QA guidance so runtime validation and test collection proof exist before closure."
+    if "ticket" in finding.code or "status" in finding.code:
+        return "Keep queue state coarse, route remediation through guarded ticket flows, and validate ticket-contract wording in package checks."
+    if any(token in " ".join(finding.files) for token in (".opencode/agents/", ".opencode/skills/")):
+        return "Harden generated prompts so read-only roles stay read-only and repo-local review guidance remains advisory."
+    return "Refresh managed workflow docs, tools, and validators together so repair replaces drift instead of layering new semantics over old ones."
+
+
+def build_ticket_recommendations(findings: list[Finding]) -> list[dict[str, Any]]:
+    recommendations: list[dict[str, Any]] = []
+    for index, finding in enumerate(sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)), start=1):
+        route = "ticket-pack-builder" if finding.code.startswith("EXEC") else "scafforge-repair"
+        recommendations.append(
+            {
+                "id": f"REMED-{index:03d}",
+                "title": finding.problem.rstrip("."),
+                "source_finding_code": finding.code,
+                "severity": finding.severity,
+                "route": route,
+                "repair_class": "generated-repo remediation ticket" if route == "ticket-pack-builder" else "safe Scafforge package change",
+                "summary": finding.safer_pattern,
+                "source_files": finding.files,
+            }
+        )
+    return recommendations
+
+
+def render_report_one(root: Path, findings: list[Finding], generated_at: str) -> str:
+    grouped = findings_by_severity(findings)
+    lines = [
+        "# Report 1: Initial Codebase Review",
+        "",
+        f"- Repo: {root}",
+        f"- Generated at: {generated_at}",
+        f"- Finding count: {len(findings)}",
+        f"- Errors: {len(grouped.get('error', []))}",
+        f"- Warnings: {len(grouped.get('warning', []))}",
+        "",
+        "## Validated findings",
+        "",
+    ]
+    if not findings:
+        lines.extend(
+            [
+                "No validated workflow, review, or runtime findings were detected.",
+                "",
+                "## Verification gaps",
+                "",
+                "- No additional verification gaps were identified during this diagnosis pass.",
+                "",
+            ]
+        )
+        return "\n".join(lines)
+
+    for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
+        lines.extend(
+            [
+                f"### [{finding.severity}] {finding.code}",
+                "",
+                f"Problem: {finding.problem}",
+                f"Files: {', '.join(finding.files) if finding.files else '(none)'}",
+                "Verification gaps:",
+                *([f"- {item}" for item in finding.evidence] or ["- No extra verification gaps captured."]),
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def render_report_two(findings: list[Finding]) -> str:
+    lines = [
+        "# Report 2: Scafforge Process Failures",
+        "",
+        "This report maps validated issues back to Scafforge-owned skills, contracts, templates, or generated surfaces.",
+        "",
+    ]
+    if not findings:
+        lines.extend(["No process failures were mapped from the validated finding set.", ""])
+        return "\n".join(lines)
+
+    for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
+        lines.extend(
+            [
+                f"## {finding.code}",
+                "",
+                f"- Surface: {infer_surface(finding)}",
+                f"- Root cause: {finding.root_cause}",
+                f"- Safer target pattern: {finding.safer_pattern}",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def render_report_three(findings: list[Finding]) -> str:
+    lines = [
+        "# Report 3: Scafforge Prevention Actions",
+        "",
+        "These actions describe package-side changes that prevent the same failures from reappearing in future generated repos.",
+        "",
+    ]
+    if not findings:
+        lines.extend(["No additional prevention actions are required beyond keeping the current contract intact.", ""])
+        return "\n".join(lines)
+
+    seen: set[str] = set()
+    for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
+        action = prevention_action(finding)
+        if action in seen:
+            continue
+        seen.add(action)
+        lines.extend([f"- {action}", ""])
+    return "\n".join(lines)
+
+
+def render_report_four(root: Path, findings: list[Finding], recommendations: list[dict[str, Any]]) -> str:
+    safe_repairs = [item for item in recommendations if item["route"] == "scafforge-repair"]
+    source_follow_up = [item for item in recommendations if item["route"] == "ticket-pack-builder"]
+    lines = [
+        "# Report 4: Live Repo Repair Plan",
+        "",
+        f"- Repo: {root}",
+        "- Diagnosis remains read-only. No repo edits were made by this audit run.",
+        "",
+        "## Safe repair boundary",
+        "",
+    ]
+    if safe_repairs:
+        lines.extend([f"- Route {len(safe_repairs)} workflow-layer findings into `scafforge-repair` for deterministic managed-surface repair.", ""])
+    else:
+        lines.extend(["- No safe managed-surface repair was identified from the current findings.", ""])
+
+    lines.extend(["## Intent-changing boundary", "", "- Escalate any stack, scope, provider, or curated human-decision changes instead of labeling them as safe repair.", "", "## Ticket recommendations", ""])
+
+    if recommendations:
+        for item in recommendations:
+            lines.extend(
+                [
+                    f"### {item['id']} ({item['severity']})",
+                    "",
+                    f"- Title: {item['title']}",
+                    f"- Route: `{item['route']}`",
+                    f"- Repair class: {item['repair_class']}",
+                    f"- Source finding: `{item['source_finding_code']}`",
+                    f"- Summary: {item['summary']}",
+                    "",
+                ]
+            )
+    else:
+        lines.extend(["- No follow-up tickets are recommended from the current diagnosis run.", ""])
+
+    if source_follow_up:
+        lines.extend(
+            [
+                "## Post-repair follow-up",
+                "",
+                f"- Route {len(source_follow_up)} source-layer remediation item(s) through `ticket-pack-builder` and any generated repo guarded ticket surfaces after workflow repair is complete.",
+                "",
+            ]
+        )
+
+    return "\n".join(lines)
+
+
+def emit_diagnosis_pack(root: Path, findings: list[Finding], destination: Path) -> dict[str, Any]:
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    destination.mkdir(parents=True, exist_ok=True)
+    recommendations = build_ticket_recommendations(findings)
+    reports = {
+        DIAGNOSIS_REPORTS["report_1"]: render_report_one(root, findings, generated_at),
+        DIAGNOSIS_REPORTS["report_2"]: render_report_two(findings),
+        DIAGNOSIS_REPORTS["report_3"]: render_report_three(findings),
+        DIAGNOSIS_REPORTS["report_4"]: render_report_four(root, findings, recommendations),
+    }
+    for filename, content in reports.items():
+        (destination / filename).write_text(content + "\n", encoding="utf-8")
+
+    manifest: dict[str, Any] = {
+        "generated_at": generated_at,
+        "repo_root": str(root),
+        "finding_count": len(findings),
+        "report_files": {key: value for key, value in DIAGNOSIS_REPORTS.items()},
+        "ticket_recommendations": recommendations,
+    }
+    if recommendations:
+        payload_name = "recommended-ticket-payload.json"
+        manifest["recommended_ticket_payload"] = payload_name
+        (destination / payload_name).write_text(json.dumps(recommendations, indent=2) + "\n", encoding="utf-8")
+
+    (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return {
+        "path": str(destination),
+        "report_count": len(reports),
+        "manifest": manifest,
+    }
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Audit a repo for workflow and prompt-process drift.")
+    parser = argparse.ArgumentParser(description="Audit a repo for Scafforge workflow, review, and prompt-process drift.")
     parser.add_argument("repo_root", help="Repository root to audit.")
     parser.add_argument("--format", choices=("markdown", "json", "both"), default="both")
     parser.add_argument("--markdown-output", help="Optional path for markdown output.")
     parser.add_argument("--json-output", help="Optional path for JSON output.")
+    parser.add_argument("--emit-diagnosis-pack", action="store_true", help="Write the four-report diagnosis pack into <repo>/diagnosis/<timestamp>/.")
+    parser.add_argument("--diagnosis-output-dir", help="Optional diagnosis-pack directory. Defaults to <repo>/diagnosis/<YYYYMMDD-HHMMSS> when emission is enabled.")
     parser.add_argument("--fail-on", choices=("never", "warning", "error"), default="never")
     return parser.parse_args()
 
@@ -927,6 +1339,14 @@ def main() -> int:
         "findings": [asdict(finding) for finding in findings],
     }
     markdown = render_markdown(root, findings)
+
+    if args.emit_diagnosis_pack or args.diagnosis_output_dir:
+        diagnosis_dir = (
+            Path(args.diagnosis_output_dir).expanduser().resolve()
+            if args.diagnosis_output_dir
+            else root / "diagnosis" / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        )
+        payload["diagnosis_pack"] = emit_diagnosis_pack(root, findings, diagnosis_dir)
 
     if args.markdown_output:
         Path(args.markdown_output).write_text(markdown + "\n", encoding="utf-8")

@@ -1,21 +1,29 @@
-# PR Review Ticket Bridge Contract
+# Scafforge Audit Review Contract
 
 ## Inputs
 
-- pull request diff
-- commits in the PR
-- review comments and discussion comments
-- current repo ticket contract
 - current repo workflow and source-of-truth docs
+- current repo ticket contract
+- pull request diff, commits, and review comments when review evidence exists
+- diagnosis-pack scope when the audit needs to emit four reports into `diagnosis/`
 
 ## Output contract
 
 - separate `valid`, `partially_valid`, `outdated`, and `invalid` findings
 - assign each surviving finding a severity: `critical`, `major`, or `minor`
+- assign each surviving finding an evidence grade: `observed`, `reproduced`, `inferred`, `external-only`, or `missing`
+- assign each surviving finding an ownership classification:
+  - `Scafforge package defect`
+  - `generated-repo managed-surface drift`
+  - `repo-specific customization drift`
+  - `subject-repo source bug`
 - explain why each accepted finding survives review
 - cite the concrete file, hunk, comment, or commit that supports the decision
 - include a rejection rationale for every non-accepted finding
 - list any human blockers with a clear owner and reason
+- keep diagnosis output read-only apart from the intentional `diagnosis/` report folder
+
+When review evidence is present, follow `pr-review-workflow.md` before the finding enters the diagnosis pack.
 
 ## Canonical ticket proposal contract
 
@@ -43,6 +51,8 @@ Defaults for ordinary PR-review follow-up:
 - `status: todo` unless blocked by an unresolved decision
 - `artifacts: []`
 
+For diagnosis-pack routing, attach each ticket proposal to the relevant Report 4 item instead of creating a parallel review-only backlog surface.
+
 ## Ticket quality rules
 
 - one clear issue per ticket
@@ -51,3 +61,4 @@ Defaults for ordinary PR-review follow-up:
 - link back to the originating PR evidence
 - no duplicate tickets for already-tracked work
 - do not route ordinary PR-review findings through migration-only backlog-verifier / `ticket_create` flows
+- when a diagnosis pack exists, link ticket proposals back to Report 4 or its machine-readable payload rather than inventing a parallel review-only state surface
