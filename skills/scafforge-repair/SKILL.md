@@ -7,7 +7,7 @@ description: Apply Scafforge's host-side managed repair flow for an existing rep
 
 Use this skill to apply safe workflow-contract repairs to an existing repository.
 
-This is the host-side repair surface. It consumes diagnosis outputs, especially Report 4 from `scafforge-audit`, applies deterministic managed-surface repairs, records provenance, and routes follow-up ticketing when workflow repair reveals additional work.
+This is the host-side repair surface. It consumes diagnosis outputs, especially Report 4 from `scafforge-audit`, applies deterministic managed-surface repairs, continues into any required project-specific regeneration passes, records provenance, and routes follow-up ticketing when workflow repair reveals additional work.
 
 ## When to use this skill
 
@@ -48,7 +48,7 @@ If the required package changes are not available yet, stop and route back to Sc
 Use the narrowest repair that resolves the validated drift.
 
 - Use deterministic managed-surface replacement when the workflow layer is outdated, mixed, or partially scaffold-managed
-- Use targeted follow-up edits when the drift is narrow and project-specific
+- Use targeted project-specific regeneration when skills, agents, model-profile surfaces, or prompt hardening drifted
 - Route source-layer implementation bugs into ticketing instead of fixing product code here
 
 ### 3. Run deterministic managed-surface repair when needed
@@ -61,7 +61,19 @@ python3 scripts/apply_repo_process_repair.py <repo-root>
 
 Use this when the repo needs one deliberate workflow-contract refresh rather than piecemeal edits.
 
-### 4. Apply remaining safe follow-up edits
+### 4. Continue into required project-specific regeneration
+
+Deterministic replacement is not the whole repair when the audit shows `SKILL001`, `MODEL001`, prompt drift, or agent drift.
+
+After the deterministic refresh:
+
+1. run `../project-skill-bootstrap/SKILL.md` in repair/regeneration mode when scaffold-managed local skills were replaced or any local skill remains generic, missing, or model-profile-drifted
+2. run `../opencode-team-bootstrap/SKILL.md` when `.opencode/agents/` or `docs/process/agent-catalog.md` still drift from the current contract
+3. run `../agent-prompt-engineering/SKILL.md` whenever regenerated skills or agents changed prompt behavior, model defaults, or delegation rules
+
+Do not stop after tool replacement if the repo would still resume with placeholder local skills, stale model defaults, or older agent prompts.
+
+### 5. Apply remaining safe follow-up edits
 
 For each safe repair:
 
@@ -76,6 +88,7 @@ Safe repair examples:
 - removing raw-file stage control where tool-backed state exists
 - fixing read-only agents that still mutate state
 - syncing execution-enforcement rules into prompts
+- regenerating model-profile, local-skill, and agent-team surfaces after a deterministic refresh replaced their scaffold-managed foundations
 - creating remediation tickets for source bugs discovered by audit rules
 
 Intent-changing repair examples that must be escalated:
@@ -84,7 +97,7 @@ Intent-changing repair examples that must be escalated:
 - provider/model changes
 - rewriting curated human decisions
 
-### 5. Record provenance and process-version state
+### 6. Record provenance and process-version state
 
 Every repair pass must leave explicit state.
 
@@ -93,35 +106,36 @@ Every repair pass must leave explicit state.
 - record what changed and why
 - if the process layer materially changed, set `pending_process_verification: true`
 
-### 6. Route backlog follow-up
+### 7. Route backlog follow-up
 
 When repair reveals unfinished or source-layer follow-up work:
 
 - route through `../ticket-pack-builder/SKILL.md`
 - create explicit remediation or decision tickets
+- keep this ticket generation inside the same repair run when the diagnosis already proved it is needed
 - keep repo-local review skills advisory only; they are not the canonical ticket owner
 
-### 7. Re-run verification
+### 8. Re-run verification
 
 After repairs, run:
 
 ```sh
-python3 scripts/audit_repo_process.py <repo-root> --format both --fail-on warning
+python3 scripts/audit_repo_process.py <repo-root> --format both --emit-diagnosis-pack --fail-on warning
 ```
 
 If the repair changed the managed workflow layer materially, note that verification was re-run and whether ticket re-verification remains pending.
+If `BOOT001` was part of the repair basis, rerun the subject repo's `environment_bootstrap` flow before the final audit so bootstrap deadlock evidence is refreshed against the repaired tool surface.
 
 ## How this differs from scafforge-audit
 
 - `scafforge-audit` is read-only diagnosis and review validation
-- `scafforge-repair` performs safe managed workflow repairs after the diagnosis-to-package-to-subject-repo handoff is complete
+- `scafforge-repair` performs safe managed workflow repairs and any required same-run regeneration after the diagnosis-to-package-to-subject-repo handoff is complete
 
 Keep the diagnosis decision and the repair action separated.
 
 ## After this step
 
-- Continue to `../ticket-pack-builder/SKILL.md` when repair generates follow-up work
-- Continue to `../handoff-brief/SKILL.md` once repair and verification are complete
+- Continue to `../handoff-brief/SKILL.md` once repair, any required regeneration, ticket follow-up, and verification are complete
 
 ## Required outputs
 
@@ -129,6 +143,7 @@ Keep the diagnosis decision and the repair action separated.
 - Exact files changed
 - Safe-versus-escalated repair boundary
 - Whether deterministic managed-surface replacement occurred
+- Whether project-skill, agent-team, and prompt-hardening follow-up ran
 - Provenance and workflow-state updates applied
 - Ticket follow-up created or recommended
 - Post-repair verification results
@@ -138,6 +153,7 @@ Keep the diagnosis decision and the repair action separated.
 - Do not repair without evidence
 - Do not silently fold intent-changing decisions into safe repair
 - Prefer deterministic managed-surface refresh over mixed old/new workflow layers
+- Do not stop at deterministic managed-surface replacement when the repaired repo still carries placeholder local skills, missing model-profile surfaces, or stale agent prompts
 - Preserve durable project facts while replacing managed surfaces
 - Leave explicit provenance and verification state after repair
 

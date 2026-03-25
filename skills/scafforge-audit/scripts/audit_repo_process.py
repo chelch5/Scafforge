@@ -52,6 +52,10 @@ PLACEHOLDER_SKILL_PATTERNS = (
     r"Replace this file with stack-specific rules once the real project stack is known\.",
     r"__STACK_LABEL__",
 )
+DEPRECATED_MODEL_PATTERNS = (
+    r"MiniMax-M2\.5",
+    r"minimax-coding-plan/MiniMax-M2\.5",
+)
 DIAGNOSIS_REPORTS = {
     "report_1": "01-initial-codebase-review.md",
     "report_2": "02-scafforge-process-failures.md",
@@ -157,6 +161,13 @@ def matching_lines(text: str, patterns: tuple[str, ...]) -> list[str]:
         if line and any(re.search(pattern, line, re.IGNORECASE) for pattern in patterns):
             hits.append(line)
     return hits[:3]
+
+
+def frontmatter_value(text: str, key: str) -> str | None:
+    match = re.search(rf"(?m)^{re.escape(key)}:\s*(.+?)\s*$", text)
+    if not match:
+        return None
+    return match.group(1).strip().strip('"').strip("'")
 
 
 def combine_outputs(*parts: str) -> str:
@@ -912,6 +923,80 @@ def audit_placeholder_local_skills(root: Path, findings: list[Finding]) -> None:
         )
 
 
+def audit_model_profile_drift(root: Path, findings: list[Finding]) -> None:
+    provenance_path = root / ".opencode" / "meta" / "bootstrap-provenance.json"
+    provenance = read_json(provenance_path)
+    runtime_models = provenance.get("runtime_models") if isinstance(provenance, dict) and isinstance(provenance.get("runtime_models"), dict) else {}
+    provider = str(runtime_models.get("provider", "")).strip().lower() if isinstance(runtime_models, dict) else ""
+
+    profile_path = root / ".opencode" / "skills" / "model-operating-profile" / "SKILL.md"
+    model_matrix_path = root / "docs" / "process" / "model-matrix.md"
+    canonical_brief_path = root / "docs" / "spec" / "CANONICAL-BRIEF.md"
+    start_here_path = root / "START-HERE.md"
+    agents_dir = root / ".opencode" / "agents"
+
+    evidence: list[str] = []
+    files: list[str] = []
+
+    if not profile_path.exists():
+        files.append(normalize_path(profile_path, root))
+        evidence.append(f"Missing repo-local model profile skill: {normalize_path(profile_path, root)}.")
+    else:
+        profile_text = read_text(profile_path)
+        if "__MODEL_PROVIDER__" in profile_text or "__MODEL_OPERATING_PROFILE_NAME__" in profile_text:
+            files.append(normalize_path(profile_path, root))
+            evidence.append(f"{normalize_path(profile_path, root)} still contains unresolved model-profile template placeholders.")
+
+    candidate_paths = [provenance_path, model_matrix_path, canonical_brief_path, start_here_path]
+    if agents_dir.exists():
+        candidate_paths.extend(sorted(agents_dir.glob("*.md")))
+
+    deprecated_hits = False
+    for path in candidate_paths:
+        if not path.exists():
+            continue
+        text = read_text(path)
+        hits = matching_lines(text, DEPRECATED_MODEL_PATTERNS)
+        if not hits:
+            continue
+        deprecated_hits = True
+        files.append(normalize_path(path, root))
+        evidence.extend(f"{normalize_path(path, root)} -> {hit}" for hit in hits)
+
+    if agents_dir.exists():
+        for path in sorted(agents_dir.glob("*.md")):
+            text = read_text(path)
+            model_value = frontmatter_value(text, "model")
+            if not model_value or "minimax" not in model_value.lower():
+                continue
+            temperature = frontmatter_value(text, "temperature")
+            top_p = frontmatter_value(text, "top_p")
+            top_k = frontmatter_value(text, "top_k")
+            if temperature == "0.2" or top_p == "0.7" or top_k is None:
+                files.append(normalize_path(path, root))
+                evidence.append(
+                    f"{normalize_path(path, root)} retains older MiniMax sampling defaults "
+                    f"(temperature={temperature or 'missing'}, top_p={top_p or 'missing'}, top_k={top_k or 'missing'})."
+                )
+
+    should_flag = deprecated_hits or bool(evidence) or ("minimax" in provider and not profile_path.exists())
+    if not should_flag:
+        return
+
+    add_finding(
+        findings,
+        Finding(
+            code="MODEL001",
+            severity="warning",
+            problem="Repo-local model operating surfaces are missing or still pinned to deprecated MiniMax defaults.",
+            root_cause="Managed repair or retrofit preserved older model/profile surfaces instead of regenerating the repo-local model profile, agent prompts, and model matrix together.",
+            files=list(dict.fromkeys(files)),
+            safer_pattern="Regenerate `.opencode/skills/model-operating-profile/SKILL.md`, align provenance/model-matrix/agent frontmatter on the current runtime model choices, and remove deprecated `MiniMax-M2.5` surfaces before implementation continues.",
+            evidence=evidence[:10],
+        ),
+    )
+
+
 def audit_bootstrap_deadlock(root: Path, findings: list[Finding]) -> None:
     tool_path = root / ".opencode" / "tools" / "environment_bootstrap.ts"
     if not tool_path.exists():
@@ -1162,6 +1247,7 @@ def audit_repo(root: Path) -> list[Finding]:
     audit_over_scoped_commands(root, findings)
     audit_eager_skill_loading(root, findings)
     audit_placeholder_local_skills(root, findings)
+    audit_model_profile_drift(root, findings)
     audit_bootstrap_deadlock(root, findings)
     audit_python_execution(root, findings)
     return findings
@@ -1228,6 +1314,8 @@ def prevention_action(finding: Finding) -> str:
         return "Make generated Python bootstrap manager-aware (`uv` or repo-local `.venv`), classify missing prerequisites accurately, and audit bootstrap deadlocks before routing source remediation."
     if finding.code == "SKILL001":
         return "Detect and repair leftover placeholder local skills so generated stack guidance is concrete before implementation continues."
+    if finding.code == "MODEL001":
+        return "Detect deprecated or missing model-profile surfaces, regenerate the repo-local model operating profile, and align model metadata plus agent defaults before development resumes."
     if finding.code.startswith("EXEC"):
         return "Tighten generated review and QA guidance so runtime validation and test collection proof exist before closure."
     if "ticket" in finding.code or "status" in finding.code:
@@ -1347,6 +1435,10 @@ def render_report_three(findings: list[Finding]) -> str:
 def render_report_four(root: Path, findings: list[Finding], recommendations: list[dict[str, Any]]) -> str:
     safe_repairs = [item for item in recommendations if item["route"] == "scafforge-repair"]
     source_follow_up = [item for item in recommendations if item["route"] == "ticket-pack-builder"]
+    requires_regeneration = any(
+        finding.code in {"SKILL001", "MODEL001"} or any(token in " ".join(finding.files) for token in (".opencode/agents/", ".opencode/skills/"))
+        for finding in findings
+    )
     lines = [
         "# Report 4: Live Repo Repair Plan",
         "",
@@ -1358,6 +1450,13 @@ def render_report_four(root: Path, findings: list[Finding], recommendations: lis
     ]
     if safe_repairs:
         lines.extend([f"- Route {len(safe_repairs)} workflow-layer findings into `scafforge-repair` for deterministic managed-surface repair.", ""])
+        if requires_regeneration:
+            lines.extend(
+                [
+                    "- Do not stop at tool replacement: rerun project-local skill regeneration, agent-team follow-up, and prompt hardening before handoff.",
+                    "",
+                ]
+            )
     else:
         lines.extend(["- No safe managed-surface repair was identified from the current findings.", ""])
 
@@ -1432,9 +1531,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--format", choices=("markdown", "json", "both"), default="both")
     parser.add_argument("--markdown-output", help="Optional path for markdown output.")
     parser.add_argument("--json-output", help="Optional path for JSON output.")
-    parser.add_argument("--emit-diagnosis-pack", action="store_true", help="Write the four-report diagnosis pack into <repo>/diagnosis/<timestamp>/.")
+    parser.add_argument("--emit-diagnosis-pack", dest="emit_diagnosis_pack", action="store_true", help="Write the four-report diagnosis pack into <repo>/diagnosis/<timestamp>/. Enabled by default.")
+    parser.add_argument("--no-diagnosis-pack", dest="emit_diagnosis_pack", action="store_false", help="Skip writing the diagnosis pack.")
     parser.add_argument("--diagnosis-output-dir", help="Optional diagnosis-pack directory. Defaults to <repo>/diagnosis/<YYYYMMDD-HHMMSS> when emission is enabled.")
     parser.add_argument("--fail-on", choices=("never", "warning", "error"), default="never")
+    parser.set_defaults(emit_diagnosis_pack=True)
     return parser.parse_args()
 
 

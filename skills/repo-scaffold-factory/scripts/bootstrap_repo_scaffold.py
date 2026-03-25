@@ -234,6 +234,7 @@ def write_bootstrap_provenance(
                 "START-HERE.md managed block",
             ],
             "project_specific_follow_up": [
+                ".opencode/skills",
                 ".opencode/agents",
                 "docs/process/agent-catalog.md",
             ],

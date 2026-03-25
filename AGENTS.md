@@ -93,8 +93,8 @@ These refinements now govern implementation of the package contract:
 - the greenfield path is **one-shot**: one batched blocking-decision round, one uninterrupted same-session generation pass, then direct handoff into development
 - the generated repo must have a **structured truth hierarchy** with exact canonical owners for facts, queue state, transient workflow state, artifacts, provenance, and restart surfaces
 - the initial backlog should be **implementation-ready where decisions are resolved**, while unresolved major choices become explicit blocked or decision tickets instead of fabricated detail
-- `scafforge-audit` should own read-only diagnosis, review validation, and report generation
-- `scafforge-repair` should consume audit outputs, apply safe repairs, and escalate intent-changing repairs
+- `scafforge-audit` should own read-only diagnosis, review validation, and full diagnosis-pack generation on every audit run
+- `scafforge-repair` should consume audit outputs, apply safe repairs, continue into required project-specific regeneration steps, and escalate intent-changing repairs
 - package-level PR evidence intake should be folded into `scafforge-audit` instead of surviving as a separate primary skill
 - standalone refinement routing should not remain as a package-level flow
 - managed-surface process replacement must leave explicit version and verification state so the generated repo can tell when its workflow contract changed
@@ -130,10 +130,11 @@ Use this path when a repo is already Scafforge-managed or otherwise OpenCode-ori
 
 1. `scaffold-kickoff` decides this is managed repair/update work
 2. `scafforge-repair` runs for safe workflow repairs and managed-surface refresh
-3. `opencode-team-bootstrap` follows up only if project-specific `.opencode/` drift remains
-4. `ticket-pack-builder` repairs backlog state if needed
-5. `project-skill-bootstrap` repairs local skills if needed
-6. `handoff-brief` publishes restart state
+3. `project-skill-bootstrap` repairs local skills if needed
+4. `opencode-team-bootstrap` follows up only if project-specific `.opencode/` drift remains
+5. `agent-prompt-engineering` reruns when regenerated skills or agents changed prompt behavior
+6. `ticket-pack-builder` repairs backlog state if needed
+7. `handoff-brief` publishes restart state
 
 ### Diagnosis / review flow
 

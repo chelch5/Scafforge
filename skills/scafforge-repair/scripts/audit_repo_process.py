@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,16 @@ PLACEHOLDER_SKILL_PATTERNS = (
     r"Replace this file with stack-specific rules once the real project stack is known\.",
     r"__STACK_LABEL__",
 )
+DEPRECATED_MODEL_PATTERNS = (
+    r"MiniMax-M2\.5",
+    r"minimax-coding-plan/MiniMax-M2\.5",
+)
+DIAGNOSIS_REPORTS = {
+    "report_1": "01-initial-codebase-review.md",
+    "report_2": "02-scafforge-process-failures.md",
+    "report_3": "03-scafforge-prevention-actions.md",
+    "report_4": "04-live-repo-repair-plan.md",
+}
 
 
 @dataclass
@@ -150,6 +161,13 @@ def matching_lines(text: str, patterns: tuple[str, ...]) -> list[str]:
         if line and any(re.search(pattern, line, re.IGNORECASE) for pattern in patterns):
             hits.append(line)
     return hits[:3]
+
+
+def frontmatter_value(text: str, key: str) -> str | None:
+    match = re.search(rf"(?m)^{re.escape(key)}:\s*(.+?)\s*$", text)
+    if not match:
+        return None
+    return match.group(1).strip().strip('"').strip("'")
 
 
 def combine_outputs(*parts: str) -> str:
@@ -905,6 +923,80 @@ def audit_placeholder_local_skills(root: Path, findings: list[Finding]) -> None:
         )
 
 
+def audit_model_profile_drift(root: Path, findings: list[Finding]) -> None:
+    provenance_path = root / ".opencode" / "meta" / "bootstrap-provenance.json"
+    provenance = read_json(provenance_path)
+    runtime_models = provenance.get("runtime_models") if isinstance(provenance, dict) and isinstance(provenance.get("runtime_models"), dict) else {}
+    provider = str(runtime_models.get("provider", "")).strip().lower() if isinstance(runtime_models, dict) else ""
+
+    profile_path = root / ".opencode" / "skills" / "model-operating-profile" / "SKILL.md"
+    model_matrix_path = root / "docs" / "process" / "model-matrix.md"
+    canonical_brief_path = root / "docs" / "spec" / "CANONICAL-BRIEF.md"
+    start_here_path = root / "START-HERE.md"
+    agents_dir = root / ".opencode" / "agents"
+
+    evidence: list[str] = []
+    files: list[str] = []
+
+    if not profile_path.exists():
+        files.append(normalize_path(profile_path, root))
+        evidence.append(f"Missing repo-local model profile skill: {normalize_path(profile_path, root)}.")
+    else:
+        profile_text = read_text(profile_path)
+        if "__MODEL_PROVIDER__" in profile_text or "__MODEL_OPERATING_PROFILE_NAME__" in profile_text:
+            files.append(normalize_path(profile_path, root))
+            evidence.append(f"{normalize_path(profile_path, root)} still contains unresolved model-profile template placeholders.")
+
+    candidate_paths = [provenance_path, model_matrix_path, canonical_brief_path, start_here_path]
+    if agents_dir.exists():
+        candidate_paths.extend(sorted(agents_dir.glob("*.md")))
+
+    deprecated_hits = False
+    for path in candidate_paths:
+        if not path.exists():
+            continue
+        text = read_text(path)
+        hits = matching_lines(text, DEPRECATED_MODEL_PATTERNS)
+        if not hits:
+            continue
+        deprecated_hits = True
+        files.append(normalize_path(path, root))
+        evidence.extend(f"{normalize_path(path, root)} -> {hit}" for hit in hits)
+
+    if agents_dir.exists():
+        for path in sorted(agents_dir.glob("*.md")):
+            text = read_text(path)
+            model_value = frontmatter_value(text, "model")
+            if not model_value or "minimax" not in model_value.lower():
+                continue
+            temperature = frontmatter_value(text, "temperature")
+            top_p = frontmatter_value(text, "top_p")
+            top_k = frontmatter_value(text, "top_k")
+            if temperature == "0.2" or top_p == "0.7" or top_k is None:
+                files.append(normalize_path(path, root))
+                evidence.append(
+                    f"{normalize_path(path, root)} retains older MiniMax sampling defaults "
+                    f"(temperature={temperature or 'missing'}, top_p={top_p or 'missing'}, top_k={top_k or 'missing'})."
+                )
+
+    should_flag = deprecated_hits or bool(evidence) or ("minimax" in provider and not profile_path.exists())
+    if not should_flag:
+        return
+
+    add_finding(
+        findings,
+        Finding(
+            code="MODEL001",
+            severity="warning",
+            problem="Repo-local model operating surfaces are missing or still pinned to deprecated MiniMax defaults.",
+            root_cause="Managed repair or retrofit preserved older model/profile surfaces instead of regenerating the repo-local model profile, agent prompts, and model matrix together.",
+            files=list(dict.fromkeys(files)),
+            safer_pattern="Regenerate `.opencode/skills/model-operating-profile/SKILL.md`, align provenance/model-matrix/agent frontmatter on the current runtime model choices, and remove deprecated `MiniMax-M2.5` surfaces before implementation continues.",
+            evidence=evidence[:10],
+        ),
+    )
+
+
 def audit_bootstrap_deadlock(root: Path, findings: list[Finding]) -> None:
     tool_path = root / ".opencode" / "tools" / "environment_bootstrap.ts"
     if not tool_path.exists():
@@ -1155,6 +1247,7 @@ def audit_repo(root: Path) -> list[Finding]:
     audit_over_scoped_commands(root, findings)
     audit_eager_skill_loading(root, findings)
     audit_placeholder_local_skills(root, findings)
+    audit_model_profile_drift(root, findings)
     audit_bootstrap_deadlock(root, findings)
     audit_python_execution(root, findings)
     return findings
@@ -1192,13 +1285,257 @@ def render_markdown(root: Path, findings: list[Finding]) -> str:
     return "\n".join(lines)
 
 
+def severity_rank(severity: str) -> int:
+    return {"error": 0, "warning": 1, "info": 2}.get(severity, 3)
+
+
+def findings_by_severity(findings: list[Finding]) -> dict[str, list[Finding]]:
+    grouped: dict[str, list[Finding]] = {"error": [], "warning": [], "info": []}
+    for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
+        grouped.setdefault(finding.severity, []).append(finding)
+    return grouped
+
+
+def infer_surface(finding: Finding) -> str:
+    joined = " ".join(finding.files)
+    if any(token in joined for token in (".opencode/tools/", ".opencode/commands/", "docs/process/", ".opencode/state/")):
+        return "repo-scaffold-factory managed template surfaces"
+    if any(token in joined for token in (".opencode/agents/", ".opencode/skills/")):
+        return "project-skill-bootstrap and agent-prompt-engineering surfaces"
+    if "tickets/" in joined or "status" in finding.code or "ticket" in finding.code:
+        return "ticket-pack-builder and ticket contract surfaces"
+    if finding.code.startswith("EXEC"):
+        return "generated repo implementation and validation surfaces"
+    return "scafforge-audit diagnosis contract"
+
+
+def prevention_action(finding: Finding) -> str:
+    if finding.code == "BOOT001":
+        return "Make generated Python bootstrap manager-aware (`uv` or repo-local `.venv`), classify missing prerequisites accurately, and audit bootstrap deadlocks before routing source remediation."
+    if finding.code == "SKILL001":
+        return "Detect and repair leftover placeholder local skills so generated stack guidance is concrete before implementation continues."
+    if finding.code == "MODEL001":
+        return "Detect deprecated or missing model-profile surfaces, regenerate the repo-local model operating profile, and align model metadata plus agent defaults before development resumes."
+    if finding.code.startswith("EXEC"):
+        return "Tighten generated review and QA guidance so runtime validation and test collection proof exist before closure."
+    if "ticket" in finding.code or "status" in finding.code:
+        return "Keep queue state coarse, route remediation through guarded ticket flows, and validate ticket-contract wording in package checks."
+    if any(token in " ".join(finding.files) for token in (".opencode/agents/", ".opencode/skills/")):
+        return "Harden generated prompts so read-only roles stay read-only and repo-local review guidance remains advisory."
+    return "Refresh managed workflow docs, tools, and validators together so repair replaces drift instead of layering new semantics over old ones."
+
+
+def build_ticket_recommendations(findings: list[Finding]) -> list[dict[str, Any]]:
+    recommendations: list[dict[str, Any]] = []
+    for index, finding in enumerate(sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)), start=1):
+        route = "ticket-pack-builder" if finding.code.startswith("EXEC") else "scafforge-repair"
+        recommendations.append(
+            {
+                "id": f"REMED-{index:03d}",
+                "title": finding.problem.rstrip("."),
+                "source_finding_code": finding.code,
+                "severity": finding.severity,
+                "route": route,
+                "repair_class": "generated-repo remediation ticket" if route == "ticket-pack-builder" else "safe Scafforge package change",
+                "summary": finding.safer_pattern,
+                "source_files": finding.files,
+            }
+        )
+    return recommendations
+
+
+def render_report_one(root: Path, findings: list[Finding], generated_at: str) -> str:
+    grouped = findings_by_severity(findings)
+    lines = [
+        "# Report 1: Initial Codebase Review",
+        "",
+        f"- Repo: {root}",
+        f"- Generated at: {generated_at}",
+        f"- Finding count: {len(findings)}",
+        f"- Errors: {len(grouped.get('error', []))}",
+        f"- Warnings: {len(grouped.get('warning', []))}",
+        "",
+        "## Validated findings",
+        "",
+    ]
+    if not findings:
+        lines.extend(
+            [
+                "No validated workflow, review, or runtime findings were detected.",
+                "",
+                "## Verification gaps",
+                "",
+                "- No additional verification gaps were identified during this diagnosis pass.",
+                "",
+            ]
+        )
+        return "\n".join(lines)
+
+    for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
+        lines.extend(
+            [
+                f"### [{finding.severity}] {finding.code}",
+                "",
+                f"Problem: {finding.problem}",
+                f"Files: {', '.join(finding.files) if finding.files else '(none)'}",
+                "Verification gaps:",
+                *([f"- {item}" for item in finding.evidence] or ["- No extra verification gaps captured."]),
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def render_report_two(findings: list[Finding]) -> str:
+    lines = [
+        "# Report 2: Scafforge Process Failures",
+        "",
+        "This report maps validated issues back to Scafforge-owned skills, contracts, templates, or generated surfaces.",
+        "",
+    ]
+    if not findings:
+        lines.extend(["No process failures were mapped from the validated finding set.", ""])
+        return "\n".join(lines)
+
+    for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
+        lines.extend(
+            [
+                f"## {finding.code}",
+                "",
+                f"- Surface: {infer_surface(finding)}",
+                f"- Root cause: {finding.root_cause}",
+                f"- Safer target pattern: {finding.safer_pattern}",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def render_report_three(findings: list[Finding]) -> str:
+    lines = [
+        "# Report 3: Scafforge Prevention Actions",
+        "",
+        "These actions describe package-side changes that prevent the same failures from reappearing in future generated repos.",
+        "",
+    ]
+    if not findings:
+        lines.extend(["No additional prevention actions are required beyond keeping the current contract intact.", ""])
+        return "\n".join(lines)
+
+    seen: set[str] = set()
+    for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
+        action = prevention_action(finding)
+        if action in seen:
+            continue
+        seen.add(action)
+        lines.extend([f"- {action}", ""])
+    return "\n".join(lines)
+
+
+def render_report_four(root: Path, findings: list[Finding], recommendations: list[dict[str, Any]]) -> str:
+    safe_repairs = [item for item in recommendations if item["route"] == "scafforge-repair"]
+    source_follow_up = [item for item in recommendations if item["route"] == "ticket-pack-builder"]
+    requires_regeneration = any(
+        finding.code in {"SKILL001", "MODEL001"} or any(token in " ".join(finding.files) for token in (".opencode/agents/", ".opencode/skills/"))
+        for finding in findings
+    )
+    lines = [
+        "# Report 4: Live Repo Repair Plan",
+        "",
+        f"- Repo: {root}",
+        "- Diagnosis remains read-only. No repo edits were made by this audit run.",
+        "",
+        "## Safe repair boundary",
+        "",
+    ]
+    if safe_repairs:
+        lines.extend([f"- Route {len(safe_repairs)} workflow-layer findings into `scafforge-repair` for deterministic managed-surface repair.", ""])
+        if requires_regeneration:
+            lines.extend(
+                [
+                    "- Do not stop at tool replacement: rerun project-local skill regeneration, agent-team follow-up, and prompt hardening before handoff.",
+                    "",
+                ]
+            )
+    else:
+        lines.extend(["- No safe managed-surface repair was identified from the current findings.", ""])
+
+    lines.extend(["## Intent-changing boundary", "", "- Escalate any stack, scope, provider, or curated human-decision changes instead of labeling them as safe repair.", "", "## Ticket recommendations", ""])
+
+    if recommendations:
+        for item in recommendations:
+            lines.extend(
+                [
+                    f"### {item['id']} ({item['severity']})",
+                    "",
+                    f"- Title: {item['title']}",
+                    f"- Route: `{item['route']}`",
+                    f"- Repair class: {item['repair_class']}",
+                    f"- Source finding: `{item['source_finding_code']}`",
+                    f"- Summary: {item['summary']}",
+                    "",
+                ]
+            )
+    else:
+        lines.extend(["- No follow-up tickets are recommended from the current diagnosis run.", ""])
+
+    if source_follow_up:
+        lines.extend(
+            [
+                "## Post-repair follow-up",
+                "",
+                f"- Route {len(source_follow_up)} source-layer remediation item(s) through `ticket-pack-builder` and any generated repo guarded ticket surfaces after workflow repair is complete.",
+                "",
+            ]
+        )
+
+    return "\n".join(lines)
+
+
+def emit_diagnosis_pack(root: Path, findings: list[Finding], destination: Path) -> dict[str, Any]:
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    destination.mkdir(parents=True, exist_ok=True)
+    recommendations = build_ticket_recommendations(findings)
+    reports = {
+        DIAGNOSIS_REPORTS["report_1"]: render_report_one(root, findings, generated_at),
+        DIAGNOSIS_REPORTS["report_2"]: render_report_two(findings),
+        DIAGNOSIS_REPORTS["report_3"]: render_report_three(findings),
+        DIAGNOSIS_REPORTS["report_4"]: render_report_four(root, findings, recommendations),
+    }
+    for filename, content in reports.items():
+        (destination / filename).write_text(content + "\n", encoding="utf-8")
+
+    manifest: dict[str, Any] = {
+        "generated_at": generated_at,
+        "repo_root": str(root),
+        "finding_count": len(findings),
+        "report_files": {key: value for key, value in DIAGNOSIS_REPORTS.items()},
+        "ticket_recommendations": recommendations,
+    }
+    if recommendations:
+        payload_name = "recommended-ticket-payload.json"
+        manifest["recommended_ticket_payload"] = payload_name
+        (destination / payload_name).write_text(json.dumps(recommendations, indent=2) + "\n", encoding="utf-8")
+
+    (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return {
+        "path": str(destination),
+        "report_count": len(reports),
+        "manifest": manifest,
+    }
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Audit a repo for workflow and prompt-process drift.")
+    parser = argparse.ArgumentParser(description="Audit a repo for Scafforge workflow, review, and prompt-process drift.")
     parser.add_argument("repo_root", help="Repository root to audit.")
     parser.add_argument("--format", choices=("markdown", "json", "both"), default="both")
     parser.add_argument("--markdown-output", help="Optional path for markdown output.")
     parser.add_argument("--json-output", help="Optional path for JSON output.")
+    parser.add_argument("--emit-diagnosis-pack", dest="emit_diagnosis_pack", action="store_true", help="Write the four-report diagnosis pack into <repo>/diagnosis/<timestamp>/. Enabled by default.")
+    parser.add_argument("--no-diagnosis-pack", dest="emit_diagnosis_pack", action="store_false", help="Skip writing the diagnosis pack.")
+    parser.add_argument("--diagnosis-output-dir", help="Optional diagnosis-pack directory. Defaults to <repo>/diagnosis/<YYYYMMDD-HHMMSS> when emission is enabled.")
     parser.add_argument("--fail-on", choices=("never", "warning", "error"), default="never")
+    parser.set_defaults(emit_diagnosis_pack=True)
     return parser.parse_args()
 
 
@@ -1213,6 +1550,14 @@ def main() -> int:
         "findings": [asdict(finding) for finding in findings],
     }
     markdown = render_markdown(root, findings)
+
+    if args.emit_diagnosis_pack or args.diagnosis_output_dir:
+        diagnosis_dir = (
+            Path(args.diagnosis_output_dir).expanduser().resolve()
+            if args.diagnosis_output_dir
+            else root / "diagnosis" / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        )
+        payload["diagnosis_pack"] = emit_diagnosis_pack(root, findings, diagnosis_dir)
 
     if args.markdown_output:
         Path(args.markdown_output).write_text(markdown + "\n", encoding="utf-8")
