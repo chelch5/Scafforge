@@ -104,8 +104,8 @@ Generation, audit, and repair are separate lifecycle stages.
 - Initial generation ends at `handoff-brief`.
 - `scafforge-audit` and `scafforge-repair` are later lifecycle tools, not part of the initial generation cycle.
 
-- `scafforge-audit` is read-only and can validate review evidence, run the audit script, and emit the four-report diagnosis pack in the subject repo's `diagnosis/` folder.
-- `scafforge-repair` consumes the audit outputs, applies safe managed-surface repairs, records provenance, and routes ticket follow-up when needed.
+- `scafforge-audit` is read-only and always validates review evidence, runs the audit script, and emits the four-report diagnosis pack in the subject repo's `diagnosis/` folder.
+- `scafforge-repair` consumes the audit outputs, applies safe managed-surface repairs, continues into any required local-skill or agent regeneration, records provenance, and routes ticket follow-up when needed.
 - When the diagnosis identifies package defects or prevention gaps, the user manually copies the diagnosis pack into the Scafforge dev repo, package changes are implemented there, and repair happens only after returning to the subject repo with the updated package surface.
 
 PR comments, review threads, and check metadata are optional evidence only. They do not become canonical findings until the repo validates them.
@@ -145,9 +145,10 @@ retrofit
 
 managed repair or update
   -> scafforge-repair
-  -> opencode-team-bootstrap (if project-specific drift remains)
-  -> ticket-pack-builder (if follow-up is needed)
   -> project-skill-bootstrap (if repair is needed)
+  -> opencode-team-bootstrap (if project-specific drift remains)
+  -> agent-prompt-engineering (if prompts or model-profile surfaces changed)
+  -> ticket-pack-builder (if follow-up is needed)
   -> handoff-brief
 
 diagnosis or review

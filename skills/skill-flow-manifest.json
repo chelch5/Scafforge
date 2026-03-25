@@ -31,9 +31,10 @@
       "entrypoint": "scaffold-kickoff",
       "sequence": [
         "scafforge-repair:apply-safe-repair",
-        "opencode-team-bootstrap:follow_up_if_project_specific_drift",
-        "ticket-pack-builder:refine_if_needed",
         "project-skill-bootstrap:repair-or-regeneration_if_needed",
+        "opencode-team-bootstrap:follow_up_if_project_specific_drift",
+        "agent-prompt-engineering:repair-hardening_if_needed",
+        "ticket-pack-builder:refine_if_needed",
         "handoff-brief"
       ]
     },
@@ -104,7 +105,7 @@
     },
     "scafforge-audit": {
       "owner": "audit-review",
-      "modes": ["audit", "review", "diagnosis-pack"],
+      "modes": ["full-diagnosis"],
       "inputs": ["repo workflow surfaces", "contract docs", "template outputs", "optional PR/review evidence"],
       "outputs": ["diagnosis", "validated review findings", "four-report pack", "ticket recommendations"],
       "upstreams": ["repo-scaffold-factory", "opencode-team-bootstrap", "agent-prompt-engineering", "project-skill-bootstrap", "scaffold-kickoff"],
@@ -114,7 +115,7 @@
       "owner": "managed-repair",
       "modes": ["apply-safe-repair"],
       "inputs": ["audit outputs", "repair plan", "validated workflow drift"],
-      "outputs": ["safe repairs", "provenance updates", "verification results", "ticket follow-up routing"],
+      "outputs": ["safe repairs", "project-specific regeneration", "prompt-hardening refresh", "provenance updates", "verification results", "ticket follow-up routing"],
       "upstreams": ["scafforge-audit", "scaffold-kickoff", "opencode-team-bootstrap"],
       "downstreams": ["ticket-pack-builder", "handoff-brief"]
     },

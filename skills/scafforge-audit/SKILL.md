@@ -8,6 +8,7 @@ description: Run Scafforge's host-side diagnosis flow for an existing repository
 Use this skill to inspect an existing repository without mutating it.
 
 This is the host-side diagnosis surface. It replaces the old mixed doctor-plus-bridge behavior by keeping diagnosis, review evidence intake, and report generation together in one read-only skill.
+Every audit run produces the full four-report diagnosis pack.
 
 ## When to use this skill
 
@@ -18,16 +19,6 @@ This is the host-side diagnosis surface. It replaces the old mixed doctor-plus-b
 - A generated repo needs a diagnosis pack that the user will manually carry into the Scafforge dev repo for package work
 
 If the user explicitly asks to repair or refresh the managed workflow layer, route to `../scafforge-repair/SKILL.md` instead.
-
-## Operating modes
-
-Choose the narrowest mode that matches the request.
-
-- `audit` — run the workflow/process audit and summarize findings
-- `review` — validate implementation or review findings against the actual repo state
-- `diagnosis-pack` — produce the four-report diagnosis pack in full
-
-You can combine these when needed. The common full path is `audit` + `review` + `diagnosis-pack`.
 
 ## Procedure
 
@@ -46,17 +37,15 @@ Do not convert an unverified claim into a canonical finding.
 Run:
 
 ```sh
-python3 scripts/audit_repo_process.py <repo-root> --format both
+python3 scripts/audit_repo_process.py <repo-root> --format both --emit-diagnosis-pack
 ```
 
 The script is at `scripts/audit_repo_process.py` relative to this skill.
 
-When the mode includes `diagnosis-pack`, add `--emit-diagnosis-pack` so the script writes the four-report pack into `<repo-root>/diagnosis/<YYYYMMDD-HHMMSS>/`.
-
 It produces:
 - a markdown audit report
 - a JSON audit report
-- the timestamped diagnosis pack when requested
+- the timestamped diagnosis pack in `<repo-root>/diagnosis/<YYYYMMDD-HHMMSS>/`
 
 The script diagnoses only. It does not modify files.
 
@@ -86,7 +75,7 @@ This skill owns professional review validation and ticket recommendation generat
 
 ### 5. Generate the four-report diagnosis pack
 
-When the user asks for the diagnosis plan flow, produce the report pack described by the diagnosis docs.
+Produce the report pack described by the diagnosis docs on every run.
 
 Use:
 - `references/four-report-templates.md` for report structure
@@ -143,10 +132,10 @@ Keep those responsibilities separate.
 
 ## Required outputs
 
-- Chosen audit scope and mode
+- Full diagnosis scope
 - Evidence-backed findings only
 - Root cause for each validated finding
-- Four-report diagnosis pack when requested
+- Four-report diagnosis pack
 - Clear repair recommendation boundary
 - Ticket recommendations for post-audit follow-up where needed
 - Explicit statement that no repo edits were made

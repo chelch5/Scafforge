@@ -98,15 +98,25 @@ BOOT findings mean the managed bootstrap layer is broken on the current machine.
 - refresh the managed bootstrap surfaces, especially `.opencode/tools/environment_bootstrap.ts` and any related bootstrap command docs, through `scafforge-repair`
 - replace bare global-pip assumptions with repo-native bootstrap logic (`uv` for uv-managed repos, otherwise repo-local `.venv` plus `.venv/bin/python -m pip`)
 - surface missing prerequisites accurately; a failed bootstrap artifact must not report `Missing Prerequisites: None` when `pip` or `uv` is actually missing
-- rerun `audit_repo_process.py` after the managed-surface refresh; source-layer EXEC tickets should proceed only after `BOOT001` is gone
+- rerun the subject repo's `environment_bootstrap` flow after the managed-surface refresh, then rerun `audit_repo_process.py`; source-layer EXEC tickets should proceed only after `BOOT001` is gone
 
 ## SKILL repair actions (SKILL001)
 
 SKILL findings mean the repo-local skill layer is still carrying scaffold placeholder text.
 
-- refresh scaffold-managed foundation skills under `.opencode/skills/` and rerun the project-specific local-skill regeneration pass where needed
+- refresh scaffold-managed foundation skills under `.opencode/skills/`, rerun the project-specific local-skill regeneration pass, and continue into agent-team/prompt follow-up when the regenerated skills change allowlists or model guidance
 - `stack-standards` must contain concrete framework rules and actual validation commands from the repo, not placeholder filler
 - rerun audit and confirm no generated `.opencode/skills/*.md` files still contain template text such as `Replace this file...`
+
+## MODEL repair actions (MODEL001)
+
+MODEL findings mean the repo-local model/profile layer drifted from the current package guidance.
+
+- regenerate `.opencode/skills/model-operating-profile/SKILL.md`
+- align `docs/process/model-matrix.md`, `.opencode/meta/bootstrap-provenance.json`, and agent frontmatter on the active runtime model choices
+- if the repo is still on a package-managed MiniMax default, remove deprecated `MiniMax-M2.5` surfaces and refresh to the current package default
+- if the repo is explicitly human-pinned to a different model choice, flag the drift and escalate instead of silently overwriting intent
+- rerun `../agent-prompt-engineering/SKILL.md` after model-profile changes so delegation and evidence rules match the new model defaults
 
 ## EXEC repair actions (EXEC001 / EXEC002 / EXEC003)
 

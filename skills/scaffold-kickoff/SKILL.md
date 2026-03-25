@@ -13,7 +13,7 @@ Before starting, classify the run type:
 
 1. **Greenfield** — No repo exists yet, or the repo contains only specs, plans, or notes. Follow the full workflow below.
 2. **Retrofit** — A repo with code already exists but is missing the current OpenCode operating layer. Run `spec-pack-normalizer` first if the project lacks a canonical brief, route to `opencode-team-bootstrap` to add or repair `.opencode/`, then run `project-skill-bootstrap`, continue through ticket repair as needed, and finish with `scafforge-audit`.
-3. **Managed repair / update** — A Scafforge-managed or OpenCode-oriented repo already exists but needs workflow-contract repair, upgrade, or managed-surface replacement. Route directly to `scafforge-repair`, then run any targeted follow-up skills it reveals and finish with `handoff-brief`.
+3. **Managed repair / update** — A Scafforge-managed or OpenCode-oriented repo already exists but needs workflow-contract repair, upgrade, or managed-surface replacement. Route directly to `scafforge-repair`, let it continue through any required project-specific regeneration or ticket follow-up, and finish with `handoff-brief`.
 4. **Diagnosis / review** — An in-progress or claimed-complete repo needs read-only diagnosis, codebase review, report generation, or evidence validation. Route to `scafforge-audit`.
 
 If the repo state and the user's request do not make the run type clear, ask the user before proceeding. Do not silently choose between greenfield, retrofit, managed repair, and diagnosis/review when that choice would materially change scope.

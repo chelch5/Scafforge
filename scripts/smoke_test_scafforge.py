@@ -106,6 +106,76 @@ def seed_bootstrap_deadlock(dest: Path) -> None:
     workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
 
 
+def seed_legacy_bootstrap_tool(dest: Path) -> None:
+    tool_path = dest / ".opencode" / "tools" / "environment_bootstrap.ts"
+    tool_path.write_text(
+        "\n".join(
+            [
+                'import { tool } from "@opencode-ai/plugin"',
+                "",
+                "export default tool({",
+                '  description: "legacy bootstrap fixture",',
+                "  args: {},",
+                "  async execute() {",
+                '    const command = { argv: ["python3", "-m", "pip", "install", "-e", "."] }',
+                "    return JSON.stringify(command)",
+                "  },",
+                "})",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def seed_legacy_model_drift(dest: Path) -> None:
+    legacy_minimax = "minimax-coding-plan/" + "MiniMax-M2." + "5"
+
+    profile_dir = dest / ".opencode" / "skills" / "model-operating-profile"
+    shutil.rmtree(profile_dir, ignore_errors=True)
+
+    provenance_path = dest / ".opencode" / "meta" / "bootstrap-provenance.json"
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    provenance["runtime_models"] = {
+        "provider": "minimax-coding-plan",
+        "planner": legacy_minimax,
+        "implementer": legacy_minimax,
+        "utility": legacy_minimax,
+    }
+    provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+
+    (dest / "docs" / "process" / "model-matrix.md").write_text(
+        "\n".join(
+            [
+                "# Model Matrix",
+                "",
+                "- provider: `minimax-coding-plan`",
+                f"- team lead / planner / reviewers: `{legacy_minimax}`",
+                f"- implementer: `{legacy_minimax}`",
+                f"- utilities, docs, and QA helpers: `{legacy_minimax}`",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dest / "START-HERE.md").write_text(
+        (dest / "START-HERE.md").read_text(encoding="utf-8").replace("openrouter/openai/gpt-5-mini", legacy_minimax),
+        encoding="utf-8",
+    )
+    (dest / "docs" / "spec" / "CANONICAL-BRIEF.md").write_text(
+        (dest / "docs" / "spec" / "CANONICAL-BRIEF.md").read_text(encoding="utf-8").replace("openrouter/openai/gpt-5-mini", legacy_minimax),
+        encoding="utf-8",
+    )
+    team_leader = next((dest / ".opencode" / "agents").glob("*team-leader*.md"))
+    team_text = team_leader.read_text(encoding="utf-8")
+    team_text = team_text.replace("temperature: 1.0", "temperature: 0.2")
+    team_text = team_text.replace("top_p: 0.95", "top_p: 0.7")
+    if "top_k: 40\n" in team_text:
+        team_text = team_text.replace("top_k: 40\n", "")
+    team_text = team_text.replace("model: openrouter/anthropic/claude-sonnet-4.5", f"model: {legacy_minimax}")
+    team_leader.write_text(team_text, encoding="utf-8")
+
+
 def verify_render(dest: Path, *, expect_full_repo: bool) -> None:
     checklist = json.loads(CHECKLIST.read_text(encoding="utf-8"))
     for relative in checklist["required_files"]:
@@ -257,7 +327,16 @@ def main() -> int:
         if not any(item.get("source_finding_code") == "BOOT001" and item.get("route") == "scafforge-repair" for item in recommendations):
             raise RuntimeError("BOOT001 should route to scafforge-repair in the diagnosis pack")
 
+        model_dest = workspace / "model-drift"
+        shutil.copytree(full_dest, model_dest)
+        seed_legacy_model_drift(model_dest)
+        model_audit = run_json([sys.executable, str(AUDIT), str(model_dest), "--format", "json"], ROOT)
+        model_codes = {finding["code"] for finding in model_audit.get("findings", [])}
+        if "MODEL001" not in model_codes:
+            raise RuntimeError("A repo with deprecated MiniMax surfaces and no model-operating-profile should emit MODEL001")
+
         (full_dest / "docs" / "process" / "workflow.md").write_text("# drifted workflow\n", encoding="utf-8")
+        seed_legacy_bootstrap_tool(full_dest)
         run([sys.executable, str(REPAIR), str(full_dest), "--fail-on", "error"], ROOT)
 
         repaired_workflow = json.loads((full_dest / ".opencode" / "state" / "workflow-state.json").read_text(encoding="utf-8"))
@@ -276,12 +355,18 @@ def main() -> int:
             raise RuntimeError("Repair should append repair_history")
         managed_surfaces = repaired_provenance.get("managed_surfaces", {})
         replace_on_retrofit = managed_surfaces.get("replace_on_retrofit", [])
+        project_specific_follow_up = managed_surfaces.get("project_specific_follow_up", [])
         if "opencode.jsonc" not in replace_on_retrofit:
             raise RuntimeError("Repair provenance should list opencode.jsonc as a deterministic managed surface")
+        if ".opencode/skills" not in project_specific_follow_up:
+            raise RuntimeError("Repair provenance should mark .opencode/skills as a project-specific follow-up surface")
 
         repaired_workflow_doc = (full_dest / "docs" / "process" / "workflow.md").read_text(encoding="utf-8")
         if "# Workflow" not in repaired_workflow_doc:
             raise RuntimeError("Repair should restore docs/process/workflow.md from the scaffold")
+        repaired_bootstrap_tool = (full_dest / ".opencode" / "tools" / "environment_bootstrap.ts").read_text(encoding="utf-8")
+        if 'const syncArgs = ["uv", "sync", "--locked"]' not in repaired_bootstrap_tool:
+            raise RuntimeError("Repair should restore the manager-aware environment_bootstrap surface")
 
         print("Scafforge smoke test passed.")
         return 0

@@ -124,9 +124,23 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
     if "scafforge-audit:review_and_emit_diagnosis_pack" not in diagnosis_sequence:
         findings.append(Finding("error", "diagnosis-review sequence must route through scafforge-audit"))
 
+    expected_managed_repair = [
+        "scafforge-repair:apply-safe-repair",
+        "project-skill-bootstrap:repair-or-regeneration_if_needed",
+        "opencode-team-bootstrap:follow_up_if_project_specific_drift",
+        "agent-prompt-engineering:repair-hardening_if_needed",
+        "ticket-pack-builder:refine_if_needed",
+        "handoff-brief",
+    ]
     managed_repair_sequence = run_types.get("managed-repair", {}).get("sequence", [])
-    if "scafforge-repair:apply-safe-repair" not in managed_repair_sequence:
-        findings.append(Finding("error", "managed-repair sequence must route through scafforge-repair"))
+    if managed_repair_sequence != expected_managed_repair:
+        findings.append(
+            Finding(
+                "error",
+                "managed-repair sequence must run repair, local-skill regeneration, agent follow-up, prompt hardening, ticket follow-up, and handoff in that order: "
+                + " -> ".join(expected_managed_repair),
+            )
+        )
 
     kickoff_modes = skills.get("scaffold-kickoff", {}).get("modes", [])
     for mode in ("greenfield", "retrofit", "managed-repair", "diagnosis-review"):
@@ -139,6 +153,10 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
     for mode in ("full-greenfield-pass", "repair-or-regeneration"):
         if mode not in project_skill_modes:
             findings.append(Finding("error", f"project-skill-bootstrap must expose {mode} mode"))
+
+    audit_modes = skills.get("scafforge-audit", {}).get("modes", [])
+    if audit_modes != ["full-diagnosis"]:
+        findings.append(Finding("error", "scafforge-audit must expose only the full-diagnosis mode"))
 
     for required_skill in ("scafforge-audit", "scafforge-repair"):
         if required_skill not in skills:
@@ -159,12 +177,15 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, readme, "Generation, audit, and repair are separate lifecycle stages.")
     require_contains(findings, readme, "scafforge-audit` and `scafforge-repair` are later lifecycle tools")
     require_contains(findings, readme, "model-operating-profile")
+    require_contains(findings, readme, "always validates review evidence")
+    require_contains(findings, readme, "continues into any required local-skill or agent regeneration")
 
     require_contains(findings, agents, "## Product contract refinements")
     require_contains(findings, agents, "## Canonical generated-repo truth hierarchy")
     require_contains(findings, agents, "project-skill-bootstrap")
     require_contains(findings, agents, "agent-prompt-engineering")
     require_contains(findings, agents, "ticket-pack-builder")
+    require_contains(findings, agents, "full diagnosis-pack generation on every audit run")
 
     require_contains(findings, one_shot, "one public generation entrypoint")
     require_contains(findings, one_shot, "`scaffold-kickoff`")
@@ -203,6 +224,7 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, scaffold_kickoff, "Do not route the initial generation pass into `scafforge-audit` or `scafforge-repair`.")
     require_contains(findings, scaffold_kickoff, "a first-development handoff that is valid without any later audit or repair pass")
     require_contains(findings, scaffold_kickoff, "route to `opencode-team-bootstrap` to add or repair `.opencode/`, then run `project-skill-bootstrap`")
+    require_contains(findings, scaffold_kickoff, "let it continue through any required project-specific regeneration or ticket follow-up")
 
     require_contains(findings, spec_pack, "The batched decision packet is a required generation artifact.")
     require_contains(findings, spec_pack, "Blocking decisions are all resolved before greenfield generation continues")
@@ -317,15 +339,27 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", 'workflow_contract.get("parallel_mode", "sequential")')
     require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="BOOT001"')
     require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="SKILL001"')
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="MODEL001"')
     require_contains(findings, repair_skill / "scripts" / "audit_repo_process.py", 'code="BOOT001"')
     require_contains(findings, repair_skill / "scripts" / "audit_repo_process.py", 'code="SKILL001"')
+    require_contains(findings, repair_skill / "scripts" / "audit_repo_process.py", 'code="MODEL001"')
     require_contains(findings, audit_skill / "references" / "process-smells.md", "Bootstrap deadlock (BOOT001")
     require_contains(findings, audit_skill / "references" / "process-smells.md", "Placeholder local skills (SKILL001")
+    require_contains(findings, audit_skill / "references" / "process-smells.md", "Model profile drift (MODEL001")
     require_contains(findings, repair_skill / "references" / "repair-playbook.md", "## BOOT repair actions (BOOT001)")
     require_contains(findings, repair_skill / "references" / "repair-playbook.md", "## SKILL repair actions (SKILL001)")
+    require_contains(findings, repair_skill / "references" / "repair-playbook.md", "## MODEL repair actions (MODEL001)")
     require_contains(findings, audit_skill / "SKILL.md", "manually copy the diagnosis pack")
     require_contains(findings, audit_skill / "SKILL.md", "Do not tell the user to go straight from report generation to repair")
+    require_contains(findings, audit_skill / "SKILL.md", "Every audit run produces the full four-report diagnosis pack.")
+    require_contains(findings, repair_skill / "SKILL.md", "run `../project-skill-bootstrap/SKILL.md`")
+    require_contains(findings, repair_skill / "SKILL.md", "run `../opencode-team-bootstrap/SKILL.md`")
+    require_contains(findings, repair_skill / "SKILL.md", "run `../agent-prompt-engineering/SKILL.md`")
     require_contains(findings, repair_skill / "SKILL.md", "manually copy that pack into the Scafforge dev repo first")
+
+    bootstrap_script = ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "bootstrap_repo_scaffold.py"
+    require_contains(findings, bootstrap_script, '"project_specific_follow_up": [')
+    require_contains(findings, bootstrap_script, '".opencode/skills",')
 
     deprecated = [
         ROOT / "skills" / "repo-process-doctor" / "SKILL.md",

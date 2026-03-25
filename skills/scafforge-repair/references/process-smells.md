@@ -77,6 +77,12 @@
 - result: the repo loses concrete stack and validation guidance, making framework-specific mistakes more likely during implementation
 - why agents miss it: current audits validate workflow tooling and execution proof, but do not check whether project-skill-bootstrap actually replaced baseline placeholder skill text
 
+## Model profile drift (MODEL001 — repo-local model surfaces stale or missing)
+
+- the repo is missing `.opencode/skills/model-operating-profile/SKILL.md`, still references deprecated MiniMax M2.5 surfaces, or carries older model defaults across provenance, model matrix, and agent prompts
+- result: the team leader and specialists keep stale delegation and evidence-shaping defaults even after the package moved to newer model guidance
+- why agents miss it: current repairs can refresh deterministic workflow surfaces without regenerating project-specific model-profile or agent prompt layers
+
 ## Execution blindness (EXEC001 — module import failure)
 
 - one or more Python packages fail to import at runtime due to errors invisible to static analysis
