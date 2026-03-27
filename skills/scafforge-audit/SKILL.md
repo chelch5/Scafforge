@@ -28,10 +28,14 @@ Read the repo state first.
 
 - Inspect workflow surfaces, docs, ticketing, and managed state
 - Inspect `diagnosis/` and `.opencode/meta/bootstrap-provenance.json` to determine whether this is a repeat audit after a prior repair attempt
+- Inspect `.opencode/state/invocation-log.jsonl` when it exists and treat coordinator-authored specialist artifacts there as suspect workflow evidence
 - If session logs or transcript exports were supplied, inspect them before current-state reconciliation and treat them as first-class temporal evidence
+- Treat coordinator narration inside supplied logs as candidate explanation, not ground truth; prefer concrete tool calls, tool outputs, tool errors, and current repo state when deciding what actually failed and why
 - Reconstruct transcript chronology explicitly when logs are supplied:
   - repeated lifecycle errors
   - workaround or bypass attempts
+  - broken or non-executable tool calls
+  - deterministic tool-execution defects where the tool surface itself mis-parses a valid request before the intended command starts
   - verification failures
   - later executable recovery evidence
   - later PASS claims or artifact publication
@@ -43,6 +47,13 @@ Do not convert an unverified claim into a canonical finding.
 If this is a repeat audit, explain why the previous audit-to-repair cycle failed before recommending another repair run.
 
 ### 2. Run the audit script
+
+The script is evidence extraction, not the whole diagnosis.
+For transcript-backed audits, the invoker must do all three steps in order:
+
+1. reconstruct chronology from the supplied logs before running the script
+2. run the script for deterministic candidate findings and repo evidence extraction
+3. reconcile the script output against the chronology and current repo truth before presenting final findings
 
 Run:
 
@@ -60,6 +71,7 @@ It produces:
 - the timestamped diagnosis pack in `<repo-root>/diagnosis/<YYYYMMDD-HHMMSS>/` or another writable host-selected output directory
 
 The script diagnoses only. It does not modify files.
+Treat every script finding as a candidate until the invoker has reconciled it against the supplied logs and the current repo.
 
 ### 3. Interpret findings against the repair contract
 
@@ -75,7 +87,12 @@ For each finding, identify:
 - whether the issue is workflow-layer drift, source-layer implementation drift, or review noise
 - whether the issue is a host prerequisite blocker such as missing `uv`, `pytest`, `rg`, git identity, or diagnosis-pack output permissions
 - when logs were supplied, whether the issue is a historical chronology failure, a current-state repo failure, or both
+- whether the script output needs to be amended, merged, downgraded, or rejected after chronology review
 - whether the repo-local workflow explainer, coordinator prompt, and tool contract agree on the same lifecycle semantics
+- whether deterministic execution tools such as `smoke_test` can actually execute repo-standard explicit overrides, including shell-style `KEY=VALUE cmd ...` forms
+- whether `smoke_test` honors ticket-specific acceptance commands before falling back to generic repo-level smoke detection
+- whether the resume truth hierarchy keeps `tickets/manifest.json` plus `.opencode/state/workflow-state.json` canonical over derived restart surfaces
+- whether lease ownership is consistently coordinator-owned or still split across worker prompts
 
 ### 4. Validate review findings when present
 
@@ -109,6 +126,7 @@ At minimum, the pack must capture:
 - supporting session logs or transcript exports when supplied
 - whether a previous diagnosis and repair cycle already failed, and which workflow-layer findings persisted
 - whether the transcript shows workflow thrash, bypass-seeking, or evidence-free PASS claims
+- whether the transcript shows softer dependency-override or “close it anyway” reasoning even without literal `bypass` wording
 - whether the transcript shows coordinator-authored specialist artifacts or a recovery run that clears an earlier verification failure
 - ownership classification for each issue: package defect, managed-surface drift, repo customization drift, or source bug
 - rejected or outdated external claims when review evidence was supplied
@@ -170,7 +188,10 @@ Keep those responsibilities separate.
 - Do not accept review claims without repo evidence
 - Do not let PR comments taint canonical state
 - Do not answer a supplied causal transcript question with current-state findings alone
+- Do not treat script output as self-sufficient when the user asked about a supplied transcript or session log
 - Do not treat repeated lifecycle retries, unsupported-stage probing, or PASS artifacts without executable proof as harmless transcript noise
+- Do not collapse a transcript-backed tool-execution defect into a generic test failure when the tool never launched the requested command
+- Do not collapse acceptance-command drift in `smoke_test` into a generic failing-test finding when the tool ran the wrong smoke scope
 - Keep workflow-layer findings separate from source-layer implementation findings
 - Fold review validation into this skill instead of reviving a separate bridge
 

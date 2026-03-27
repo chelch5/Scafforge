@@ -56,6 +56,7 @@ Rules:
 
 - when a canonical review artifact path is provided, write the full review body with `artifact_write` and then register it with `artifact_register`
 - do not claim that repo files were updated
+- if artifact creation is blocked because the ticket lease is missing, return that blocker to the team leader instead of trying to claim a lease yourself
 - verify that new or modified source files compile by running the appropriate compile check (for example `python -m py_compile`, `cargo check`, or `tsc --noEmit`)
 - verify that the primary module imports succeed
 - include compile or import-check output in the review artifact

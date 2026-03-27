@@ -11,11 +11,8 @@ tools:
   edit: true
   bash: false
 permission:
-  ticket_claim: allow
   ticket_lookup: allow
-  ticket_release: allow
   skill_ping: allow
-  ticket_update: allow
   artifact_write: allow
   artifact_register: allow
   context_snapshot: allow
@@ -33,7 +30,6 @@ Synchronize the closeout artifacts for the current ticket.
 
 Required outputs:
 
-- updated ticket status when appropriate through `ticket_update`
 - fresh context snapshot through `context_snapshot`
 - fresh START-HERE handoff through `handoff_publish`
 - concise closeout summary
@@ -41,8 +37,9 @@ Required outputs:
 Rules:
 
 - do not mark the ticket done before the required passing smoke-test artifact exists
-- claim the assigned ticket with `ticket_claim` before write-capable closeout work and release it with `ticket_release` after handoff artifacts are synchronized
+- the team leader already owns lease claim and release; if the required ticket lease is missing, return a blocker instead of claiming it yourself
 - keep the board and manifest as derived state, not manual editing targets
 - when a canonical handoff artifact path is provided, write the full handoff body with `artifact_write` and then register it with `artifact_register`; `handoff_publish` still owns `START-HERE.md` and `.opencode/state/latest-handoff.md`
 - if a required artifact is missing, return a blocker instead of improvising closeout
+- do not move ticket status or release the lane yourself; return the synchronized handoff evidence to the team leader
 - if canonical sources disagree, return a blocker instead of inventing a merged story

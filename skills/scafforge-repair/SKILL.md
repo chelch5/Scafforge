@@ -53,17 +53,29 @@ Use the narrowest repair that resolves the validated drift.
 - Use targeted project-specific regeneration when skills, agents, model-profile surfaces, or prompt hardening drifted
 - Route source-layer implementation bugs into ticketing instead of fixing product code here
 
-### 3. Run deterministic managed-surface repair when needed
+### 3. Run the public managed-repair runner when needed
 
-Preferred command:
+Public repair command:
+
+```sh
+python3 scripts/run_managed_repair.py <repo-root>
+```
+
+Use this as the default repair entrypoint. It runs the deterministic managed-surface refresh, emits the machine-readable repair plan and execution record, reruns verification, and fails closed when required follow-on stages still have not been executed.
+
+### 4. Use the deterministic engine as the internal refresh phase
+
+Deterministic engine command:
 
 ```sh
 python3 scripts/apply_repo_process_repair.py <repo-root>
 ```
 
 Use this when the repo needs one deliberate workflow-contract refresh rather than piecemeal edits.
+This deterministic repair flow regenerates `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` from canonical state, then records the verification outcome before publishing the updated restart narrative.
+Treat this command as the internal refresh engine, not as the whole user-facing repair contract. A repair run is still incomplete if required regeneration, ticket follow-up, or post-repair verification did not happen afterward.
 
-### 4. Continue into required project-specific regeneration
+### 5. Continue into required project-specific regeneration
 
 Deterministic replacement is not the whole repair when the audit shows `SKILL001`, `MODEL001`, prompt drift, or agent drift.
 
@@ -74,7 +86,7 @@ After the deterministic refresh:
 3. run `../agent-prompt-engineering/SKILL.md` whenever regenerated skills or agents changed prompt behavior, model defaults, or delegation rules
 
 Treat the following as one contract family and refresh them together when the audit shows lifecycle confusion or bypass-seeking:
-- `.opencode/tools/_workflow.ts`
+- `.opencode/lib/workflow.ts`
 - `.opencode/tools/ticket_update.ts`
 - `.opencode/tools/ticket_lookup.ts`
 - `.opencode/tools/artifact_write.ts`
@@ -84,9 +96,14 @@ Treat the following as one contract family and refresh them together when the au
 - `.opencode/skills/ticket-execution/SKILL.md`
 - the team-leader prompt and any related workflow prompts
 
+If the repair basis includes a transcript-backed `smoke_test` override failure, treat that as workflow-surface drift even when the later audit also reports `EXEC*` findings. Refresh the managed `smoke_test` tool so explicit overrides can launch the intended command before reclassifying anything as an environment or ticket failure.
+If the repair basis includes transcript-backed smoke-scope drift, refresh the managed `smoke_test` tool and related prompts so ticket acceptance commands are treated as canonical smoke scope before any generic full-suite or heuristic pytest fallback.
+
 Do not stop after tool replacement if the repo would still resume with placeholder local skills, stale model defaults, or older agent prompts.
 
-### 5. Apply remaining safe follow-up edits
+If the current runtime only executed the deterministic engine, report that explicitly as an incomplete repair pass instead of implying the full repair contract already ran.
+
+### 6. Apply remaining safe follow-up edits
 
 For each safe repair:
 
@@ -113,7 +130,7 @@ Intent-changing repair examples that must be escalated:
 - provider/model changes when they reflect a newer human decision for this repo rather than removal of deprecated package-managed defaults
 - rewriting curated human decisions
 
-### 6. Record provenance and process-version state
+### 7. Record provenance and process-version state
 
 Every repair pass must leave explicit state.
 
@@ -121,8 +138,10 @@ Every repair pass must leave explicit state.
 - update `.opencode/state/workflow-state.json`
 - record what changed and why
 - if the process layer materially changed, set `pending_process_verification: true`
+- regenerate the derived restart surfaces and record why they were regenerated
+- do not let repair alone publish a "ready for continued development" restart narrative before audit verification reruns
 
-### 7. Route backlog follow-up
+### 8. Route backlog follow-up
 
 When repair reveals unfinished or source-layer follow-up work:
 
@@ -131,7 +150,7 @@ When repair reveals unfinished or source-layer follow-up work:
 - keep this ticket generation inside the same repair run when the diagnosis already proved it is needed
 - keep repo-local review skills advisory only; they are not the canonical ticket owner
 
-### 8. Re-run verification
+### 9. Re-run verification
 
 After repairs, run:
 

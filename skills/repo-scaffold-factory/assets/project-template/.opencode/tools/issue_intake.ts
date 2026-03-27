@@ -17,7 +17,7 @@ import {
   syncWorkflowSelection,
   type DefectOutcome,
   writeText,
-} from "./_workflow"
+} from "../lib/workflow"
 
 function normalizeOptional(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined

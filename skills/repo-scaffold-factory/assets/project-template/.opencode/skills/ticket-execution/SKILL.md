@@ -24,6 +24,7 @@ Core rules:
 - resolve the ticket through `ticket_lookup` first and read `transition_guidance` before calling `ticket_update`
 - if `ticket_lookup.bootstrap.status` is not `ready`, stop normal lifecycle routing, run `environment_bootstrap`, then rerun `ticket_lookup` before any `ticket_update`
 - if bootstrap still is not `ready` after that rerun, return a blocker; do not improvise raw shell installation or lifecycle workarounds
+- the team leader claims and releases write leases; specialists work inside the already-active ticket lease and return a blocker if no lease exists
 - use `ticket_update` for stage movement; do not probe alternate stage or status values to see what passes
 - when `ticket_update` returns the same lifecycle error twice, stop and return a blocker instead of inventing a workaround
 - stage artifacts belong to the specialist for that stage:
@@ -32,6 +33,7 @@ Core rules:
   - reviewers write `review`
   - QA writes `qa`
   - `smoke_test` is the only legal producer of `smoke-test`
+- if the ticket acceptance criteria already define executable smoke commands, treat those commands as canonical smoke scope; let `smoke_test` infer them or pass the exact canonical command instead of improvising broader full-suite smoke or ad hoc narrower `test_paths`
 - if execution or validation cannot run, return a blocker or open risk; do not convert expected results into PASS evidence
 - do not claim that a command ran unless its output is present in the canonical artifact
 - slash commands are human entrypoints, not internal autonomous workflow tools
@@ -76,5 +78,5 @@ Process-change rules:
 Bootstrap gate:
 
 - bootstrap readiness is a pre-lifecycle execution gate for every validation-heavy stage
-- when bootstrap is `missing`, `failed`, or `stale`, the next required action is `environment_bootstrap`, not a stage transition
+- when bootstrap is `missing`, `failed`, or `stale`, the next required action is `environment_bootstrap`, not a stage transition or non-Wave-0 write claim
 - after bootstrap succeeds, rerun `ticket_lookup` and follow its refreshed `transition_guidance`

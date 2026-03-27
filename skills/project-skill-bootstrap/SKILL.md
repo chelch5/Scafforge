@@ -132,6 +132,14 @@ Write each updated skill to `.opencode/skills/<name>/SKILL.md`.
 Each skill MUST have YAML frontmatter with `name` and `description`.
 If `review-audit-bridge` needs heavier examples or review policy detail, place that material in `.opencode/skills/review-audit-bridge/references/` rather than bloating the skill body.
 
+## Output contract
+
+Before leaving this skill, confirm all of these are true:
+- every baseline local skill exists under `.opencode/skills/` and no baseline skill still contains scaffold placeholder text
+- `.opencode/skills/model-operating-profile/SKILL.md` exists and matches the selected downstream model profile
+- `.opencode/skills/ticket-execution/SKILL.md` matches the current lifecycle contract, artifact ownership rules, bootstrap-first routing, and blocker behavior
+- any synthesized skill is repo-specific, has valid frontmatter, and is justified by project evidence
+
 ## After this step
 
 Continue to `../opencode-team-bootstrap/SKILL.md` as directed by scaffold-kickoff.

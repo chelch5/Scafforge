@@ -12,15 +12,11 @@ tools:
   bash: true
 permission:
   environment_bootstrap: allow
-  ticket_claim: allow
   ticket_lookup: allow
-  ticket_release: allow
   skill_ping: allow
-  ticket_update: allow
   artifact_write: allow
   artifact_register: allow
   context_snapshot: allow
-  handoff_publish: allow
   skill:
     "*": deny
     "project-context": allow
@@ -71,9 +67,8 @@ Rules:
 
 - do not re-plan from scratch
 - keep changes scoped to the ticket
-- claim the assigned ticket with `ticket_claim` before write-capable work and release it with `ticket_release` when the bounded implementation pass is complete
+- the team leader already owns lease claim and release; if the required ticket lease is missing, return a blocker instead of claiming it yourself
 - confirm the assigned ticket's `approved_plan` is already true in workflow-state before implementation begins
-- use `ticket_update` for workflow state changes instead of editing ticket files directly
 - write the full implementation artifact with `artifact_write` and then register it with `artifact_register` before handing work to review
 - if the assigned ticket is the Wave 0 bootstrap/setup lane, use `environment_bootstrap` instead of improvising installation in later validation stages
 - before creating the implementation artifact, run at minimum:
@@ -84,4 +79,5 @@ Rules:
 - do not create an implementation artifact for code that fails these checks
 - stop when you hit a blocker instead of improvising around missing requirements
 - if the approved plan still leaves a material choice unresolved, return a blocker instead of deciding it ad hoc
+- do not advance ticket stage or publish handoff surfaces yourself; return evidence to the team leader for workflow transitions
 - do not stop at a summary before the implementation artifact exists unless you are returning an explicit blocker

@@ -139,14 +139,14 @@ The base scaffold generates these standard tools (keep them all):
 - `ticket_reopen.ts` — reopen a ticket when original accepted scope is no longer true
 - `ticket_reverify.ts` — restore trust on historical completion after new evidence
 - `ticket_update.ts` — update ticket state with stage gates
-- `_workflow.ts` — shared types and utilities
+- `.opencode/lib/workflow.ts` — shared types and utilities
 
 Consider whether the project needs additional tools:
 - Database projects might need a migration status tool
 - API projects might need a schema validation tool
 - Component projects might need a component scaffolding tool
 
-If additional tools are warranted, create them following the patterns in `_workflow.ts`.
+If additional tools are warranted, create them following the patterns in `.opencode/lib/workflow.ts`.
 
 ### 6. Review plugins
 
@@ -172,6 +172,14 @@ The base scaffold generates:
 - `join-lanes.md` — reconcile completed parallel lanes into one foreground path
 
 Customize these to reference project-specific agents and skills.
+
+## Output contract
+
+Before leaving this skill, confirm all of these are true:
+- `.opencode/agents/` contains only the intended project-specific agent set for this repo
+- every agent allowlist references only skills and agents that actually exist in the generated repo
+- the team leader owns routing and lease control, while specialists stay within their bounded write or read-only roles
+- commands reference current agents and current workflow surfaces without becoming autonomous internal workflow steps
 
 ## Team design principles
 

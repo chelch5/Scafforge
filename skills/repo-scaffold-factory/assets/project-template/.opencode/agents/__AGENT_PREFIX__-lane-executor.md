@@ -12,11 +12,8 @@ tools:
   bash: true
 permission:
   environment_bootstrap: allow
-  ticket_claim: allow
   ticket_lookup: allow
-  ticket_release: allow
   skill_ping: allow
-  ticket_update: allow
   artifact_write: allow
   artifact_register: allow
   context_snapshot: allow
@@ -69,11 +66,10 @@ Return:
 
 Rules:
 
-- claim the assigned ticket with `ticket_claim` before any write-capable work and release it with `ticket_release` before returning
+- the team leader already owns lease claim and release; if the required ticket lease is missing, return a blocker instead of claiming it yourself
 - do not claim a second lane or switch tickets inside the same assignment
 - keep changes within the assigned lane and allowed paths
 - confirm the assigned ticket's `approved_plan` is already true in workflow-state before implementation begins
-- use `ticket_update` for workflow state changes instead of editing ticket files directly
 - if the assigned ticket is the bootstrap/setup lane, use `environment_bootstrap` for prerequisite installation and verification
 - write the full implementation artifact with `artifact_write` and then register it with `artifact_register` before handing work to review
 - before creating the implementation artifact, run at minimum:
@@ -83,3 +79,4 @@ Rules:
 - include the command output in the implementation artifact
 - do not create an implementation artifact for code that fails these checks
 - stop when you hit a blocker instead of improvising around missing requirements
+- do not advance ticket stage or release the lane yourself; return evidence to the team leader for workflow transitions

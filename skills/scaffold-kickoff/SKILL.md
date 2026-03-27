@@ -109,6 +109,7 @@ Confirm that they agree on:
 - lifecycle stage order, especially `plan_review` before implementation and `smoke-test` before closeout
 - `ticket_lookup.transition_guidance` as the canonical next-step explainer
 - `smoke_test` as the only producer of smoke-test artifacts
+- explicit ticket acceptance smoke commands as the canonical smoke scope whenever the ticket already defines an executable smoke command
 - commands as human entrypoints only, with autonomous work staying inside agents, tools, plugins, and local skills
 
 If these surfaces disagree, fix the contract before handing off the repo.
@@ -146,6 +147,16 @@ When the task is diagnosis or review of an existing project:
 - a diagnosis pack when the run type is diagnosis/review
 - a handoff surface that another machine or session can resume from
 - a same-session workflow-contract conformance check showing docs, tools, prompts, and local workflow skills agree
+
+## Output contract
+
+Before `scaffold-kickoff` is considered complete, the run must leave all of these behind:
+- `docs/spec/CANONICAL-BRIEF.md` with resolved blocking decisions and backlog-readiness signal
+- the generated repo scaffold plus customized `.opencode/` layer required by the selected run type
+- explicit downstream completion or stop status for every required skill in the selected sequence
+- `tickets/manifest.json`, `tickets/BOARD.md`, and `.opencode/state/workflow-state.json` aligned on the same foreground ticket
+- `START-HERE.md` that is valid for immediate continuation without requiring a later audit or repair pass
+- a same-session contract-conformance check across docs, tools, prompts, and workflow skills for the generated repo
 
 ## Rules
 

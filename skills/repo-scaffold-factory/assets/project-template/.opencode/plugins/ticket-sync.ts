@@ -1,5 +1,5 @@
 import { type Plugin } from "@opencode-ai/plugin"
-import { writeJson } from "../tools/_workflow"
+import { writeJson } from "../lib/workflow"
 
 const SYNCED_TOOLS = new Set([
   "ticket_update",

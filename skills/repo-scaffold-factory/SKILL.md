@@ -95,6 +95,7 @@ After the script generates the base files, you MUST customize them with actual p
 - Complete Phase B in the same session as the scaffold render.
 - No generic placeholder text or template filler may remain in any handoff surface by the time generation reaches `handoff-brief`.
 - Generated process docs and workflow tools must name repo-local versus host-global prerequisites clearly enough that later audit and repair can classify environment blockers instead of silently skipping verification.
+- Generated workflow surfaces must preserve the contract that explicit ticket acceptance smoke commands are canonical smoke scope for `smoke_test`, not optional hints that can be replaced by heuristic pytest selection.
 
 ## After this step
 

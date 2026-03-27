@@ -1,15 +1,16 @@
 import { tool } from "@opencode-ai/plugin"
 import { stat } from "node:fs/promises"
 import {
+  canonicalizeRepoPath,
   defaultArtifactPath,
+  describeArtifactPathMismatch,
   getTicket,
   loadArtifactRegistry,
   loadManifest,
-  normalizeRepoPath,
   registerArtifactSnapshot,
   saveArtifactRegistry,
   saveManifest,
-} from "./_workflow"
+} from "../lib/workflow"
 
 export default tool({
   description: "Register an existing canonical planning, implementation, review, or QA artifact.",
@@ -23,23 +24,29 @@ export default tool({
   async execute(args) {
     const manifest = await loadManifest()
     const ticket = getTicket(manifest, args.ticket_id)
-    const resolvedPath = normalizeRepoPath(args.path)
+    const resolved = canonicalizeRepoPath(args.path)
     const expectedPath = defaultArtifactPath(ticket.id, args.stage, args.kind)
 
-    if (resolvedPath !== expectedPath) {
-      throw new Error(`Artifact path must be the canonical path: ${expectedPath}`)
+    if (resolved.path !== expectedPath) {
+      throw new Error(
+        describeArtifactPathMismatch({
+          provided_path: args.path,
+          expected_path: expectedPath,
+          mismatch_class: resolved.mismatch_class || "non_canonical",
+        }),
+      )
     }
 
-    const fileInfo = await stat(resolvedPath).catch(() => undefined)
+    const fileInfo = await stat(resolved.path).catch(() => undefined)
     if (!fileInfo?.isFile()) {
-      throw new Error(`Artifact file does not exist at ${resolvedPath}. Write it with artifact_write before registering it.`)
+      throw new Error(`Artifact file does not exist at ${resolved.path}. Write it with artifact_write before registering it.`)
     }
 
     const registry = await loadArtifactRegistry()
     const artifact = await registerArtifactSnapshot({
       ticket,
       registry,
-      source_path: resolvedPath,
+      source_path: resolved.path,
       kind: args.kind,
       stage: args.stage,
       summary: args.summary,

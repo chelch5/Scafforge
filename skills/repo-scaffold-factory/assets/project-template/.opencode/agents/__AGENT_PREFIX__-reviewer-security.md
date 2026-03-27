@@ -49,5 +49,6 @@ Rules:
 
 - when a canonical review artifact path is provided, write the full review body with `artifact_write` and then register it with `artifact_register`
 - do not claim that repo files were updated
+- if artifact creation is blocked because the ticket lease is missing, return that blocker to the team leader instead of trying to claim a lease yourself
 - if the implementation artifact or security-relevant context is missing, return a blocker instead of inferring safety
 - do not end with a summary-only response when findings or an approval signal are required

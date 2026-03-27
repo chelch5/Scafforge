@@ -1,5 +1,5 @@
 import { appendFile, copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { dirname, join, relative, resolve } from "node:path"
 import { createHash } from "node:crypto"
 
 export type OverlapRisk = "low" | "medium" | "high"
@@ -72,7 +72,18 @@ export type LaneLease = {
   owner_agent: string
   write_lock: boolean
   claimed_at: string
+  expires_at: string
   allowed_paths: string[]
+}
+
+export type RepairFollowOnState = {
+  required_stages: string[]
+  completed_stages: string[]
+  blocking_reasons: string[]
+  verification_passed: boolean
+  handoff_allowed: boolean
+  last_updated_at: string | null
+  process_version: number
 }
 
 export type WorkflowState = {
@@ -86,12 +97,14 @@ export type WorkflowState = {
   process_last_change_summary: string | null
   pending_process_verification: boolean
   parallel_mode: ParallelMode
+  repair_follow_on: RepairFollowOnState
   bootstrap: BootstrapState
   lane_leases: LaneLease[]
   state_revision: number
 }
 
 export type ArtifactRegistry = { version: number; artifacts: ArtifactRegistryEntry[] }
+export type ArtifactPathMismatchClass = "repo_absolute" | "out_of_repo" | "history_path" | "non_canonical"
 
 export type InvocationEvent = {
   event: string
@@ -108,7 +121,7 @@ export type InvocationEvent = {
   metadata?: unknown
 }
 
-type StartHereOptions = { nextAction?: string; backlogVerifierAgent?: string }
+type StartHereOptions = { nextAction?: string; backlogVerifierAgent?: string; handoffStatus?: string }
 type SaveDerivedSurfaceOptions = { refreshDerivedSurfaces?: boolean }
 type RestartSurfaceRenderInputs = {
   manifest?: Manifest
@@ -116,6 +129,14 @@ type RestartSurfaceRenderInputs = {
   root?: string
   contextNote?: string
   nextAction?: string
+  handoffStatus?: string
+}
+export type WorkflowBlocker = {
+  type: "BLOCKER"
+  reason_code: string
+  explanation: string
+  next_action_tool: string
+  next_action_args: Record<string, unknown>
 }
 export type NewTicketSpec = {
   id: string
@@ -133,10 +154,20 @@ export type NewTicketSpec = {
 }
 
 const TICKET_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
-const DEFAULT_PROCESS_VERSION = 5
+const DEFAULT_PROCESS_VERSION = 6
 const DEFAULT_TICKET_CONTRACT_VERSION = 3
+const DEFAULT_LEASE_TTL_MINUTES = 120
 const DEFAULT_BOOTSTRAP_STATE: BootstrapState = { status: "missing", last_verified_at: null, environment_fingerprint: null, proof_artifact: null }
 const DEFAULT_TICKET_WORKFLOW_STATE: TicketWorkflowState = { approved_plan: false, reopen_count: 0, needs_reverification: false }
+const DEFAULT_REPAIR_FOLLOW_ON_STATE = (processVersion = DEFAULT_PROCESS_VERSION): RepairFollowOnState => ({
+  required_stages: [],
+  completed_stages: [],
+  blocking_reasons: [],
+  verification_passed: true,
+  handoff_allowed: true,
+  last_updated_at: null,
+  process_version: processVersion,
+})
 
 export const COARSE_STATUSES = new Set(["todo", "ready", "plan_review", "in_progress", "blocked", "review", "qa", "smoke_test", "done"])
 export const LIFECYCLE_STAGES = new Set(["planning", "plan_review", "implementation", "review", "qa", "smoke-test", "closeout"])
@@ -168,6 +199,7 @@ export const STAGE_ALLOWED_STATUSES: Record<string, Set<string>> = {
   closeout: new Set(["done"]),
 }
 export const ARTIFACT_REGISTRY_ROOT = ".opencode/state/artifacts"
+export const ARTIFACT_HISTORY_ROOT = `${ARTIFACT_REGISTRY_ROOT}/history`
 export const LEGACY_REVIEW_STAGES = new Set(["code_review", "security_review"])
 export const START_HERE_MANAGED_START = "<!-- SCAFFORGE:START_HERE_BLOCK START -->"
 export const START_HERE_MANAGED_END = "<!-- SCAFFORGE:START_HERE_BLOCK END -->"
@@ -183,7 +215,53 @@ const EXECUTION_EVIDENCE_PATTERNS = [
 const INSPECTION_ONLY_PATTERNS = [/code inspection/i, /inspection only/i]
 
 export function rootPath(): string { return process.cwd() }
-export function normalizeRepoPath(pathValue: string): string { return pathValue.replace(/\\/g, "/").replace(/^\.\//, "") }
+export function normalizeRepoPath(pathValue: string): string { return pathValue.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+/g, "/") }
+function addMinutes(isoTimestamp: string, minutes: number): string {
+  return new Date(Date.parse(isoTimestamp) + minutes * 60_000).toISOString()
+}
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const normalized: string[] = []
+  for (const item of value) {
+    if (typeof item !== "string") continue
+    const trimmed = item.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    normalized.push(trimmed)
+  }
+  return normalized
+}
+function pathEscapesRepo(pathValue: string): boolean {
+  return pathValue === ".." || pathValue.startsWith("../")
+}
+export function canonicalizeRepoPath(pathValue: string, root = rootPath()): { path: string; mismatch_class: ArtifactPathMismatchClass | null } {
+  const trimmed = pathValue.trim()
+  if (!trimmed) return { path: "", mismatch_class: "non_canonical" }
+  if (/^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith("/")) {
+    const relativePath = normalizeRepoPath(relative(resolve(root), resolve(trimmed)))
+    if (!relativePath || pathEscapesRepo(relativePath)) {
+      return { path: normalizeRepoPath(trimmed), mismatch_class: "out_of_repo" }
+    }
+    if (relativePath.startsWith(`${ARTIFACT_HISTORY_ROOT}/`) || relativePath === ARTIFACT_HISTORY_ROOT) {
+      return { path: relativePath, mismatch_class: "history_path" }
+    }
+    return { path: relativePath, mismatch_class: "repo_absolute" }
+  }
+  const normalized = normalizeRepoPath(trimmed)
+  if (pathEscapesRepo(normalized)) return { path: normalized, mismatch_class: "out_of_repo" }
+  if (normalized.startsWith(`${ARTIFACT_HISTORY_ROOT}/`) || normalized === ARTIFACT_HISTORY_ROOT) {
+    return { path: normalized, mismatch_class: "history_path" }
+  }
+  return { path: normalized, mismatch_class: null }
+}
+export function describeArtifactPathMismatch(args: {
+  provided_path: string
+  expected_path: string
+  mismatch_class: ArtifactPathMismatchClass
+}): string {
+  return `Artifact path mismatch: ${JSON.stringify(args)}`
+}
 export function ticketsManifestPath(root = rootPath()): string { return join(root, "tickets", "manifest.json") }
 export function ticketsBoardPath(root = rootPath()): string { return join(root, "tickets", "BOARD.md") }
 export function workflowStatePath(root = rootPath()): string { return join(root, ".opencode", "state", "workflow-state.json") }
@@ -258,6 +336,13 @@ async function readText(path: string, fallback = ""): Promise<string> { try { re
 export async function writeJson(path: string, value: unknown): Promise<void> { await mkdir(dirname(path), { recursive: true }); await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf-8") }
 export async function appendJsonl(path: string, value: unknown): Promise<void> { await mkdir(dirname(path), { recursive: true }); await appendFile(path, `${JSON.stringify(value)}\n`, "utf-8") }
 export async function writeText(path: string, value: string): Promise<void> { await mkdir(dirname(path), { recursive: true }); await writeFile(path, value, "utf-8") }
+export function formatWorkflowBlocker(blocker: WorkflowBlocker): string { return `BLOCKER ${JSON.stringify(blocker)}` }
+export function throwWorkflowBlocker(blocker: WorkflowBlocker): never { throw new Error(formatWorkflowBlocker(blocker)) }
+export function ticketClaimBlockerArgs(ticketId: string, allowedPaths: string[] = []): Record<string, unknown> {
+  const args: Record<string, unknown> = { ticket_id: ticketId, owner_agent: "<team-leader-agent>", write_lock: true }
+  if (allowedPaths.length > 0) args.allowed_paths = allowedPaths
+  return args
+}
 
 function expectObject(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`)
@@ -305,6 +390,7 @@ function normalizeLaneLease(value: unknown): LaneLease | null {
   const lane = normalizeNullableString(lease.lane)
   const ownerAgent = normalizeNullableString(lease.owner_agent)
   const claimedAt = normalizeNullableString(lease.claimed_at)
+  const expiresAt = normalizeNullableString(lease.expires_at)
   if (!ticketId || !isValidTicketId(ticketId) || !lane || !ownerAgent || !claimedAt) return null
   return {
     ticket_id: ticketId,
@@ -312,6 +398,7 @@ function normalizeLaneLease(value: unknown): LaneLease | null {
     owner_agent: ownerAgent,
     write_lock: lease.write_lock !== false,
     claimed_at: claimedAt,
+    expires_at: expiresAt || addMinutes(claimedAt, DEFAULT_LEASE_TTL_MINUTES),
     allowed_paths: normalizeStringArray(lease.allowed_paths).map(normalizeRepoPath),
   }
 }
@@ -377,6 +464,7 @@ export async function loadWorkflowState(root = rootPath()): Promise<WorkflowStat
   const fallback: WorkflowState = {
     active_ticket: "UNKNOWN", stage: "planning", status: "todo", approved_plan: false, ticket_state: {}, process_version: DEFAULT_PROCESS_VERSION,
     process_last_changed_at: null, process_last_change_summary: null, pending_process_verification: false, parallel_mode: DEFAULT_PARALLEL_MODE,
+    repair_follow_on: DEFAULT_REPAIR_FOLLOW_ON_STATE(),
     bootstrap: { ...DEFAULT_BOOTSTRAP_STATE }, lane_leases: [], state_revision: 0,
   }
   const loaded = await readJson<unknown>(workflowStatePath(root), fallback)
@@ -386,17 +474,36 @@ export async function loadWorkflowState(root = rootPath()): Promise<WorkflowStat
   const ticketState = normalizeTicketStateMap(state.ticket_state)
   const legacyApprovedPlan = typeof state.approved_plan === "boolean" ? state.approved_plan : false
   if (isValidTicketId(activeTicket) && !ticketState[activeTicket]) ticketState[activeTicket] = { ...DEFAULT_TICKET_WORKFLOW_STATE, approved_plan: legacyApprovedPlan }
+  const processVersion = typeof state.process_version === "number" && state.process_version > 0 ? state.process_version : DEFAULT_PROCESS_VERSION
+  const repairFollowOnRaw = state.repair_follow_on
+  const repairFollowOnDefaults = DEFAULT_REPAIR_FOLLOW_ON_STATE(processVersion)
+  const repairFollowOnRecord = repairFollowOnRaw as Record<string, unknown> | undefined
+  const repairFollowOnProcessVersion = typeof repairFollowOnRecord?.process_version === "number" && repairFollowOnRecord.process_version > 0
+    ? Math.floor(repairFollowOnRecord.process_version)
+    : processVersion
+  const repairFollowOn = repairFollowOnRaw && typeof repairFollowOnRaw === "object" && !Array.isArray(repairFollowOnRaw)
+    ? {
+        required_stages: normalizeStringArray(repairFollowOnRecord?.required_stages),
+        completed_stages: normalizeStringArray(repairFollowOnRecord?.completed_stages),
+        blocking_reasons: normalizeStringArray(repairFollowOnRecord?.blocking_reasons),
+        verification_passed: repairFollowOnRecord?.verification_passed === true,
+        handoff_allowed: repairFollowOnRecord?.handoff_allowed === true,
+        last_updated_at: normalizeNullableString(repairFollowOnRecord?.last_updated_at),
+        process_version: repairFollowOnProcessVersion,
+      }
+    : repairFollowOnDefaults
   const workflow: WorkflowState = {
     active_ticket: activeTicket,
     stage: typeof state.stage === "string" && state.stage.trim() ? state.stage.trim() : fallback.stage,
     status: typeof state.status === "string" && state.status.trim() ? state.status.trim() : fallback.status,
     approved_plan: ticketState[activeTicket]?.approved_plan ?? legacyApprovedPlan,
     ticket_state: ticketState,
-    process_version: typeof state.process_version === "number" && state.process_version > 0 ? state.process_version : DEFAULT_PROCESS_VERSION,
+    process_version: processVersion,
     process_last_changed_at: normalizeNullableString(state.process_last_changed_at),
     process_last_change_summary: normalizeNullableString(state.process_last_change_summary),
     pending_process_verification: state.pending_process_verification === true,
     parallel_mode: normalizeParallelMode(state.parallel_mode),
+    repair_follow_on: repairFollowOn,
     bootstrap: state.bootstrap && typeof state.bootstrap === "object" && !Array.isArray(state.bootstrap)
       ? {
           status: (state.bootstrap as Record<string, unknown>).status === "ready" || (state.bootstrap as Record<string, unknown>).status === "stale" || (state.bootstrap as Record<string, unknown>).status === "failed" ? ((state.bootstrap as Record<string, unknown>).status as BootstrapStatus) : "missing",
@@ -408,6 +515,7 @@ export async function loadWorkflowState(root = rootPath()): Promise<WorkflowStat
     lane_leases: normalizeLaneLeases(state.lane_leases),
     state_revision: typeof state.state_revision === "number" && state.state_revision >= 0 ? Math.floor(state.state_revision) : 0,
   }
+  pruneExpiredLeases(workflow)
   workflow.bootstrap = await evaluateBootstrapState(workflow.bootstrap, root)
   return workflow
 }
@@ -572,6 +680,16 @@ export async function requireBootstrapReady(workflow: WorkflowState, root = root
 export function findTicketLease(workflow: WorkflowState, ticketId: string): LaneLease | undefined {
   return workflow.lane_leases.find((lease) => lease.ticket_id === ticketId)
 }
+export function leaseIsExpired(lease: LaneLease, now = Date.now()): boolean {
+  const expiresAt = Date.parse(lease.expires_at)
+  return Number.isFinite(expiresAt) && expiresAt <= now
+}
+export function pruneExpiredLeases(workflow: WorkflowState, now = Date.now()): LaneLease[] {
+  const expired = workflow.lane_leases.filter((lease) => leaseIsExpired(lease, now))
+  if (expired.length === 0) return []
+  workflow.lane_leases = workflow.lane_leases.filter((lease) => !leaseIsExpired(lease, now))
+  return expired
+}
 export function findConflictingLease(workflow: WorkflowState, ticket: Ticket): LaneLease | undefined {
   return workflow.lane_leases.find((lease) => lease.ticket_id !== ticket.id && lease.lane === ticket.lane && lease.write_lock)
 }
@@ -603,9 +721,10 @@ export function hasWriteLeaseForTicketPath(workflow: WorkflowState, ticketId: st
   return lease.allowed_paths.length === 0 || lease.allowed_paths.some((allowed) => pathCoveredByAllowedPath(normalized, allowed))
 }
 export function allowsPreBootstrapWriteClaim(workflow: WorkflowState, ticket: Ticket): boolean {
-  return workflow.bootstrap.status !== "ready" && workflow.lane_leases.length === 0 && ticket.wave === 0
+  return ticket.wave === 0
 }
 export function claimLaneLease(workflow: WorkflowState, ticket: Ticket, ownerAgent: string, allowedPaths: string[], writeLock = true): LaneLease {
+  pruneExpiredLeases(workflow)
   const otherLeases = workflow.lane_leases.filter((lease) => lease.ticket_id !== ticket.id)
   if (workflow.parallel_mode === "sequential" && otherLeases.length > 0) {
     throw new Error(`Workflow is in sequential mode. Release the active lease before claiming another lane for ${ticket.id}.`)
@@ -623,7 +742,16 @@ export function claimLaneLease(workflow: WorkflowState, ticket: Ticket, ownerAge
     throw new Error(`Ticket ${ticket.id} already has an active lease owned by ${existingLease.owner_agent}. Release it before changing owners.`)
   }
   workflow.lane_leases = workflow.lane_leases.filter((lease) => lease.ticket_id !== ticket.id)
-  const lease: LaneLease = { ticket_id: ticket.id, lane: ticket.lane, owner_agent: ownerAgent.trim(), write_lock: writeLock, claimed_at: new Date().toISOString(), allowed_paths: allowedPaths.map(normalizeRepoPath) }
+  const claimedAt = new Date().toISOString()
+  const lease: LaneLease = {
+    ticket_id: ticket.id,
+    lane: ticket.lane,
+    owner_agent: ownerAgent.trim(),
+    write_lock: writeLock,
+    claimed_at: claimedAt,
+    expires_at: addMinutes(claimedAt, DEFAULT_LEASE_TTL_MINUTES),
+    allowed_paths: allowedPaths.map(normalizeRepoPath),
+  }
   workflow.lane_leases.push(lease)
   return lease
 }
@@ -791,6 +919,23 @@ export function ticketNeedsProcessVerification(ticket: Ticket, workflow: Workflo
 export function ticketsNeedingProcessVerification(manifest: Manifest, workflow: WorkflowState): Ticket[] {
   return manifest.tickets.filter((ticket) => ticketNeedsProcessVerification(ticket, workflow))
 }
+export function hasPendingRepairFollowOn(workflow: WorkflowState): boolean {
+  return (
+    workflow.repair_follow_on.handoff_allowed !== true
+    && (
+      workflow.repair_follow_on.required_stages.length > 0
+      || workflow.repair_follow_on.blocking_reasons.length > 0
+      || workflow.repair_follow_on.verification_passed === false
+    )
+  )
+}
+export function nextRepairFollowOnStage(workflow: WorkflowState): string | null {
+  const completed = new Set(workflow.repair_follow_on.completed_stages)
+  return workflow.repair_follow_on.required_stages.find((stage) => !completed.has(stage)) || null
+}
+export function repairFollowOnBlockingReason(workflow: WorkflowState): string | null {
+  return workflow.repair_follow_on.blocking_reasons[0] || null
+}
 
 export function renderBoard(manifest: Manifest): string {
   const rows = manifest.tickets.map((ticket) => {
@@ -869,8 +1014,9 @@ export function renderContextSnapshot(manifest: Manifest, workflow: WorkflowStat
   const ticketState = getTicketWorkflowState(workflow, ticket.id)
   const leases = workflow.lane_leases.length > 0 ? workflow.lane_leases.map((lease) => `- ${lease.ticket_id}: ${lease.owner_agent} (${lease.lane})`).join("\n") : "- No active lane leases"
   const artifactLines = ticket.artifacts.length > 0 ? ticket.artifacts.slice(-5).map(renderArtifactLine).join("\n") : "- No artifacts recorded yet"
+  const repairNextStage = nextRepairFollowOnStage(workflow) || "none"
   const noteBlock = note ? `\n## Note\n\n${note}\n` : ""
-  return `# Context Snapshot\n\n## Project\n\n${manifest.project}\n\n## Active Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n- Approved plan: ${workflow.approved_plan ? "yes" : "no"}\n- Needs reverification: ${ticketState.needs_reverification ? "yes" : "no"}\n\n## Bootstrap\n\n- status: ${workflow.bootstrap.status}\n- last_verified_at: ${workflow.bootstrap.last_verified_at || "Not yet verified."}\n- proof_artifact: ${workflow.bootstrap.proof_artifact || "None"}\n\n## Process State\n\n- process_version: ${workflow.process_version}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- parallel_mode: ${workflow.parallel_mode}\n- state_revision: ${workflow.state_revision}\n\n## Lane Leases\n\n${leases}\n\n## Recent Artifacts\n\n${artifactLines}${noteBlock}`
+  return `# Context Snapshot\n\n## Project\n\n${manifest.project}\n\n## Active Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n- Approved plan: ${workflow.approved_plan ? "yes" : "no"}\n- Needs reverification: ${ticketState.needs_reverification ? "yes" : "no"}\n\n## Bootstrap\n\n- status: ${workflow.bootstrap.status}\n- last_verified_at: ${workflow.bootstrap.last_verified_at || "Not yet verified."}\n- proof_artifact: ${workflow.bootstrap.proof_artifact || "None"}\n\n## Process State\n\n- process_version: ${workflow.process_version}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- parallel_mode: ${workflow.parallel_mode}\n- state_revision: ${workflow.state_revision}\n\n## Repair Follow-On\n\n- required: ${hasPendingRepairFollowOn(workflow) ? "yes" : "no"}\n- next_required_stage: ${repairNextStage}\n- verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- handoff_allowed: ${workflow.repair_follow_on.handoff_allowed ? "true" : "false"}\n- last_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n\n## Lane Leases\n\n${leases}\n\n## Recent Artifacts\n\n${artifactLines}${noteBlock}`
 }
 export function renderStartHere(manifest: Manifest, workflow: WorkflowState, options: StartHereOptions = {}): string {
   const ticket = getTicket(manifest, workflow.active_ticket)
@@ -879,15 +1025,40 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, opt
   const reverification = manifest.tickets.filter((item) => getTicketWorkflowState(workflow, item.id).needs_reverification)
   const blockedDependents = blockedDependentTickets(manifest, ticket.id)
   const verifierLabel = options.backlogVerifierAgent ? `\`${options.backlogVerifierAgent}\`` : "the backlog verifier"
-  const recommendedAction = options.nextAction || (workflow.bootstrap.status !== "ready" ? "Run environment_bootstrap, register its proof artifact, then continue ticket execution." : workflow.pending_process_verification ? `Use the team leader to route ${verifierLabel} across done tickets whose trust predates the current process contract.` : blockedDependents.length > 0 && ticket.status !== "done" ? `Finish ${ticket.id} and its closeout proof before resuming dependent tickets: ${blockedDependents.map((item) => item.id).join(", ")}.` : "Continue the required internal lifecycle from the current ticket stage.")
+  const repairNextStage = nextRepairFollowOnStage(workflow)
+  const repairFollowOnPending = hasPendingRepairFollowOn(workflow)
+  const repairBlocker = repairFollowOnBlockingReason(workflow)
+  const handoffStatus = options.handoffStatus || (
+    workflow.bootstrap.status !== "ready"
+      ? "bootstrap recovery required"
+      : repairFollowOnPending
+        ? "repair follow-up required"
+      : workflow.pending_process_verification
+        ? "workflow verification pending"
+        : "ready for continued development"
+  )
+  const recommendedAction = options.nextAction || (
+    workflow.bootstrap.status !== "ready"
+      ? "Run environment_bootstrap, register its proof artifact, rerun ticket_lookup, and do not continue lifecycle work until bootstrap is ready."
+      : repairFollowOnPending
+        ? (repairBlocker || (repairNextStage ? `Complete the required repair follow-on stage \`${repairNextStage}\` before resuming normal ticket lifecycle work.` : "Complete the required repair follow-on stages before resuming normal ticket lifecycle work."))
+      : ticket.status !== "done"
+        ? `Keep ${ticket.id} as the foreground ticket and continue its lifecycle from ${ticket.stage}. Historical done-ticket reverification stays secondary until the active open ticket is resolved.`
+        : workflow.pending_process_verification
+          ? `Use the team leader to route ${verifierLabel} across done tickets whose trust predates the current process contract.`
+          : blockedDependents.length > 0
+            ? `Resume dependent tickets waiting on ${ticket.id}: ${blockedDependents.map((item) => item.id).join(", ")}.`
+            : "Continue the required internal lifecycle from the current ticket stage."
+  )
   const summarizeTickets = (items: Ticket[]) => items.length > 0 ? items.map((item) => item.id).join(", ") : "none"
   const riskLines = [
     workflow.bootstrap.status !== "ready" ? "- Environment validation can fail for setup reasons until bootstrap proof exists." : null,
+    repairFollowOnPending ? `- Repair follow-on remains incomplete${repairBlocker ? `: ${repairBlocker}` : "."}` : null,
     workflow.pending_process_verification ? "- Historical completion should not be treated as fully trusted until pending process verification is cleared." : null,
     suspectDone.length > 0 ? "- Some done tickets are not fully trusted yet; use the backlog verifier before relying on earlier closeout." : null,
     blockedDependents.length > 0 && ticket.status !== "done" ? `- Downstream tickets ${blockedDependents.map((item) => item.id).join(", ")} remain formally blocked until ${ticket.id} reaches done.` : null,
   ].filter((line): line is string => Boolean(line)).join("\n") || "- None recorded."
-  return `# START HERE\n\n${START_HERE_MANAGED_START}\n## What This Repo Is\n\n${manifest.project}\n\n## Current State\n\nThe repo is operating under the managed OpenCode workflow. Use the canonical state files below instead of memory or raw ticket prose.\n\n## Read In This Order\n\n1. README.md\n2. AGENTS.md\n3. docs/spec/CANONICAL-BRIEF.md\n4. docs/process/workflow.md\n5. tickets/BOARD.md\n6. tickets/manifest.json\n\n## Current Or Next Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Wave: ${ticket.wave}\n- Lane: ${ticket.lane}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n\n## Dependency Status\n\n- current_ticket_done: ${ticket.status === "done" ? "yes" : "no"}\n- dependent_tickets_waiting_on_current: ${summarizeTickets(blockedDependents)}\n\n## Generation Status\n\n- handoff_status: ready for continued development\n- process_version: ${workflow.process_version}\n- parallel_mode: ${workflow.parallel_mode}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- bootstrap_status: ${workflow.bootstrap.status}\n- bootstrap_proof: ${workflow.bootstrap.proof_artifact || "None"}\n\n## Post-Generation Audit Status\n\n- audit_or_repair_follow_up: ${reopened.length > 0 || suspectDone.length > 0 || reverification.length > 0 ? "follow-up required" : "none recorded"}\n- reopened_tickets: ${summarizeTickets(reopened)}\n- done_but_not_fully_trusted: ${summarizeTickets(suspectDone)}\n- pending_reverification: ${summarizeTickets(reverification)}\n\n## Known Risks\n\n${riskLines}\n\n## Next Action\n\n${recommendedAction}\n${START_HERE_MANAGED_END}\n`
+  return `# START HERE\n\n${START_HERE_MANAGED_START}\n## What This Repo Is\n\n${manifest.project}\n\n## Current State\n\nThe repo is operating under the managed OpenCode workflow. Use the canonical state files below instead of memory or raw ticket prose.\n\n## Read In This Order\n\n1. README.md\n2. AGENTS.md\n3. docs/spec/CANONICAL-BRIEF.md\n4. docs/process/workflow.md\n5. tickets/manifest.json\n6. tickets/BOARD.md\n\n## Current Or Next Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Wave: ${ticket.wave}\n- Lane: ${ticket.lane}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n\n## Dependency Status\n\n- current_ticket_done: ${ticket.status === "done" ? "yes" : "no"}\n- dependent_tickets_waiting_on_current: ${summarizeTickets(blockedDependents)}\n\n## Generation Status\n\n- handoff_status: ${handoffStatus}\n- process_version: ${workflow.process_version}\n- parallel_mode: ${workflow.parallel_mode}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- repair_follow_on_required: ${repairFollowOnPending ? "true" : "false"}\n- repair_follow_on_next_stage: ${repairNextStage || "none"}\n- repair_follow_on_verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- repair_follow_on_handoff_allowed: ${workflow.repair_follow_on.handoff_allowed ? "true" : "false"}\n- repair_follow_on_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n- bootstrap_status: ${workflow.bootstrap.status}\n- bootstrap_proof: ${workflow.bootstrap.proof_artifact || "None"}\n\n## Post-Generation Audit Status\n\n- audit_or_repair_follow_up: ${repairFollowOnPending || reopened.length > 0 || suspectDone.length > 0 || reverification.length > 0 ? "follow-up required" : "none recorded"}\n- reopened_tickets: ${summarizeTickets(reopened)}\n- done_but_not_fully_trusted: ${summarizeTickets(suspectDone)}\n- pending_reverification: ${summarizeTickets(reverification)}\n- repair_follow_on_blockers: ${workflow.repair_follow_on.blocking_reasons.length > 0 ? workflow.repair_follow_on.blocking_reasons.join(" | ") : "none"}\n\n## Known Risks\n\n${riskLines}\n\n## Next Action\n\n${recommendedAction}\n${START_HERE_MANAGED_END}\n`
 }
 function escapeRegExp(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
 export function mergeStartHere(existing: string, rendered: string): string {
@@ -919,8 +1090,10 @@ export async function refreshRestartSurfaces(inputs: RestartSurfaceRenderInputs 
   const renderedStartHere = renderStartHere(manifest, workflow, {
     nextAction: inputs.nextAction,
     backlogVerifierAgent,
+    handoffStatus: inputs.handoffStatus,
   })
   const existingStartHere = await readText(startHerePath(root))
   await writeText(startHerePath(root), mergeStartHere(existingStartHere, renderedStartHere))
   await writeText(contextSnapshotPath(root), renderContextSnapshot(manifest, workflow, inputs.contextNote))
+  await writeText(latestHandoffPath(root), renderedStartHere)
 }

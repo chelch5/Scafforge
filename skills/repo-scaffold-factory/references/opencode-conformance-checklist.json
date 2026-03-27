@@ -13,6 +13,7 @@
     "tickets/BOARD.md",
     ".opencode/state/workflow-state.json",
     ".opencode/state/context-snapshot.md",
+    ".opencode/state/latest-handoff.md",
     ".opencode/state/artifacts/registry.json",
     ".opencode/tools/environment_bootstrap.ts",
     ".opencode/tools/issue_intake.ts",

@@ -14,6 +14,8 @@ BOOTSTRAP = ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "bootstrap_r
 CHECKLIST = ROOT / "skills" / "repo-scaffold-factory" / "references" / "opencode-conformance-checklist.json"
 AUDIT = ROOT / "skills" / "scafforge-audit" / "scripts" / "audit_repo_process.py"
 REPAIR = ROOT / "skills" / "scafforge-repair" / "scripts" / "apply_repo_process_repair.py"
+PUBLIC_REPAIR = ROOT / "skills" / "scafforge-repair" / "scripts" / "run_managed_repair.py"
+REGENERATE = ROOT / "skills" / "scafforge-repair" / "scripts" / "regenerate_restart_surfaces.py"
 
 
 def run(command: list[str], cwd: Path, *, env: dict[str, str] | None = None) -> None:
@@ -32,21 +34,36 @@ def run_json(command: list[str], cwd: Path, *, env: dict[str, str] | None = None
         raise RuntimeError(f"Command did not return valid JSON: {' '.join(command)}\nSTDOUT:\n{result.stdout}") from exc
 
 
-def seed_uv_python_fixture(dest: Path) -> None:
-    (dest / "pyproject.toml").write_text(
-        "\n".join(
+def seed_uv_python_fixture(
+    dest: Path,
+    *,
+    dependency_block: list[str] | None = None,
+    include_pytest_tool_config: bool = False,
+) -> None:
+    dependency_lines = dependency_block or [
+        "[project.optional-dependencies]",
+        'dev = ["pytest>=8.0.0"]',
+    ]
+    pyproject_lines = [
+        "[project]",
+        'name = "smoke-python"',
+        'version = "0.1.0"',
+        'requires-python = ">=3.11"',
+        "",
+        *dependency_lines,
+        "",
+    ]
+    if include_pytest_tool_config:
+        pyproject_lines.extend(
             [
-                "[project]",
-                'name = "smoke-python"',
-                'version = "0.1.0"',
-                'requires-python = ">=3.11"',
-                "",
-                "[project.optional-dependencies]",
-                'dev = ["pytest>=8.0.0"]',
+                "[tool.pytest.ini_options]",
+                'pythonpath = ["src"]',
                 "",
             ]
         )
-        + "\n",
+
+    (dest / "pyproject.toml").write_text(
+        "\n".join(pyproject_lines) + "\n",
         encoding="utf-8",
     )
     (dest / "uv.lock").write_text("version = 1\n", encoding="utf-8")
@@ -64,6 +81,26 @@ def seed_uv_python_fixture(dest: Path) -> None:
         )
         + "\n",
         encoding="utf-8",
+    )
+
+
+def seed_dependency_group_python_fixture(dest: Path) -> None:
+    seed_uv_python_fixture(
+        dest,
+        dependency_block=[
+            "[dependency-groups]",
+            'dev = ["pytest>=8.0.0"]',
+        ],
+    )
+
+
+def seed_uv_native_dev_dependency_fixture(dest: Path) -> None:
+    seed_uv_python_fixture(
+        dest,
+        dependency_block=[
+            "[tool.uv.dev-dependencies]",
+            'pytest = ">=8.0.0"',
+        ],
     )
 
 
@@ -284,6 +321,74 @@ def seed_legacy_smoke_test_tool(dest: Path) -> None:
     )
 
 
+def seed_legacy_smoke_override_tool(dest: Path) -> None:
+    tool_path = dest / ".opencode" / "tools" / "smoke_test.ts"
+    tool_path.write_text(
+        "\n".join(
+            [
+                'import { tool } from "@opencode-ai/plugin"',
+                "",
+                "type CommandSpec = {",
+                "  argv: string[]",
+                "}",
+                "",
+                "async function detectCommands(args: { command_override?: string[] }): Promise<CommandSpec[]> {",
+                "  if (Array.isArray(args.command_override) && args.command_override.length > 0) {",
+                "    return [{ argv: args.command_override }]",
+                "  }",
+                '  return [{ argv: ["uv", "run", "python", "-m", "pytest"] }]',
+                "}",
+                "",
+                "export default tool({",
+                '  description: "legacy smoke override fixture",',
+                "  args: {",
+                "    command_override: tool.schema.array(tool.schema.string()).optional(),",
+                "  },",
+                "  async execute(args) {",
+                "    const commands = await detectCommands(args)",
+                "    return JSON.stringify(commands)",
+                "  },",
+                "})",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def seed_legacy_smoke_acceptance_tool(dest: Path) -> None:
+    tool_path = dest / ".opencode" / "tools" / "smoke_test.ts"
+    tool_path.write_text(
+        "\n".join(
+            [
+                'import { tool } from "@opencode-ai/plugin"',
+                "",
+                "type CommandSpec = {",
+                "  argv: string[]",
+                "}",
+                "",
+                "async function detectCommands(args: { test_paths?: string[] }): Promise<CommandSpec[]> {",
+                "  const testTargets = Array.isArray(args.test_paths) ? args.test_paths : []",
+                "  return [{ argv: ['uv', 'run', 'python', '-m', 'pytest', ...testTargets] }]",
+                "}",
+                "",
+                "export default tool({",
+                '  description: "legacy smoke acceptance fixture",',
+                "  args: {",
+                "    test_paths: tool.schema.array(tool.schema.string()).optional(),",
+                "  },",
+                "  async execute(args) {",
+                "    const commands = await detectCommands(args)",
+                "    return JSON.stringify(commands)",
+                "  },",
+                "})",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def seed_legacy_review_contract(dest: Path) -> None:
     workflow_doc = dest / "docs" / "process" / "workflow.md"
     workflow_text = workflow_doc.read_text(encoding="utf-8")
@@ -291,7 +396,7 @@ def seed_legacy_review_contract(dest: Path) -> None:
     workflow_text = workflow_text.replace("`plan_review`", "plan review")
     workflow_text = workflow_text.replace("the assigned ticket must already be in plan review and ", "")
     workflow_doc.write_text(workflow_text, encoding="utf-8")
-    workflow_tool = dest / ".opencode" / "tools" / "_workflow.ts"
+    workflow_tool = dest / ".opencode" / "lib" / "workflow.ts"
     workflow_tool.write_text(workflow_tool.read_text(encoding="utf-8").replace('"plan_review"', '"review"'), encoding="utf-8")
 
 
@@ -306,7 +411,7 @@ def seed_legacy_stage_transition_contract(dest: Path) -> None:
     )
     ticket_update.write_text(ticket_text, encoding="utf-8")
 
-    workflow_tool = dest / ".opencode" / "tools" / "_workflow.ts"
+    workflow_tool = dest / ".opencode" / "lib" / "workflow.ts"
     workflow_text = workflow_tool.read_text(encoding="utf-8")
     workflow_text = workflow_text.replace('export const LIFECYCLE_STAGES = new Set(["planning", "plan_review", "implementation", "review", "qa", "smoke-test", "closeout"])\n', "")
     workflow_text = workflow_text.replace(
@@ -506,6 +611,114 @@ def seed_missing_pytest_env(dest: Path) -> None:
     write_python_wrapper(dest / ".venv" / "bin" / "python", allow_pytest=False)
 
 
+def seed_pyproject_only_pytest_env(dest: Path) -> None:
+    seed_uv_python_fixture(dest, include_pytest_tool_config=True)
+    src_pkg = dest / "src" / "smoke_pkg"
+    src_pkg.mkdir(parents=True, exist_ok=True)
+    (src_pkg / "__init__.py").write_text("__all__ = ['ok']\n", encoding="utf-8")
+    write_python_wrapper(dest / ".venv" / "bin" / "python", allow_pytest=False)
+
+
+def seed_helper_tool_exposure(dest: Path) -> None:
+    helper_tool = dest / ".opencode" / "tools" / "_workflow.ts"
+    helper_tool.write_text(
+        "\n".join(
+            [
+                'export function _workflow_validateHandoffNextAction() {',
+                "  return null",
+                "}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def seed_helper_tool_failure_log(dest: Path) -> Path:
+    log_path = dest / "helper-tool-failure-log.md"
+    log_path.write_text(
+        "\n".join(
+            [
+                "Available tools: ticket_lookup, handoff_publish, _workflow_validateHandoffNextAction",
+                "",
+                "## Assistant (Smoke-Team-Leader · MiniMax-M2.7 · 2.0s)",
+                "",
+                "**Tool: _workflow_validateHandoffNextAction**",
+                "",
+                "**Input:**",
+                "```json",
+                '{"ticket_id":"SETUP-001"}',
+                "```",
+                "",
+                "**Error:**",
+                "```text",
+                "TypeError: def.execute is not a function",
+                "```",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
+def seed_smoke_override_failure_log(dest: Path) -> Path:
+    log_path = dest / "smoke-override-failure-log.md"
+    log_path.write_text(
+        "\n".join(
+            [
+                "## Assistant (Smoke-Team-Leader · MiniMax-M2.7 · 2.1s)",
+                "",
+                "**Tool: smoke_test**",
+                "",
+                "**Input:**",
+                "```json",
+                '{"ticket_id":"EXEC-008","scope":"ticket","command_override":["UV_CACHE_DIR=/tmp/uv-cache","uv","run","pytest","tests/hub/test_security.py","-q","--tb=no"]}',
+                "```",
+                "",
+                "**Output:**",
+                "```json",
+                '{"ticket_id":"EXEC-008","passed":false,"failure_classification":"environment","blocker":"Error: ENOENT: no such file or directory, posix_spawn \\"UV_CACHE_DIR=/tmp/uv-cache\\""}',
+                "```",
+                "",
+                "Artifact note: Error: ENOENT: no such file or directory, posix_spawn 'UV_CACHE_DIR=/tmp/uv-cache'",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
+def seed_smoke_acceptance_scope_log(dest: Path) -> Path:
+    log_path = dest / "smoke-acceptance-scope-log.md"
+    log_path.write_text(
+        "\n".join(
+            [
+                "Acceptance criterion:",
+                "`UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/hub/test_security.py -q --tb=no` exits 0.",
+                "",
+                "## Assistant (Smoke-Team-Leader · MiniMax-M2.7 · 5.0s)",
+                "",
+                "**Tool: smoke_test**",
+                "",
+                "**Input:**",
+                "```json",
+                '{"ticket_id":"EXEC-008","scope":"targeted","test_paths":["tests/hub/test_security.py"]}',
+                "```",
+                "",
+                "**Output:**",
+                "```json",
+                '{"ticket_id":"EXEC-008","passed":false,"failure_classification":"ticket","commands":[{"label":"python compileall","command":"uv run python -m compileall -q -x (^|/)(\\\\.git|\\\\.opencode)(/|$) .","exit_code":0,"duration_ms":100},{"label":"pytest","command":"uv run python -m pytest tests/hub/test_security.py","exit_code":1,"duration_ms":2500}]}',
+                "```",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
 def seed_pending_process_verification(dest: Path) -> None:
     manifest_path = dest / "tickets" / "manifest.json"
     workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
@@ -662,6 +875,56 @@ def seed_restart_surface_drift(dest: Path) -> None:
         ),
         encoding="utf-8",
     )
+    (dest / ".opencode" / "state" / "latest-handoff.md").write_text(
+        "\n".join(
+            [
+                "# START HERE",
+                "",
+                "<!-- SCAFFORGE:START_HERE_BLOCK START -->",
+                "## What This Repo Is",
+                "",
+                "Smoke Example",
+                "",
+                "## Current Or Next Ticket",
+                "",
+                f"- ID: {ticket['id']}",
+                f"- Title: {ticket['title']}",
+                f"- Wave: {ticket['wave']}",
+                f"- Lane: {ticket['lane']}",
+                f"- Stage: {ticket['stage']}",
+                "- Status: ready",
+                f"- Resolution: {ticket['resolution_state']}",
+                f"- Verification: {ticket['verification_state']}",
+                "",
+                "## Generation Status",
+                "",
+                "- handoff_status: ready for continued development",
+                f"- process_version: {workflow['process_version']}",
+                f"- parallel_mode: {workflow['parallel_mode']}",
+                "- pending_process_verification: false",
+                "- bootstrap_status: ready",
+                "- bootstrap_proof: None",
+                "",
+                "## Post-Generation Audit Status",
+                "",
+                "- audit_or_repair_follow_up: none recorded",
+                "- reopened_tickets: none",
+                "- done_but_not_fully_trusted: none",
+                "- pending_reverification: none",
+                "",
+                "## Known Risks",
+                "",
+                "- None recorded.",
+                "",
+                "## Next Action",
+                "",
+                "Continue the required internal lifecycle from the current ticket stage.",
+                "<!-- SCAFFORGE:START_HERE_BLOCK END -->",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
 
 def seed_bootstrap_guidance_drift(dest: Path) -> None:
@@ -701,6 +964,144 @@ def seed_bootstrap_guidance_drift(dest: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def seed_split_lease_guidance(dest: Path) -> None:
+    workflow_doc = dest / "docs" / "process" / "workflow.md"
+    workflow_doc.write_text(
+        workflow_doc.read_text(encoding="utf-8").replace(
+            "- the team leader owns `ticket_claim` and `ticket_release`; planning, implementation, review, QA, and optional handoff specialists write only under the already-active ticket lease\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+    implementer = next((dest / ".opencode" / "agents").glob("*implementer*.md"))
+    implementer.write_text(
+        implementer.read_text(encoding="utf-8").replace(
+            "  environment_bootstrap: allow\n",
+            "  environment_bootstrap: allow\n  ticket_claim: allow\n  ticket_release: allow\n",
+        ).replace(
+            "- the team leader already owns lease claim and release; if the required ticket lease is missing, return a blocker instead of claiming it yourself\n",
+            "- claim the assigned ticket with `ticket_claim` before write-capable work and release it with `ticket_release` when the bounded implementation pass is complete\n",
+        ),
+        encoding="utf-8",
+    )
+
+
+def seed_resume_truth_hierarchy_drift(dest: Path) -> None:
+    latest_handoff = dest / ".opencode" / "state" / "latest-handoff.md"
+    if latest_handoff.exists():
+        latest_handoff.unlink()
+
+    resume = dest / ".opencode" / "commands" / "resume.md"
+    resume.write_text(
+        resume.read_text(encoding="utf-8").replace(
+            "Resume from `tickets/manifest.json` and `.opencode/state/workflow-state.json` first. Use `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` only as derived restart surfaces that must agree with canonical state.\n",
+            "Resume from `START-HERE.md` first and use the other workflow files as support when needed.\n",
+        ).replace(
+            "- Treat the active open ticket as the primary lane even when historical reverification is pending.\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    workflow_doc = dest / "docs" / "process" / "workflow.md"
+    workflow_doc.write_text(
+        workflow_doc.read_text(encoding="utf-8").replace(
+            "- open active-ticket work remains the primary foreground lane; post-migration reverification is a follow-up path, not a reason to ignore an already-open active ticket\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+
+def seed_invocation_log_coordinator_artifacts(dest: Path) -> None:
+    log_path = dest / ".opencode" / "state" / "invocation-log.jsonl"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    events = [
+        {
+            "event": "tool.execute.before",
+            "timestamp": "2026-03-26T00:00:00Z",
+            "agent": "smoke-team-leader",
+            "tool": "artifact_write",
+            "args": {
+                "ticket_id": "SETUP-001",
+                "stage": "planning",
+                "kind": "planning",
+                "path": ".opencode/state/plans/setup-001-planning-plan.md",
+            },
+        },
+        {
+            "event": "tool.execute.before",
+            "timestamp": "2026-03-26T00:01:00Z",
+            "agent": "smoke-team-leader",
+            "tool": "artifact_write",
+            "args": {
+                "ticket_id": "SETUP-001",
+                "stage": "qa",
+                "kind": "qa",
+                "path": ".opencode/state/qa/setup-001-qa-qa.md",
+            },
+        },
+    ]
+    log_path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+
+
+def seed_open_active_ticket_with_pending_verification(dest: Path) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    active_ticket = manifest["tickets"][0]
+    active_ticket["stage"] = "implementation"
+    active_ticket["status"] = "in_progress"
+    active_ticket["resolution_state"] = "open"
+    active_ticket["verification_state"] = "suspect"
+    manifest["tickets"].append(
+        {
+            "id": "DONE-900",
+            "title": "Historical done ticket requiring reverification",
+            "wave": 9,
+            "lane": "repo-foundation",
+            "parallel_safe": False,
+            "overlap_risk": "high",
+            "stage": "closeout",
+            "status": "done",
+            "depends_on": [],
+            "summary": "Historical done ticket",
+            "acceptance": ["remains trusted after reverification"],
+            "decision_blockers": [],
+            "artifacts": [
+                {
+                    "kind": "smoke-test",
+                    "stage": "smoke-test",
+                    "path": ".opencode/state/smoke-tests/done-900-smoke-test-smoke-test.md",
+                    "summary": "legacy smoke proof",
+                    "created_at": "2026-03-20T00:00:00Z",
+                    "trust_state": "current",
+                }
+            ],
+            "resolution_state": "done",
+            "verification_state": "suspect",
+            "follow_up_ticket_ids": [],
+        }
+    )
+    workflow["active_ticket"] = active_ticket["id"]
+    workflow["stage"] = "implementation"
+    workflow["status"] = "in_progress"
+    workflow["pending_process_verification"] = True
+    workflow["process_last_changed_at"] = "2026-03-25T00:00:00Z"
+    workflow["bootstrap"] = {
+        "status": "ready",
+        "last_verified_at": "2026-03-26T00:00:00Z",
+        "environment_fingerprint": "synthetic-ready-bootstrap",
+        "proof_artifact": ".opencode/state/bootstrap/synthetic-ready-bootstrap.md",
+    }
+    proof_path = dest / ".opencode" / "state" / "bootstrap" / "synthetic-ready-bootstrap.md"
+    proof_path.parent.mkdir(parents=True, exist_ok=True)
+    proof_path.write_text("# Ready Bootstrap\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
 def seed_reverification_deadlock(dest: Path) -> None:
@@ -865,19 +1266,42 @@ def main() -> int:
         generated_ticket_update = (full_dest / ".opencode" / "tools" / "ticket_update.ts").read_text(encoding="utf-8")
         if '"plan_review"' not in generated_ticket_update:
             raise RuntimeError("Generated ticket_update.ts should expose the explicit plan_review status")
+        generated_bootstrap = (full_dest / ".opencode" / "tools" / "environment_bootstrap.ts").read_text(encoding="utf-8")
+        for expected in ("[project.optional-dependencies]", "[dependency-groups]", "[tool.uv.dev-dependencies]", "[tool.pytest.ini_options]"):
+            if expected not in generated_bootstrap:
+                raise RuntimeError(f"Generated environment_bootstrap.ts should detect {expected} when resolving Python bootstrap inputs")
+        if "defaultBootstrapProofPath" not in generated_bootstrap or "normalizeRepoPath" not in generated_bootstrap:
+            raise RuntimeError("Generated environment_bootstrap.ts should persist bootstrap proof through canonical artifact-path helpers")
         generated_smoke_test = (full_dest / ".opencode" / "tools" / "smoke_test.ts").read_text(encoding="utf-8")
-        if '["uv", "run", "python"]' not in generated_smoke_test:
-            raise RuntimeError("Generated smoke_test.ts should prefer uv-managed Python execution when uv.lock exists")
         if 'join(root, ".venv", "bin", "python")' not in generated_smoke_test:
             raise RuntimeError("Generated smoke_test.ts should support repo-local .venv Python execution")
+        if "[tool.pytest.ini_options]" not in generated_smoke_test:
+            raise RuntimeError("Generated smoke_test.ts should detect pyproject-only pytest configuration, not only tests/ or pytest.ini")
+        for expected in ("scope:", "test_paths:", "args.scope", "args.test_paths"):
+            if expected not in generated_smoke_test:
+                raise RuntimeError("Generated smoke_test.ts should expose scoped smoke inputs and thread them into execution")
+        if "defaultArtifactPath" not in generated_smoke_test or "normalizeRepoPath" not in generated_smoke_test:
+            raise RuntimeError("Generated smoke_test.ts should persist smoke artifacts through canonical artifact-path helpers")
         generated_stage_gate = (full_dest / ".opencode" / "plugins" / "stage-gate-enforcer.ts").read_text(encoding="utf-8")
         if 'const RESERVED_ARTIFACT_STAGES = new Set(["smoke-test"])' not in generated_stage_gate:
             raise RuntimeError("Generated stage-gate-enforcer.ts should reserve smoke-test artifacts to their owning tool")
         if "Generic artifact_write is not allowed for that stage." not in generated_stage_gate:
             raise RuntimeError("Generated stage-gate-enforcer.ts should block generic artifact_write for smoke-test")
-        generated_workflow = (full_dest / ".opencode" / "tools" / "_workflow.ts").read_text(encoding="utf-8")
+        if 'type: "BLOCKER"' not in generated_stage_gate or "missing_write_lease" not in generated_stage_gate:
+            raise RuntimeError("Generated stage-gate-enforcer.ts should emit structured blockers for missing lease conditions")
+        generated_workflow = (full_dest / ".opencode" / "lib" / "workflow.ts").read_text(encoding="utf-8")
+        if (full_dest / ".opencode" / "tools" / "_workflow.ts").exists():
+            raise RuntimeError("Generated helper workflow library should stay private under .opencode/lib instead of leaking a callable _workflow.ts tool")
+        if "tool({" in generated_workflow:
+            raise RuntimeError("Generated workflow library should remain helper-only and must not expose a model-callable tool surface")
         if "refreshRestartSurfaces" not in generated_workflow:
-            raise RuntimeError("Generated _workflow.ts should refresh derived restart surfaces after workflow mutations")
+            raise RuntimeError("Generated workflow.ts should refresh derived restart surfaces after workflow mutations")
+        if "latestHandoffPath" not in generated_workflow:
+            raise RuntimeError("Generated workflow.ts should own the latest-handoff restart surface")
+        if "Historical done-ticket reverification stays secondary until the active open ticket is resolved." not in generated_workflow:
+            raise RuntimeError("Generated workflow.ts should keep the active open ticket primary when process verification is pending")
+        if "Cannot publish dependency-readiness claims" not in generated_workflow or "Cannot publish causal claims" not in generated_workflow:
+            raise RuntimeError("Generated workflow.ts should truthfully gate handoff claims against canonical state and smoke evidence")
         generated_ticket_lookup = (full_dest / ".opencode" / "tools" / "ticket_lookup.ts").read_text(encoding="utf-8")
         if "transition_guidance" not in generated_ticket_lookup:
             raise RuntimeError("Generated ticket_lookup.ts should expose transition_guidance")
@@ -890,14 +1314,40 @@ def main() -> int:
             raise RuntimeError("Generated team leader prompt should forbid coordinator-authored specialist artifacts")
         if "If `ticket_lookup.bootstrap.status` is not `ready`, treat `environment_bootstrap` as the next required tool call" not in generated_team_leader:
             raise RuntimeError("Generated team leader prompt should make bootstrap-first routing explicit")
+        if "grant a write lease with `ticket_claim` before any specialist writes planning, implementation, review, QA, or handoff artifact bodies or makes code changes" not in generated_team_leader:
+            raise RuntimeError("Generated team leader prompt should own the lease claim path")
         generated_ticket_execution = (full_dest / ".opencode" / "skills" / "ticket-execution" / "SKILL.md").read_text(encoding="utf-8")
         if "slash commands are human entrypoints" not in generated_ticket_execution:
             raise RuntimeError("Generated ticket-execution skill should mark slash commands as human entrypoints only")
         if "if `ticket_lookup.bootstrap.status` is not `ready`, stop normal lifecycle routing, run `environment_bootstrap`, then rerun `ticket_lookup` before any `ticket_update`" not in generated_ticket_execution:
             raise RuntimeError("Generated ticket-execution skill should treat bootstrap readiness as a pre-lifecycle gate")
+        if "the team leader claims and releases write leases" not in generated_ticket_execution:
+            raise RuntimeError("Generated ticket-execution skill should encode the coordinator-owned lease model")
+        generated_resume = (full_dest / ".opencode" / "commands" / "resume.md").read_text(encoding="utf-8")
+        if "Resume from `tickets/manifest.json` and `.opencode/state/workflow-state.json` first." not in generated_resume:
+            raise RuntimeError("Generated /resume command should treat manifest and workflow-state as canonical")
+        if ".opencode/state/latest-handoff.md" not in generated_resume:
+            raise RuntimeError("Generated /resume command should mention latest-handoff as a derived restart surface")
+        generated_implementer = next((full_dest / ".opencode" / "agents").glob("*implementer*.md")).read_text(encoding="utf-8")
+        if "ticket_claim: allow" in generated_implementer or "ticket_release: allow" in generated_implementer:
+            raise RuntimeError("Generated implementer should not own ticket claim or release")
+        latest_handoff = (full_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        if "bootstrap recovery required" not in latest_handoff:
+            raise RuntimeError("Generated latest-handoff should be seeded from the managed restart narrative")
+        invocation_tracker = (full_dest / ".opencode" / "plugins" / "invocation-tracker.ts").read_text(encoding="utf-8")
+        if "agent: input.agent ?? null" not in invocation_tracker:
+            raise RuntimeError("Generated invocation-tracker.ts should record agent ownership on command and tool events")
         generated_handoff_publish = (full_dest / ".opencode" / "tools" / "handoff_publish.ts").read_text(encoding="utf-8")
         if "validateHandoffNextAction" not in generated_handoff_publish:
             raise RuntimeError("Generated handoff_publish.ts should validate custom next_action claims before publishing")
+        if generated_handoff_publish.find("const handoffBlocker = await validateHandoffNextAction") >= generated_handoff_publish.find("await refreshRestartSurfaces"):
+            raise RuntimeError("Generated handoff_publish.ts should validate next_action claims before refreshing restart surfaces")
+        generated_artifact_write = (full_dest / ".opencode" / "tools" / "artifact_write.ts").read_text(encoding="utf-8")
+        if "expectedPath = defaultArtifactPath" not in generated_artifact_write or "canonicalizeRepoPath(args.path)" not in generated_artifact_write:
+            raise RuntimeError("Generated artifact_write.ts should enforce canonical artifact paths")
+        generated_artifact_register = (full_dest / ".opencode" / "tools" / "artifact_register.ts").read_text(encoding="utf-8")
+        if "expectedPath = defaultArtifactPath" not in generated_artifact_register or "canonicalizeRepoPath(args.path)" not in generated_artifact_register:
+            raise RuntimeError("Generated artifact_register.ts should enforce canonical artifact paths")
 
         initial_audit = run_json([sys.executable, str(AUDIT), str(full_dest), "--format", "json", "--emit-diagnosis-pack"], ROOT)
         initial_codes = {finding["code"] for finding in initial_audit.get("findings", [])}
@@ -941,6 +1391,30 @@ def main() -> int:
         if "WFLOW011" not in bootstrap_guidance_codes:
             raise RuntimeError("A repo whose workflow surfaces do not route failed bootstrap to environment_bootstrap first should emit WFLOW011")
 
+        split_lease_dest = workspace / "split-lease-guidance"
+        shutil.copytree(full_dest, split_lease_dest)
+        seed_split_lease_guidance(split_lease_dest)
+        split_lease_audit = run_json([sys.executable, str(AUDIT), str(split_lease_dest), "--format", "json", "--no-diagnosis-pack"], ROOT)
+        split_lease_codes = {finding["code"] for finding in split_lease_audit.get("findings", [])}
+        if "WFLOW012" not in split_lease_codes:
+            raise RuntimeError("A repo whose prompts split lease ownership between coordinator and workers should emit WFLOW012")
+
+        resume_truth_dest = workspace / "resume-truth-hierarchy"
+        shutil.copytree(full_dest, resume_truth_dest)
+        seed_resume_truth_hierarchy_drift(resume_truth_dest)
+        resume_truth_audit = run_json([sys.executable, str(AUDIT), str(resume_truth_dest), "--format", "json", "--no-diagnosis-pack"], ROOT)
+        resume_truth_codes = {finding["code"] for finding in resume_truth_audit.get("findings", [])}
+        if "WFLOW013" not in resume_truth_codes:
+            raise RuntimeError("A repo whose resume surfaces treat derived handoff text as canonical should emit WFLOW013")
+
+        invocation_log_dest = workspace / "invocation-log-coordinator-artifacts"
+        shutil.copytree(full_dest, invocation_log_dest)
+        seed_invocation_log_coordinator_artifacts(invocation_log_dest)
+        invocation_log_audit = run_json([sys.executable, str(AUDIT), str(invocation_log_dest), "--format", "json", "--no-diagnosis-pack"], ROOT)
+        invocation_log_codes = {finding["code"] for finding in invocation_log_audit.get("findings", [])}
+        if "WFLOW014" not in invocation_log_codes:
+            raise RuntimeError("A repo whose invocation log shows coordinator-authored specialist artifacts should emit WFLOW014")
+
         restart_repair_dest = workspace / "restart-surface-repair"
         shutil.copytree(full_dest, restart_repair_dest)
         seed_restart_surface_drift(restart_repair_dest)
@@ -951,10 +1425,32 @@ def main() -> int:
         repaired_context_snapshot = (restart_repair_dest / ".opencode" / "state" / "context-snapshot.md").read_text(encoding="utf-8")
         if "- state_revision: 122" not in repaired_context_snapshot or "synthetic-team-leader" not in repaired_context_snapshot:
             raise RuntimeError("Repair should refresh context-snapshot.md with current revision and active lane-lease facts")
+        repaired_latest_handoff = (restart_repair_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        if "- bootstrap_status: failed" not in repaired_latest_handoff or "- pending_process_verification: true" not in repaired_latest_handoff:
+            raise RuntimeError("Repair should refresh latest-handoff.md from canonical workflow state after managed surface replacement")
         repaired_restart_audit = run_json([sys.executable, str(AUDIT), str(restart_repair_dest), "--format", "json", "--no-diagnosis-pack"], ROOT)
         repaired_restart_codes = {finding["code"] for finding in repaired_restart_audit.get("findings", [])}
         if "WFLOW010" in repaired_restart_codes:
-            raise RuntimeError("Repair should clear WFLOW010 by regenerating START-HERE.md and context-snapshot.md from canonical state")
+            raise RuntimeError("Repair should clear WFLOW010 by regenerating START-HERE.md, context-snapshot.md, and latest-handoff.md from canonical state")
+
+        public_repair_dest = workspace / "public-repair-runner"
+        shutil.copytree(full_dest, public_repair_dest)
+        public_repair = subprocess.run(
+            [sys.executable, str(PUBLIC_REPAIR), str(public_repair_dest), "--skip-verify"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if public_repair.returncode == 0:
+            raise RuntimeError("Public managed repair runner should fail closed until required follow-on stages are marked complete")
+        public_repair_payload = json.loads(public_repair.stdout)
+        if public_repair_payload["execution_record"]["handoff_allowed"]:
+            raise RuntimeError("Public managed repair runner must block handoff while required follow-on stages remain unexecuted")
+        if "handoff-brief" not in public_repair_payload["execution_record"]["required_follow_on_stages"]:
+            raise RuntimeError("Public managed repair runner should require handoff-brief before allowing restart handoff")
+        if not (public_repair_dest / ".opencode" / "meta" / "repair-execution.json").exists():
+            raise RuntimeError("Public managed repair runner should persist a machine-readable repair execution record")
 
         repeat_dest = workspace / "repeat-cycle"
         shutil.copytree(full_dest, repeat_dest)
@@ -1019,6 +1515,14 @@ def main() -> int:
         if "WFLOW008" not in pending_verification_codes:
             raise RuntimeError("A repo with pending_process_verification and affected done tickets should emit WFLOW008")
 
+        active_priority_dest = workspace / "active-ticket-priority"
+        shutil.copytree(full_dest, active_priority_dest)
+        seed_open_active_ticket_with_pending_verification(active_priority_dest)
+        run_json([sys.executable, str(REGENERATE), str(active_priority_dest)], ROOT)
+        active_priority_start_here = (active_priority_dest / "START-HERE.md").read_text(encoding="utf-8")
+        if "Keep SETUP-001 as the foreground ticket and continue its lifecycle from implementation." not in active_priority_start_here:
+            raise RuntimeError("Restart regeneration should keep an open active ticket primary even when backlog process verification is pending")
+
         reverification_deadlock_dest = workspace / "reverification-deadlock"
         shutil.copytree(full_dest, reverification_deadlock_dest)
         seed_reverification_deadlock(reverification_deadlock_dest)
@@ -1065,6 +1569,14 @@ def main() -> int:
         if "WFLOW001" not in legacy_smoke_codes:
             raise RuntimeError("A uv-shaped repo with a legacy system-python smoke_test tool should emit WFLOW001")
 
+        legacy_smoke_override_dest = workspace / "legacy-smoke-override"
+        shutil.copytree(full_dest, legacy_smoke_override_dest)
+        seed_legacy_smoke_override_tool(legacy_smoke_override_dest)
+        legacy_smoke_override_audit = run_json([sys.executable, str(AUDIT), str(legacy_smoke_override_dest), "--format", "json"], ROOT)
+        legacy_smoke_override_codes = {finding["code"] for finding in legacy_smoke_override_audit.get("findings", [])}
+        if "WFLOW016" not in legacy_smoke_override_codes:
+            raise RuntimeError("A repo whose smoke_test tool passes command_override directly into argv should emit WFLOW016")
+
         legacy_review_dest = workspace / "legacy-review"
         shutil.copytree(full_dest, legacy_review_dest)
         seed_legacy_review_contract(legacy_review_dest)
@@ -1104,6 +1616,48 @@ def main() -> int:
         team_leader_codes = {finding["code"] for finding in team_leader_audit.get("findings", [])}
         if "WFLOW006" not in team_leader_codes:
             raise RuntimeError("A repo whose team leader prompt omits transition guidance, stop rules, or command boundaries should emit WFLOW006")
+
+        helper_tool_dest = workspace / "helper-tool-exposure"
+        shutil.copytree(full_dest, helper_tool_dest)
+        seed_helper_tool_exposure(helper_tool_dest)
+        helper_tool_log = seed_helper_tool_failure_log(helper_tool_dest)
+        helper_tool_audit = run_json(
+            [sys.executable, str(AUDIT), str(helper_tool_dest), "--format", "json", "--supporting-log", str(helper_tool_log)],
+            ROOT,
+        )
+        helper_tool_codes = {finding["code"] for finding in helper_tool_audit.get("findings", [])}
+        if "WFLOW015" not in helper_tool_codes:
+            raise RuntimeError("A repo whose runtime exposes helper-only workflow internals or transcript-level missing-execute failures should emit WFLOW015")
+
+        smoke_override_log_dest = workspace / "smoke-override-log"
+        shutil.copytree(full_dest, smoke_override_log_dest)
+        smoke_override_log = seed_smoke_override_failure_log(smoke_override_log_dest)
+        smoke_override_audit = run_json(
+            [sys.executable, str(AUDIT), str(smoke_override_log_dest), "--format", "json", "--supporting-log", str(smoke_override_log)],
+            ROOT,
+        )
+        smoke_override_codes = {finding["code"] for finding in smoke_override_audit.get("findings", [])}
+        if "WFLOW016" not in smoke_override_codes:
+            raise RuntimeError("A transcript where smoke_test treats KEY=VALUE as the executable should emit WFLOW016")
+
+        legacy_smoke_acceptance_dest = workspace / "legacy-smoke-acceptance"
+        shutil.copytree(full_dest, legacy_smoke_acceptance_dest)
+        seed_legacy_smoke_acceptance_tool(legacy_smoke_acceptance_dest)
+        legacy_smoke_acceptance_audit = run_json([sys.executable, str(AUDIT), str(legacy_smoke_acceptance_dest), "--format", "json"], ROOT)
+        legacy_smoke_acceptance_codes = {finding["code"] for finding in legacy_smoke_acceptance_audit.get("findings", [])}
+        if "WFLOW017" not in legacy_smoke_acceptance_codes:
+            raise RuntimeError("A repo whose smoke_test tool ignores ticket acceptance commands should emit WFLOW017")
+
+        smoke_acceptance_log_dest = workspace / "smoke-acceptance-log"
+        shutil.copytree(full_dest, smoke_acceptance_log_dest)
+        smoke_acceptance_log = seed_smoke_acceptance_scope_log(smoke_acceptance_log_dest)
+        smoke_acceptance_audit = run_json(
+            [sys.executable, str(AUDIT), str(smoke_acceptance_log_dest), "--format", "json", "--supporting-log", str(smoke_acceptance_log)],
+            ROOT,
+        )
+        smoke_acceptance_codes = {finding["code"] for finding in smoke_acceptance_audit.get("findings", [])}
+        if "WFLOW017" not in smoke_acceptance_codes:
+            raise RuntimeError("A transcript where smoke_test ignores a ticket-defined smoke command should emit WFLOW017")
 
         coordinator_artifact_dest = workspace / "coordinator-artifacts"
         shutil.copytree(full_dest, coordinator_artifact_dest)
@@ -1162,8 +1716,8 @@ def main() -> int:
             raise RuntimeError("Repair verification should report pending_process_verification when the workflow state reopens backlog trust checks")
 
         repaired_workflow = json.loads((repair_dest / ".opencode" / "state" / "workflow-state.json").read_text(encoding="utf-8"))
-        if repaired_workflow.get("process_version") != 5:
-            raise RuntimeError("Repair should update workflow-state to process version 5")
+        if repaired_workflow.get("process_version") != 6:
+            raise RuntimeError("Repair should update workflow-state to process version 6")
         if repaired_workflow.get("pending_process_verification") is not True:
             raise RuntimeError("Repair should reopen post-migration verification")
         if not repaired_workflow.get("process_last_changed_at"):
@@ -1187,8 +1741,12 @@ def main() -> int:
         if "# Workflow" not in repaired_workflow_doc:
             raise RuntimeError("Repair should restore docs/process/workflow.md from the scaffold")
         repaired_bootstrap_tool = (repair_dest / ".opencode" / "tools" / "environment_bootstrap.ts").read_text(encoding="utf-8")
-        if 'const syncArgs = ["uv", "sync", "--locked"]' not in repaired_bootstrap_tool:
-            raise RuntimeError("Repair should restore the manager-aware environment_bootstrap surface")
+        for expected in ("[project.optional-dependencies]", "[dependency-groups]", "[tool.uv.dev-dependencies]", "[tool.pytest.ini_options]"):
+            if expected not in repaired_bootstrap_tool:
+                raise RuntimeError("Repair should restore the broadened environment_bootstrap surface for alternate dev layouts and pyproject-only pytest detection")
+        repaired_handoff = (repair_dest / ".opencode" / "tools" / "handoff_publish.ts").read_text(encoding="utf-8")
+        if "validateHandoffNextAction" not in repaired_handoff or repaired_handoff.find("const handoffBlocker = await validateHandoffNextAction") >= repaired_handoff.find("await refreshRestartSurfaces"):
+            raise RuntimeError("Repair should restore truthful handoff gating before restart-surface publication")
 
         print("Scafforge smoke test passed.")
         return 0

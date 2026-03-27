@@ -74,12 +74,14 @@ Generated repos use a structured truth hierarchy so state does not drift:
 | File | Owns |
 |------|------|
 | `docs/spec/CANONICAL-BRIEF.md` | Durable project facts, constraints, decisions, unresolved questions |
-| `tickets/manifest.json` | Machine-readable queue state |
+| `tickets/manifest.json` | Machine-readable queue state and registered artifact metadata |
 | `tickets/BOARD.md` | Derived human-readable board |
 | `.opencode/state/workflow-state.json` | Transient stage, approval, and process-version state |
-| `.opencode/state/artifacts/` | Stage proof and lifecycle evidence |
+| `.opencode/state/artifacts/` | Canonical artifact bodies, historical snapshots, and mirrored registry state |
 | `.opencode/meta/bootstrap-provenance.json` | Scaffold provenance, synthesis history, and repair history |
-| `START-HERE.md` | Derived restart surface |
+| `START-HERE.md` | Top-level derived restart surface |
+
+`START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` are derived restart surfaces. They must agree with `tickets/manifest.json` and `.opencode/state/workflow-state.json`; they do not outrank them.
 
 ## Package skills
 
@@ -105,7 +107,9 @@ Generation, audit, and repair are separate lifecycle stages.
 - `scafforge-audit` and `scafforge-repair` are later lifecycle tools, not part of the initial generation cycle.
 
 - `scafforge-audit` is read-only and always validates review evidence, runs the audit script, and emits the four-report diagnosis pack in the subject repo's `diagnosis/` folder.
-- `scafforge-repair` consumes the audit outputs, applies safe managed-surface repairs, continues into any required local-skill or agent regeneration, records provenance, and routes ticket follow-up when needed.
+- `scafforge-repair` is the public repair contract: it must apply safe managed-surface repairs, continue into any required local-skill or agent/prompt/ticket follow-up, record provenance, and route ticket follow-up when needed.
+- `skills/scafforge-repair/scripts/run_managed_repair.py` is the public fail-closed repair runner. It emits the machine-readable repair plan and execution record, reruns verification, and blocks handoff when required downstream stages still have not run.
+- `skills/scafforge-repair/scripts/apply_repo_process_repair.py` is the deterministic refresh engine for the first repair phase only. Invoking that script alone does not satisfy the full repair contract unless no downstream regeneration or ticket follow-up is required.
 - When the diagnosis identifies package defects or prevention gaps, the user manually copies the diagnosis pack into the Scafforge dev repo, package changes are implemented there, and repair happens only after returning to the subject repo with the updated package surface.
 
 PR comments, review threads, and check metadata are optional evidence only. They do not become canonical findings until the repo validates them.

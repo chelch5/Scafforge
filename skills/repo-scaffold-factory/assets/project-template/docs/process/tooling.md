@@ -25,11 +25,14 @@ Tracking surfaces:
 - `tickets/manifest.json` stores queue state and registered artifact metadata for each ticket
 - `.opencode/state/artifacts/registry.json` stores the cross-ticket artifact registry
 - `.opencode/state/workflow-state.json` stores transient approval and current-stage state
-- `START-HERE.md` and `.opencode/state/context-snapshot.md` are derived restart surfaces regenerated from the current manifest and workflow state
+- `.opencode/state/workflow-state.json` also owns canonical `repair_follow_on` state after managed repair; do not rely on sidecar repair records alone for restart routing
+- `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` are derived restart surfaces regenerated from the current manifest and workflow state
 - `.opencode/state/smoke-tests/` stores canonical deterministic smoke-test artifacts
 - `.opencode/plugins/invocation-tracker.ts` logs chat, command, and tool execution events
 - `.opencode/meta/bootstrap-provenance.json` records how the OpenCode layer was generated or retrofitted and owns the canonical workflow-contract version metadata
 - `.opencode/state/workflow-state.json` also records the active process version and whether post-migration verification is still pending
+- `.opencode/meta/repair-execution.json` is an audit trail only; restart routing must prefer `.opencode/state/workflow-state.json`
+- the team leader owns `ticket_claim` and `ticket_release`; specialists write only under the active ticket lease instead of claiming their own lane
 
 Review and diagnosis support:
 

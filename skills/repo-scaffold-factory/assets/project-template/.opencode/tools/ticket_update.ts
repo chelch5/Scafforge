@@ -3,11 +3,14 @@ import {
   describeAllowedStatusesForStage,
   getTicket,
   hasArtifact,
+  hasPendingRepairFollowOn,
   hasReviewArtifact,
   isPlanApprovedForTicket,
   loadManifest,
   loadWorkflowState,
   markTicketDone,
+  nextRepairFollowOnStage,
+  repairFollowOnBlockingReason,
   resolveRequestedTicketProgress,
   saveWorkflowBundle,
   setPlanApprovedForTicket,
@@ -17,7 +20,7 @@ import {
   validateImplementationArtifactEvidence,
   validateQaArtifactEvidence,
   validateSmokeTestArtifactEvidence,
-} from "./_workflow"
+} from "../lib/workflow"
 
 export default tool({
   description: "Update ticket stage, status, summary, and active ticket state.",
@@ -33,6 +36,14 @@ export default tool({
   async execute(args) {
     const manifest = await loadManifest()
     const workflow = await loadWorkflowState()
+    if (hasPendingRepairFollowOn(workflow)) {
+      const repairBlocker = repairFollowOnBlockingReason(workflow) || (
+        nextRepairFollowOnStage(workflow)
+          ? `Repair follow-on remains incomplete. Complete \`${nextRepairFollowOnStage(workflow)}\` before resuming normal ticket lifecycle mutations.`
+          : "Repair follow-on remains incomplete. Complete the required repair stages before resuming normal ticket lifecycle mutations."
+      )
+      throw new Error(repairBlocker)
+    }
     const ticket = getTicket(manifest, args.ticket_id)
     const wasDone = ticket.status === "done"
     const requested = resolveRequestedTicketProgress(ticket, { stage: args.stage, status: args.status })

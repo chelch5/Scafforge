@@ -44,6 +44,9 @@ After replacement:
 - update `.opencode/state/workflow-state.json` with the new process version metadata
 - source the canonical process version from `.opencode/meta/bootstrap-provenance.json` under `workflow_contract.process_version`
 - set `pending_process_verification: true`
+- regenerate `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md`
+- record restart-surface regeneration provenance and the post-repair verification outcome
+- rerun audit before any restart surface claims the repo is ready for continued development
 - route completed-ticket rechecks through the backlog verifier before permitting guarded follow-up ticket creation
 
 ## Migration order
@@ -100,19 +103,25 @@ BOOT findings mean the managed bootstrap layer is broken on the current machine.
 - surface missing prerequisites accurately; a failed bootstrap artifact must not report `Missing Prerequisites: None` when `pip` or `uv` is actually missing
 - rerun the subject repo's `environment_bootstrap` flow after the managed-surface refresh, then rerun `audit_repo_process.py`; source-layer EXEC tickets should proceed only after `BOOT001` is gone
 
-## Workflow repair actions (WFLOW001 / WFLOW002 / WFLOW003 / WFLOW004 / WFLOW005 / WFLOW006 / WFLOW007 / WFLOW010 / WFLOW011 / SESSION001 / SESSION002 / SESSION003 / SESSION004 / SESSION005)
+## Workflow repair actions (WFLOW001 / WFLOW002 / WFLOW003 / WFLOW004 / WFLOW005 / WFLOW006 / WFLOW007 / WFLOW010 / WFLOW011 / WFLOW012 / WFLOW013 / WFLOW014 / WFLOW015 / WFLOW016 / WFLOW017 / SESSION001 / SESSION002 / SESSION003 / SESSION004 / SESSION005)
 
 Workflow findings mean the generated repo contract itself is causing or misreporting the deadlock.
 
 - `WFLOW001`: refresh `.opencode/tools/smoke_test.ts` so Python repos prefer explicit project overrides, then `uv run`, then repo-local `.venv`, and only lastly system python
 - `WFLOW002`: refresh handoff publication so free-form next-action text cannot claim dependency unblocking or `not a code defect` while the manifest, workflow state, or stage artifacts disagree
 - `WFLOW003`: refresh the workflow contract so `plan_review` is distinct from post-implementation `review` across docs, tools, and prompts
-- `WFLOW004`: refresh `.opencode/tools/_workflow.ts`, `.opencode/tools/ticket_update.ts`, and `.opencode/plugins/stage-gate-enforcer.ts` together so lifecycle validation rejects unsupported stages and implementation is gated on lifecycle `stage`, not stale queue-label checks
+- `WFLOW004`: refresh `.opencode/lib/workflow.ts`, `.opencode/tools/ticket_update.ts`, and `.opencode/plugins/stage-gate-enforcer.ts` together so lifecycle validation rejects unsupported stages and implementation is gated on lifecycle `stage`, not stale queue-label checks
 - `WFLOW005`: refresh `.opencode/tools/artifact_write.ts`, `.opencode/tools/artifact_register.ts`, `.opencode/tools/ticket_lookup.ts`, and the stage-gate plugin together so smoke-test proof cannot be fabricated through generic artifact tools
 - `WFLOW006`: refresh the generated team-leader prompt so it routes from `ticket_lookup.transition_guidance`, stops on repeated lifecycle contradictions, leaves specialist artifacts to the owning lane, and treats slash commands as human entrypoints only
 - `WFLOW007`: refresh docs-handoff, workflow docs, and the stage-gate plugin together so optional canonical `handoff` artifacts remain writable by the docs lane while `handoff_publish` still owns restart surfaces
-- `WFLOW010`: regenerate `START-HERE.md` and `.opencode/state/context-snapshot.md` from canonical manifest/workflow state after every workflow mutation or repair; restart surfaces must report active bootstrap, pending verification, and lane-lease facts truthfully
+- `WFLOW010`: regenerate `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` from canonical manifest/workflow state after every workflow mutation or repair; restart surfaces must report active bootstrap, pending verification, lane-lease facts, and verification-gated handoff readiness truthfully
 - `WFLOW011`: refresh `ticket_lookup`, the team-leader prompt, and `ticket-execution` together so bootstrap not-ready state short-circuits normal lifecycle routing to `environment_bootstrap`, then forces a fresh `ticket_lookup` before stage changes resume
+- `WFLOW012`: refresh workflow docs, resume-facing commands, and worker prompts together so the team leader owns `ticket_claim` and `ticket_release`, specialists work under the active lease, and only Wave 0 setup work may claim before bootstrap is ready
+- `WFLOW013`: refresh `/resume`, repo guidance docs, and restart surfaces together so manifest + workflow-state stay canonical, `.opencode/state/latest-handoff.md` exists, and active open-ticket work stays primary over historical reverification
+- `WFLOW014`: treat coordinator-authored specialist artifacts from `.opencode/state/invocation-log.jsonl` as suspect evidence, regenerate the workflow skill and prompts, and rerun the affected stage through the owning specialist or deterministic tool
+- `WFLOW015`: keep shared workflow helpers private to imports (for example under `.opencode/lib/workflow.ts`), refresh managed tool registration so only executable tool modules are model-callable, and make transcript-backed missing-`execute` failures block package verification immediately
+- `WFLOW016`: refresh `.opencode/tools/smoke_test.ts` so `command_override` accepts both tokenized argv and one-item shell-style commands, strips leading `KEY=VALUE` entries into the spawn environment, and reports malformed overrides as configuration failures instead of generic environment noise
+- `WFLOW017`: refresh `.opencode/tools/smoke_test.ts`, `ticket-execution`, and the team-leader prompt together so smoke-test scope is inferred from explicit ticket acceptance commands before generic repo-level detection, and coordinators do not improvise broader or narrower smoke scope
 - `SESSION001`: when a supplied transcript proves the causal failure, carry that transcript into package-side audit fixes first; do not treat the resulting report as ordinary current-state repo drift
 - `SESSION002`: repeated lifecycle retries are not just noisy transcript details; treat them as evidence that the prompt, local workflow skill, or tool contract is underspecified
 - `SESSION003`: unsupported-stage or explicit workaround attempts mean the tool contract and prompt hardening must be refreshed together; do not rely on the next session to "just use it correctly"

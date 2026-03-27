@@ -1,5 +1,5 @@
 import { type Plugin } from "@opencode-ai/plugin"
-import { appendJsonl, invocationLogPath } from "../tools/_workflow"
+import { appendJsonl, invocationLogPath } from "../lib/workflow"
 
 export const InvocationTracker: Plugin = async (pluginInput) => {
   const path = invocationLogPath(pluginInput.directory)
@@ -23,6 +23,7 @@ export const InvocationTracker: Plugin = async (pluginInput) => {
         event: "command.execute.before",
         timestamp: timestamp(),
         session_id: input.sessionID,
+        agent: input.agent ?? null,
         command: input.command,
         arguments: input.arguments,
       })
@@ -32,6 +33,7 @@ export const InvocationTracker: Plugin = async (pluginInput) => {
         event: "tool.execute.before",
         timestamp: timestamp(),
         session_id: input.sessionID,
+        agent: input.agent ?? null,
         tool: input.tool,
         call_id: input.callID,
         args: output.args,
@@ -42,6 +44,7 @@ export const InvocationTracker: Plugin = async (pluginInput) => {
         event: "tool.execute.after",
         timestamp: timestamp(),
         session_id: input.sessionID,
+        agent: input.agent ?? null,
         tool: input.tool,
         call_id: input.callID,
         args: input.args,

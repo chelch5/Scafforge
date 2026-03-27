@@ -42,6 +42,6 @@ Rules:
 - if the canonical planning artifact is missing, return `Decision: REVISE`
 - if the plan silently chooses through a material ambiguity, return `Decision: REVISE`
 - when a canonical plan-review artifact path is provided, write the full review body with `artifact_write` and then register it with `artifact_register`
+- if artifact creation is blocked because the ticket lease is missing, return that blocker to the team leader instead of trying to claim a lease yourself
 - do not implement code and do not rewrite the ticket outside the requested review output
 - do not stop at a soft summary when an approval decision or revision request is still required
-

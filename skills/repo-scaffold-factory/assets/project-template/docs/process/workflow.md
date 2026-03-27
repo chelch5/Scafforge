@@ -29,7 +29,10 @@ Rules:
 - let `ticket_update` derive the matching queue status from the lifecycle stage unless a compatible status is explicitly required
 - stop on repeated lifecycle-tool contradictions; re-run `ticket_lookup`, inspect `transition_guidance`, and return a blocker instead of probing alternate stage/status values
 - treat bootstrap readiness as a pre-lifecycle execution gate; if `ticket_lookup.bootstrap.status` is not `ready`, run `environment_bootstrap` first, then rerun `ticket_lookup` before any stage change
+- only Wave 0 setup work may claim a write-capable lease before bootstrap is ready
+- the team leader owns `ticket_claim` and `ticket_release`; planning, implementation, review, QA, and optional handoff specialists write only under the already-active ticket lease
 - do not substitute raw shell package-manager commands for `environment_bootstrap` when bootstrap is missing, stale, or failed
+- treat coordinator-authored planning, implementation, review, or QA artifacts as suspect evidence that must be remediated instead of accepted as canonical progression
 
 ## Bounded parallel work
 
@@ -41,17 +44,21 @@ Rules:
   - no direct or indirect dependency exists between the tickets being advanced
   - the tickets do not target the same ownership lane for write-capable work at the same time
 - workflow-state keeps one active foreground ticket for tool enforcement, while `ticket_state` preserves per-ticket plan approval when the foreground ticket changes
+- open active-ticket work remains the primary foreground lane; post-migration reverification is a follow-up path, not a reason to ignore an already-open active ticket
 - keep one visible team leader by default and treat broader manager or section-leader hierarchies as advanced patterns for unusually large repos, not as a first-class scaffold profile
 
 ## Process-change verification
 
 - `.opencode/meta/bootstrap-provenance.json` owns the canonical `workflow_contract.process_version`; `.opencode/state/workflow-state.json` mirrors the active process state for day-to-day execution
 - if `.opencode/state/workflow-state.json` shows `pending_process_verification: true`, completed tickets are not treated as fully trusted yet
+- `repair_follow_on` in `.opencode/state/workflow-state.json` owns post-repair follow-on stage truth; do not infer that state from restart prose or from `.opencode/meta/repair-execution.json`
 - the affected done-ticket set is: done tickets whose latest smoke-test proof (or QA proof from an older contract) predates the current recorded process change, plus any done ticket without a registered `review` / `backlog-verification` artifact for the current process window
 - use `ticket_lookup` to inspect the affected done-ticket set before routing work to the backlog verifier
+- do not let pending process verification overwrite the active foreground lane when that active ticket is still open and its dependencies remain trusted
 - use `ticket_reverify` to restore trust on a closed done ticket after current backlog-verification or follow-up evidence exists; this trust-restoration path is allowed on closed tickets and does not require reopening them
 - create migration, remediation, or reverification follow-up tickets only through the guarded `ticket_create` tool and only from current registered evidence
 - treat post-audit and post-repair follow-up as a first-class workflow path when diagnosis or repair work identifies concrete next tickets
+- treat incomplete `repair_follow_on` as a fail-closed gate; do not continue ordinary ticket lifecycle work, dependency overrides, or closeout until the required repair stages and verification are complete
 
 ## Canonical ownership
 
@@ -60,7 +67,7 @@ Rules:
 - transient foreground stage and per-ticket approval state live in `.opencode/state/workflow-state.json`
 - artifact bodies live in the stage-specific directories under `.opencode/state/`
 - cross-stage artifact metadata lives in `.opencode/state/artifacts/registry.json`
-- restart guidance lives in `START-HERE.md` and `.opencode/state/context-snapshot.md`; both are derived views that should be regenerated from canonical state after workflow mutations
+- restart guidance lives in `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md`; all three are derived views that should be regenerated from canonical state after workflow mutations
 
 ## Stage Proof
 

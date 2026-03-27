@@ -7,7 +7,7 @@ import {
   loadWorkflowState,
   renderContextSnapshot,
   writeText,
-} from "./_workflow"
+} from "../lib/workflow"
 
 export default tool({
   description: "Write a concise context snapshot for the active or requested ticket.",

@@ -15,7 +15,7 @@ import {
   rootPath,
   saveWorkflowBundle,
   writeText,
-} from "./_workflow"
+} from "../lib/workflow"
 
 type PackageJson = {
   packageManager?: string
@@ -76,12 +76,41 @@ function hasSectionValue(text: string, section: string, key: string): boolean {
   return new RegExp(`^\\s*${key.replace("-", "\\-")}\\s*=\\s*(?:\\[|\\{)`, "m").test(blockMatch[1] || "")
 }
 
+// Supported Python dev layouts: [project.optional-dependencies], [dependency-groups], and [tool.uv.dev-dependencies].
 function hasPyprojectDevExtra(pyprojectText: string): boolean {
   return hasSectionValue(pyprojectText, "project.optional-dependencies", "dev")
 }
+function hasPyprojectDevDependencyGroup(pyprojectText: string): boolean {
+  return hasSectionValue(pyprojectText, "dependency-groups", "dev")
+}
+function hasPyprojectUvDevDependencies(pyprojectText: string): boolean {
+  return /\[tool\.uv(?:\.[^\]]+)?\][\s\S]*?^\s*dev-dependencies\s*=/m.test(pyprojectText) || /\[tool\.uv\.dev-dependencies\]/m.test(pyprojectText)
+}
 
+// Keep bootstrap/test-surface detection in parity with [tool.pytest.ini_options].
 function hasPyprojectPytestConfig(pyprojectText: string): boolean {
   return /\[tool\.pytest\.ini_options\]/m.test(pyprojectText)
+}
+function hasPyprojectRuffConfig(pyprojectText: string): boolean {
+  return /\[tool\.ruff(?:\.[^\]]+)?\]/m.test(pyprojectText)
+}
+function detectUvSyncDependencyArgs(pyprojectText: string): string[] {
+  if (hasPyprojectDevExtra(pyprojectText)) {
+    return ["--extra", "dev"]
+  }
+  if (hasPyprojectDevDependencyGroup(pyprojectText)) {
+    return ["--group", "dev"]
+  }
+  if (hasPyprojectUvDevDependencies(pyprojectText)) {
+    return ["--all-extras"]
+  }
+  return []
+}
+function hasPythonTestSurface(root: string, pyprojectText: string): boolean {
+  return existsSync(join(root, "tests")) || existsSync(join(root, "pytest.ini")) || hasPyprojectPytestConfig(pyprojectText)
+}
+function hasRuffSurface(root: string, pyprojectText: string): boolean {
+  return existsSync(join(root, "ruff.toml")) || existsSync(join(root, ".ruff.toml")) || hasPyprojectRuffConfig(pyprojectText)
 }
 
 async function detectPythonCommand(root: string): Promise<string | undefined> {
@@ -110,9 +139,7 @@ async function detectUvPythonBootstrap(root: string, pyprojectText: string): Pro
     },
   ]
   const syncArgs = ["uv", "sync", "--locked"]
-  if (hasPyprojectDevExtra(pyprojectText)) {
-    syncArgs.push("--extra", "dev")
-  }
+  syncArgs.push(...detectUvSyncDependencyArgs(pyprojectText))
   commands.push({
     label: "uv sync",
     argv: syncArgs,
@@ -123,12 +150,18 @@ async function detectUvPythonBootstrap(root: string, pyprojectText: string): Pro
     argv: [join(root, ".venv", "bin", "python"), "--version"],
     reason: "Verify the repo-local Python interpreter is available after bootstrap.",
   })
-  const hasTests = existsSync(join(root, "tests")) || existsSync(join(root, "pytest.ini")) || hasPyprojectPytestConfig(pyprojectText)
-  if (hasTests) {
+  if (hasPythonTestSurface(root, pyprojectText)) {
     commands.push({
       label: "project pytest ready",
       argv: [join(root, ".venv", "bin", "pytest"), "--version"],
       reason: "Verify the repo-local pytest executable is available for validation work.",
+    })
+  }
+  if (hasRuffSurface(root, pyprojectText)) {
+    commands.push({
+      label: "project ruff ready",
+      argv: [join(root, ".venv", "bin", "ruff"), "--version"],
+      reason: "Verify the repo-local ruff executable is still available after bootstrap sync.",
     })
   }
   return { commands, missingPrerequisites: [] }
@@ -191,12 +224,18 @@ async function detectPipPythonBootstrap(root: string, pyprojectText: string): Pr
     reason: "Verify the repo-local Python interpreter is available after bootstrap.",
   })
 
-  const hasTests = existsSync(join(root, "tests")) || existsSync(join(root, "pytest.ini")) || hasPyprojectPytestConfig(pyprojectText)
-  if (hasTests) {
+  if (hasPythonTestSurface(root, pyprojectText)) {
     commands.push({
       label: "project pytest ready",
       argv: [join(root, ".venv", "bin", "pytest"), "--version"],
       reason: "Verify the repo-local pytest executable is available for validation work.",
+    })
+  }
+  if (hasRuffSurface(root, pyprojectText)) {
+    commands.push({
+      label: "project ruff ready",
+      argv: [join(root, ".venv", "bin", "ruff"), "--version"],
+      reason: "Verify the repo-local ruff executable is available for lint/runtime validation work.",
     })
   }
 
@@ -365,6 +404,7 @@ export default tool({
   description: "Install and verify project/runtime/test dependencies, then record bootstrap proof for the repo environment.",
   args: {
     ticket_id: tool.schema.string().describe("Optional ticket id that owns the bootstrap proof artifact. Defaults to the active ticket.").optional(),
+    recovery_mode: tool.schema.boolean().describe("Whether this bootstrap run is being used to recover a blocked planning or lease state.").optional(),
   },
   async execute(args) {
     const manifest = await loadManifest()
@@ -393,7 +433,9 @@ export default tool({
     const note = missingPrerequisites.size > 0
       ? `Bootstrap failed because required bootstrap prerequisites are missing: ${[...missingPrerequisites].join(", ")}. Install or seed the missing toolchain pieces, then rerun environment_bootstrap.`
       : passed
-        ? "Dependency installation and bootstrap verification completed successfully."
+        ? args.recovery_mode
+          ? "Dependency installation and bootstrap verification completed successfully in bootstrap-recovery mode."
+          : "Dependency installation and bootstrap verification completed successfully."
         : "Bootstrap stopped on the first failing installation or readiness command. Inspect the captured output and fix the prerequisite or dependency error before smoke tests."
     const body = renderArtifact(ticket.id, fingerprint, results, [...missingPrerequisites], passed, note)
     const canonicalPath = normalizeRepoPath(defaultBootstrapProofPath(ticket.id))
@@ -422,6 +464,7 @@ export default tool({
       {
         ticket_id: ticket.id,
         bootstrap_status: workflow.bootstrap.status,
+        recovery_mode: args.recovery_mode === true,
         proof_artifact: artifact.path,
         environment_fingerprint: fingerprint,
         missing_prerequisites: [...missingPrerequisites],
