@@ -10,19 +10,20 @@
       "needs_reverification": false
     }
   },
-  "process_version": 6,
+  "process_version": 7,
   "process_last_changed_at": null,
   "process_last_change_summary": null,
   "pending_process_verification": false,
   "parallel_mode": "sequential",
   "repair_follow_on": {
+    "outcome": "clean",
     "required_stages": [],
     "completed_stages": [],
     "blocking_reasons": [],
     "verification_passed": true,
     "handoff_allowed": true,
     "last_updated_at": null,
-    "process_version": 6
+    "process_version": 7
   },
   "bootstrap": {
     "status": "missing",

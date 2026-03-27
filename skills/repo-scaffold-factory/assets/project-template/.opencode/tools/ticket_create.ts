@@ -18,7 +18,7 @@ function normalizeOptional(value: string | undefined): string | undefined {
 }
 
 export default tool({
-  description: "Create a new ticket or linked follow-up ticket, including post-completion issue remediation tickets.",
+  description: "Create a new ticket or linked follow-up ticket, including process-verification, post-completion issue, and open-parent split follow-up tickets.",
   args: {
     id: tool.schema.string().describe("New ticket id."),
     title: tool.schema.string().describe("New ticket title."),
@@ -31,7 +31,7 @@ export default tool({
     parallel_safe: tool.schema.boolean().describe("Whether the ticket can be advanced in a parallel lane when dependencies are satisfied.").optional(),
     overlap_risk: tool.schema.enum(["low", "medium", "high"]).describe("Expected overlap risk with other tickets.").optional(),
     source_ticket_id: tool.schema.string().describe("Optional source ticket that this ticket extends or remediates.").optional(),
-    source_mode: tool.schema.enum(["process_verification", "post_completion_issue", "net_new_scope"]).describe("Why this ticket is being created.").optional(),
+    source_mode: tool.schema.enum(["process_verification", "post_completion_issue", "net_new_scope", "split_scope"]).describe("Why this ticket is being created.").optional(),
     evidence_artifact_path: tool.schema.string().describe("Optional registered artifact path that justifies creation of this linked ticket.").optional(),
     activate: tool.schema.boolean().describe("Whether to make the new ticket active immediately.").optional(),
   },
@@ -72,6 +72,10 @@ export default tool({
       }
       sourceTicket = getTicket(manifest, sourceTicketId)
 
+      if (ticket.depends_on.includes(sourceTicket.id)) {
+        throw new Error(`Ticket ${ticket.id} cannot depend on its source ticket ${sourceTicket.id}; reconcile lineage or split scope instead of creating a contradictory dependency.`)
+      }
+
       if (sourceMode === "process_verification") {
         if (!workflow.pending_process_verification) {
           throw new Error("process_verification ticket creation is only available while pending_process_verification is true.")
@@ -97,7 +101,7 @@ export default tool({
       }
 
       if (sourceMode === "post_completion_issue") {
-        if (!["done", "reopened", "superseded"].includes(sourceTicket.resolution_state)) {
+        if (sourceTicket.status !== "done" && !["done", "superseded"].includes(sourceTicket.resolution_state)) {
           throw new Error(`Source ticket ${sourceTicket.id} must already represent completed historical scope before creating a post-completion issue ticket.`)
         }
         if (!evidenceArtifactPath) {
@@ -108,15 +112,30 @@ export default tool({
           throw new Error(`Source ticket ${sourceTicket.id} does not reference the evidence artifact ${evidenceArtifactPath}.`)
         }
       }
+
+      if (sourceMode === "split_scope") {
+        if (!["open", "reopened"].includes(sourceTicket.resolution_state) || sourceTicket.status === "done") {
+          throw new Error(`Source ticket ${sourceTicket.id} must remain open or reopened before creating a split-scope child ticket.`)
+        }
+      }
     }
 
     manifest.tickets.push(ticket)
     if (sourceTicket && !sourceTicket.follow_up_ticket_ids.includes(ticket.id)) {
       sourceTicket.follow_up_ticket_ids.push(ticket.id)
     }
+    if (sourceTicket && sourceMode === "split_scope") {
+      const splitNote = `Split scope delegated to follow-up ticket ${ticket.id}. Keep the parent open and non-foreground until the child work lands.`
+      if (!sourceTicket.decision_blockers.includes(splitNote)) {
+        sourceTicket.decision_blockers.push(splitNote)
+      }
+    }
 
     setPlanApprovedForTicket(workflow, ticket.id, false)
-    if (args.activate) {
+    const activateNewTicket = typeof args.activate === "boolean"
+      ? args.activate
+      : sourceMode === "split_scope" && sourceTicket?.id === manifest.active_ticket
+    if (activateNewTicket) {
       manifest.active_ticket = ticket.id
     }
     syncWorkflowSelection(workflow, manifest)
@@ -131,7 +150,7 @@ export default tool({
         source_ticket_id: sourceTicket?.id || null,
         source_mode: sourceMode,
         evidence_artifact_path: evidenceArtifactPath || null,
-        activated: Boolean(args.activate),
+        activated: activateNewTicket,
       },
       null,
       2,

@@ -7,7 +7,7 @@ __PROJECT_NAME__
 
 ## Current State
 
-The repo is operating with a ticketed OpenCode workflow that separates historical completion from current trust and defaults to a single-lane-first execution posture.
+The repo is operating under the managed OpenCode workflow. Use the canonical state files below instead of memory or raw ticket prose, and keep the single-lane-first execution posture unless bounded parallel work is explicitly justified.
 
 ## Read In This Order
 
@@ -26,26 +26,29 @@ The repo is operating with a ticketed OpenCode workflow that separates historica
 - Lane: repo-foundation
 - Stage: planning
 - Status: todo
-- Resolution state: open
-- Verification state: suspect
-- Parallel safe: no
+- Resolution: open
+- Verification: suspect
+
+## Dependency Status
+
+- current_ticket_done: no
+- dependent_tickets_waiting_on_current: none
+- split_child_tickets: none
 
 ## Generation Status
 
 - handoff_status: bootstrap recovery required
-- process_version: 6
+- process_version: 7
 - parallel_mode: sequential
 - pending_process_verification: false
+- repair_follow_on_outcome: clean
 - repair_follow_on_required: false
 - repair_follow_on_next_stage: none
 - repair_follow_on_verification_passed: true
-- repair_follow_on_handoff_allowed: true
 - repair_follow_on_updated_at: Not yet recorded.
 - bootstrap_status: missing
 - bootstrap_proof: None
 - process_changed_at: Not yet recorded.
-- process_note: No recorded process change summary.
-- process_state: No pending process-change verification.
 
 ## Post-Generation Audit Status
 
@@ -62,5 +65,5 @@ The repo is operating with a ticketed OpenCode workflow that separates historica
 
 ## Next Action
 
-Replace the canonical brief placeholders, run `environment_bootstrap` through `/bootstrap-check` or the Wave 0 setup lane, then rerun `/resume` or `/kickoff` after bootstrap proof exists.
+Run `environment_bootstrap`, register its proof artifact, rerun `ticket_lookup`, and do not continue lifecycle work until bootstrap is ready.
 <!-- SCAFFORGE:START_HERE_BLOCK END -->

@@ -71,6 +71,12 @@
 - result: bootstrap can fail before any write-capable ticket work starts, even when the repo already has a usable uv-managed environment; resume deadlocks on workflow gates instead of reaching source remediation
 - why agents miss it: diagnosis imports modules and collects tests directly from `.venv`, but does not inspect the bootstrap tool or the failed bootstrap artifact that blocked the foreground workflow
 
+## Bootstrap command/layout mismatch (BOOT002 — bootstrap command trace contradicts the repo's dependency layout)
+
+- the repo declares Python validation tools behind `[project.optional-dependencies].dev`, `[dependency-groups].dev`, or `[tool.uv.dev-dependencies]`, but the latest bootstrap artifact still shows `uv sync --locked` without the required extra or group flags
+- result: bootstrap can succeed mechanically while still leaving repo-local validation tools like `pytest` or `ruff` missing, so the same broken bootstrap command is retried and misclassified as operator follow-up
+- why agents miss it: audits and repairs often notice the missing executable but do not correlate `pyproject.toml`, the bootstrap artifact command trace, and the managed `environment_bootstrap.ts` implementation
+
 ## Placeholder local skills (SKILL001 — repo-local skill still generic)
 
 - one or more generated `.opencode/skills/*.md` files still contain scaffold filler such as `Replace this file...`
@@ -88,6 +94,12 @@
 - the repo already contains a prior diagnosis pack plus a later repair-history entry, but the same workflow-layer findings are still present on the next audit
 - result: the team can loop through audit -> repair -> resume -> fail without understanding which package defect, skipped regeneration step, or stale repair assumption caused the first repair to miss
 - why agents miss it: current audits often describe only the current findings and not the failure of the previous diagnosis-to-repair cycle
+
+## Repeated diagnosis churn (CYCLE002 — same-day diagnosis packs repeat without an intervening package or process-version change)
+
+- the repo accumulates multiple same-day diagnosis packs that repeat the same repair-routed findings, but there is no later Scafforge package update, process-version change, or repair-history entry after the latest pack
+- result: the team burns time generating new diagnosis packs that add no new decision-making evidence and still cannot proceed into a trustworthy repair run
+- why agents miss it: current audits can treat every rerun as fresh evidence unless they compare same-day diagnosis manifests against the current findings and the absence of later package-side change
 
 ## Smoke-test contract drift (WFLOW001 — generated smoke test ignores repo-managed Python)
 
@@ -125,9 +137,15 @@
 - result: the documented closeout path dead-ends even though the generated docs lane is following package instructions
 - why agents miss it: the handoff contract looks coherent when each surface is read alone, but the prompt and plugin disagree on who owns optional `handoff` artifacts
 
+## Hidden process-verification state (WFLOW008 — pending backlog trust restoration is hidden or contradicted)
+
+- `.opencode/state/workflow-state.json` sets `pending_process_verification: true`, but restart surfaces still imply ready-for-development handoff or `ticket_lookup` does not expose the backlog-verifier and `ticket_reverify` route
+- result: the repo can look clean enough to resume normal development even though historical done tickets still need trust restoration under the newer workflow contract
+- why agents miss it: the canonical workflow state does record the verification window, so shallow audits can assume the derived restart and routing surfaces stayed in sync
+
 ## Restart-surface drift (WFLOW010 — derived restart files contradict canonical state)
 
-- `START-HERE.md`, `.opencode/state/context-snapshot.md`, or `.opencode/state/latest-handoff.md` disagrees with `tickets/manifest.json` or `.opencode/state/workflow-state.json` about the active ticket, handoff status, bootstrap status, proof artifact, pending process verification, state revision, or lane-lease presence
+- `START-HERE.md`, `.opencode/state/context-snapshot.md`, or `.opencode/state/latest-handoff.md` disagrees with `tickets/manifest.json` or `.opencode/state/workflow-state.json` about the active ticket, handoff status, bootstrap status, proof artifact, pending process verification, repair follow-on state, state revision, or lane-lease presence
 - result: the next session starts from stale resume data and can route the wrong ticket, skip bootstrap recovery, or ignore an active lease
 - why agents miss it: the repo still has the canonical state files, so shallow audits can assume restart surfaces were regenerated even when repair or tool saves left them stale
 
@@ -163,7 +181,7 @@
 
 ## Smoke-test override execution defect (WFLOW016 — explicit smoke override fails before the command starts)
 
-- the generated `smoke_test` tool passes `command_override` directly into `spawn()` argv, fails to parse one-item shell-style commands, or treats leading `KEY=VALUE` tokens as the executable name instead of environment overrides
+- the generated `smoke_test` tool passes `command_override` directly into `spawn()` argv, fails to parse one-item shell-style commands, mis-parses multiple shell-style override strings, or treats leading `KEY=VALUE` tokens as the executable name instead of environment overrides
 - result: valid explicit smoke-test commands fail with `ENOENT` or similar launch errors before the requested verification command even starts, and the failure can be misreported as a generic environment issue
 - why agents miss it: the transcript still looks like a failed smoke run unless audit inspects the tool contract and the launch error closely enough to see that the tool surface itself mis-executed the override
 
@@ -172,6 +190,30 @@
 - the generated `smoke_test` tool does not inspect ticket acceptance criteria for explicit smoke commands, and instead falls back to generic repo-level pytest detection or caller-supplied `test_paths`
 - result: the smoke-test stage can widen to unrelated full-suite failures or narrow to an ad hoc subset that does not match the ticket’s real closeout requirement
 - why agents miss it: the smoke artifact still contains a legitimate test command, so shallow audit reduces the problem to “tests failed” instead of noticing that the tool ran the wrong smoke scope
+
+## Closed-ticket remediation deadlock (WFLOW018 — completed-ticket follow-up still requires a normal write lease)
+
+- `ticket_create(process_verification|post_completion_issue)` or `issue_intake` expects completed historical source tickets, but the stage-gate still requires the source ticket's normal write lease
+- result: post-completion remediation or backlog-verification routing becomes mechanically impossible on closed tickets even when current evidence exists
+- why agents miss it: the tool docs describe a legal route, but the plugin still applies ordinary active-ticket lease rules underneath it
+
+## Stale ticket-graph contradiction (WFLOW019 — source/follow-up lineage no longer matches current dependencies)
+
+- a follow-up ticket both names a `source_ticket_id` and depends on that same source, references a missing source, or its parent no longer lists it in `follow_up_ticket_ids`
+- result: weaker models get trapped between contradictory queue state and current evidence because no canonical reconciliation path exists
+- why agents miss it: each ticket can look locally plausible while the graph as a whole is stale or contradictory
+
+## Open-parent split drift (WFLOW020 — child decomposition from open tickets lacks a canonical source mode)
+
+- a child ticket extends an open or reopened parent ticket, but the repo lacks `split_scope` support, the child is still routed as `net_new_scope` / `post_completion_issue`, or the parent is still marked `blocked` after the split
+- result: planned decomposition from active parent scope drifts into remediation semantics and later produces stale dependencies or follow-up graphs
+- why agents miss it: the queue still shows parent and child tickets, but the contract does not distinguish open-parent splitting from historical remediation
+
+## Legacy repair-gate leak (WFLOW021 — prompts or restart surfaces still reason from `handoff_allowed`)
+
+- generated prompts, `/resume`, `START-HERE.md`, `.opencode/state/context-snapshot.md`, or `.opencode/state/latest-handoff.md` still tell agents to reason from `repair_follow_on.handoff_allowed`, `repair_follow_on_handoff_allowed`, or a rendered `handoff_allowed` bullet
+- result: weaker models keep treating an old boolean gate as authoritative even though `repair_follow_on.outcome` is now the canonical repair-state contract
+- why agents miss it: the restart surface still looks internally consistent, so they keep following the stale boolean instead of the newer outcome model
 
 ## Thin workflow explainer (SKILL002 — repo-local `ticket-execution` skill omits key lifecycle mechanics)
 

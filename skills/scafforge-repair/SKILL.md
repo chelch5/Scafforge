@@ -147,6 +147,8 @@ When repair reveals unfinished or source-layer follow-up work:
 
 - route through `../ticket-pack-builder/SKILL.md`
 - create explicit remediation or decision tickets
+- use `ticket_create(source_mode=split_scope)` for open-parent decomposition instead of encoding that work as net-new or post-completion remediation
+- use `ticket_reconcile` when the existing source/follow-up graph is stale or contradictory to the current evidence
 - keep this ticket generation inside the same repair run when the diagnosis already proved it is needed
 - keep repo-local review skills advisory only; they are not the canonical ticket owner
 
@@ -161,8 +163,14 @@ python3 scripts/audit_repo_process.py <repo-root> --format both --emit-diagnosis
 Pass `--supporting-log <path>` when the repair basis depended on transcript evidence, and pass `--diagnosis-output-dir <writable-path>` when the subject repo is outside the current host's writable roots.
 
 If the repair changed the managed workflow layer materially, note that verification was re-run and whether ticket re-verification remains pending.
-If `BOOT001` was part of the repair basis, rerun the subject repo's `environment_bootstrap` flow before the final audit so bootstrap deadlock evidence is refreshed against the repaired tool surface.
+If `BOOT001` or `BOOT002` was part of the repair basis, rerun the subject repo's `environment_bootstrap` flow before the final audit so bootstrap evidence is refreshed against the repaired tool surface.
+If repeated bootstrap failures keep reproducing the same incompatible command trace after managed refresh, treat that as non-converged managed repair instead of downgrading it to operator-only rerun guidance.
 If verification still reports `ENV*`, `EXEC*`, or `WFLOW008` findings, do not call the repo clean. Report that managed-surface repair completed but host prerequisites, runtime failures, or backlog process verification still remain.
+If verification reports only source-layer `EXEC*` work or correctly surfaced backlog reverification state, do not leave `repair_follow_on` as the blocker for ordinary ticket lifecycle execution. Route that follow-up through the active ticket or guarded ticketing instead.
+Use explicit `repair_follow_on.outcome` semantics:
+- `managed_blocked` only when managed repair follow-on still blocks lifecycle execution
+- `source_follow_up` when managed repair converged but source-layer ticket work still remains
+- `clean` when managed repair itself no longer blocks ordinary execution
 
 ## How this differs from scafforge-audit
 
@@ -196,6 +204,7 @@ Keep the diagnosis decision and the repair action separated.
 - Do not stop at deterministic managed-surface replacement when the repaired repo still carries placeholder local skills, missing model-profile surfaces, or stale agent prompts
 - Preserve durable project facts while replacing managed surfaces
 - Leave explicit provenance and verification state after repair
+- Do not treat source-layer remediation or correctly surfaced `pending_process_verification` as proof that managed repair itself failed
 - If the prior repo history contains coordinator-authored PASS artifacts or bypass transitions, leave `pending_process_verification: true` and require backlog reverification before treating those historical closeouts as trusted
 - If the prior repo history shows verification failed and then later recovered with real command evidence, do not treat the recovered run as fabricated PASS proof
 - Treat missing host prerequisites and blocked verification commands as first-class post-repair outputs, not as clean verification

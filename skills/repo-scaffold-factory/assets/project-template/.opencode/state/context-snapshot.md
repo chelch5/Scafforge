@@ -14,19 +14,28 @@ __PROJECT_NAME__
 - Verification: suspect
 - Approved plan: no
 - Needs reverification: no
+- Open split children: none
 
 ## Bootstrap
 
-- status: pending
+- status: missing
 - last_verified_at: Not yet verified.
 - proof_artifact: None
 
 ## Process State
 
-- process_version: 5
+- process_version: 7
 - pending_process_verification: false
 - parallel_mode: sequential
 - state_revision: 0
+
+## Repair Follow-On
+
+- outcome: clean
+- required: no
+- next_required_stage: none
+- verification_passed: true
+- last_updated_at: Not yet recorded.
 
 ## Lane Leases
 

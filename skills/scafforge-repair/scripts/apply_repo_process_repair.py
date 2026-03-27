@@ -344,7 +344,7 @@ def render_start_here(manifest: dict[str, Any], workflow: dict[str, Any], backlo
         f"- dependent_tickets_waiting_on_current: {summarize(blocked)}\n\n"
         "## Generation Status\n\n"
         "- handoff_status: ready for continued development\n"
-        f"- process_version: {workflow.get('process_version', 6)}\n"
+        f"- process_version: {workflow.get('process_version', 7)}\n"
         f"- parallel_mode: {workflow.get('parallel_mode', 'sequential')}\n"
         f"- pending_process_verification: {'true' if workflow.get('pending_process_verification') is True else 'false'}\n"
         f"- bootstrap_status: {bootstrap_status}\n"
@@ -409,7 +409,7 @@ def render_context_snapshot(manifest: dict[str, Any], workflow: dict[str, Any]) 
         f"- last_verified_at: {bootstrap.get('last_verified_at') or 'Not yet verified.'}\n"
         f"- proof_artifact: {bootstrap.get('proof_artifact') or 'None'}\n\n"
         "## Process State\n\n"
-        f"- process_version: {workflow.get('process_version', 6)}\n"
+        f"- process_version: {workflow.get('process_version', 7)}\n"
         f"- pending_process_verification: {'true' if workflow.get('pending_process_verification') is True else 'false'}\n"
         f"- parallel_mode: {workflow.get('parallel_mode', 'sequential')}\n"
         f"- state_revision: {workflow.get('state_revision', 0)}\n\n"
@@ -483,7 +483,7 @@ def update_workflow_state(repo_root: Path, rendered_provenance: dict[str, Any], 
         bootstrap_status = "missing"
 
     workflow_contract = rendered_provenance.get("workflow_contract", {}) if isinstance(rendered_provenance, dict) else {}
-    process_version = workflow_contract.get("process_version", 6)
+    process_version = workflow_contract.get("process_version", 7)
     changed_at = current_iso_timestamp()
     payload = {
         "active_ticket": active_ticket,
@@ -497,6 +497,7 @@ def update_workflow_state(repo_root: Path, rendered_provenance: dict[str, Any], 
         "pending_process_verification": True,
         "parallel_mode": workflow_contract.get("parallel_mode", "sequential"),
         "repair_follow_on": {
+            "outcome": "managed_blocked",
             "required_stages": [],
             "completed_stages": [],
             "blocking_reasons": [

@@ -28,6 +28,7 @@ Read the repo state first.
 
 - Inspect workflow surfaces, docs, ticketing, and managed state
 - Inspect `diagnosis/` and `.opencode/meta/bootstrap-provenance.json` to determine whether this is a repeat audit after a prior repair attempt
+- If the repo already has repeated diagnosis packs with materially identical repair-routed findings and no newer Scafforge package or process-version change, treat that as audit churn and stop recommending another subject-repo audit-first loop
 - Inspect `.opencode/state/invocation-log.jsonl` when it exists and treat coordinator-authored specialist artifacts there as suspect workflow evidence
 - If session logs or transcript exports were supplied, inspect them before current-state reconciliation and treat them as first-class temporal evidence
 - Treat coordinator narration inside supplied logs as candidate explanation, not ground truth; prefer concrete tool calls, tool outputs, tool errors, and current repo state when deciding what actually failed and why
@@ -91,7 +92,9 @@ For each finding, identify:
 - whether the repo-local workflow explainer, coordinator prompt, and tool contract agree on the same lifecycle semantics
 - whether deterministic execution tools such as `smoke_test` can actually execute repo-standard explicit overrides, including shell-style `KEY=VALUE cmd ...` forms
 - whether `smoke_test` honors ticket-specific acceptance commands before falling back to generic repo-level smoke detection
+- whether failed bootstrap artifacts show command traces that contradict the repo's declared dependency layout, so a managed `environment_bootstrap` defect is not misclassified as operator-only rerun guidance
 - whether the resume truth hierarchy keeps `tickets/manifest.json` plus `.opencode/state/workflow-state.json` canonical over derived restart surfaces
+- whether pending backlog process verification is merely visible current state or an actual workflow defect that the repo is hiding or contradicting
 - whether lease ownership is consistently coordinator-owned or still split across worker prompts
 
 ### 4. Validate review findings when present
@@ -189,9 +192,14 @@ Keep those responsibilities separate.
 - Do not let PR comments taint canonical state
 - Do not answer a supplied causal transcript question with current-state findings alone
 - Do not treat script output as self-sufficient when the user asked about a supplied transcript or session log
+- Do not keep recommending another subject-repo audit when repeated diagnosis packs show the same repair-routed findings and no newer package or process-version change exists
 - Do not treat repeated lifecycle retries, unsupported-stage probing, or PASS artifacts without executable proof as harmless transcript noise
 - Do not collapse a transcript-backed tool-execution defect into a generic test failure when the tool never launched the requested command
 - Do not collapse acceptance-command drift in `smoke_test` into a generic failing-test finding when the tool ran the wrong smoke scope
+- Do not collapse repeated incompatible bootstrap command traces into a generic `ENV002` rerun recommendation when the managed bootstrap surface is the reason the expected dependency flags never ran
+- Do not treat `pending_process_verification` by itself as a package defect when restart surfaces and routing already expose it truthfully
+- Do not collapse stale source/follow-up graph contradictions into generic ticket noise when the repo lacks a canonical `ticket_reconcile` path
+- Do not treat open-parent child decomposition as ordinary remediation when `split_scope` routing is missing or drifted
 - Keep workflow-layer findings separate from source-layer implementation findings
 - Fold review validation into this skill instead of reviving a separate bridge
 

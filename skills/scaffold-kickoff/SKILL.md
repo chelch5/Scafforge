@@ -134,8 +134,9 @@ When the task is diagnosis or review of an existing project:
 2. run the audit and any requested evidence-validation review work
 3. produce the four-report diagnosis pack on every audit run, redirecting the output directory when the subject repo is outside the current host's writable roots
 4. if the audit identifies Scafforge package work, have the user manually copy the diagnosis pack into the Scafforge dev repo and complete those package changes first
-5. route to `../scafforge-repair/SKILL.md` only after the required package changes exist and the audit still recommends repair
-6. finish with `../handoff-brief/SKILL.md` when a restart surface or closeout is needed
+5. if repeated diagnosis packs show the same repair-routed findings and there is no newer package or process-version change, stop and route to Scafforge package work instead of rerunning another subject-repo audit
+6. route to `../scafforge-repair/SKILL.md` only after the required package changes exist and the audit still recommends repair
+7. finish with `../handoff-brief/SKILL.md` when a restart surface or closeout is needed
 
 ## Required outputs
 

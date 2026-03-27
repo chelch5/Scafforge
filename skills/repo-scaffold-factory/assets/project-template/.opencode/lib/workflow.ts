@@ -9,7 +9,8 @@ export type TicketResolutionState = "open" | "done" | "reopened" | "superseded"
 export type TicketVerificationState = "trusted" | "suspect" | "invalidated" | "reverified"
 export type ArtifactTrustState = "current" | "superseded" | "invalidated"
 export type DefectOutcome = "no_action" | "follow_up" | "invalidates_done" | "rollback_required"
-export type TicketSourceMode = "process_verification" | "post_completion_issue" | "net_new_scope"
+export type TicketSourceMode = "process_verification" | "post_completion_issue" | "net_new_scope" | "split_scope"
+export type RepairFollowOnOutcome = "managed_blocked" | "source_follow_up" | "clean"
 
 export type Artifact = {
   kind: string
@@ -77,6 +78,7 @@ export type LaneLease = {
 }
 
 export type RepairFollowOnState = {
+  outcome: RepairFollowOnOutcome
   required_stages: string[]
   completed_stages: string[]
   blocking_reasons: string[]
@@ -154,12 +156,13 @@ export type NewTicketSpec = {
 }
 
 const TICKET_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
-const DEFAULT_PROCESS_VERSION = 6
+const DEFAULT_PROCESS_VERSION = 7
 const DEFAULT_TICKET_CONTRACT_VERSION = 3
 const DEFAULT_LEASE_TTL_MINUTES = 120
 const DEFAULT_BOOTSTRAP_STATE: BootstrapState = { status: "missing", last_verified_at: null, environment_fingerprint: null, proof_artifact: null }
 const DEFAULT_TICKET_WORKFLOW_STATE: TicketWorkflowState = { approved_plan: false, reopen_count: 0, needs_reverification: false }
 const DEFAULT_REPAIR_FOLLOW_ON_STATE = (processVersion = DEFAULT_PROCESS_VERSION): RepairFollowOnState => ({
+  outcome: "clean",
   required_stages: [],
   completed_stages: [],
   blocking_reasons: [],
@@ -445,8 +448,31 @@ function migrateTicket(raw: unknown): Ticket {
     verification_state: normalizeVerificationState(ticket.verification_state, status),
     source_ticket_id: normalizeNullableString(ticket.source_ticket_id) ?? undefined,
     follow_up_ticket_ids: normalizeStringArray(ticket.follow_up_ticket_ids),
-    source_mode: ticket.source_mode === "process_verification" || ticket.source_mode === "post_completion_issue" || ticket.source_mode === "net_new_scope" ? ticket.source_mode : undefined,
+    source_mode:
+      ticket.source_mode === "process_verification"
+      || ticket.source_mode === "post_completion_issue"
+      || ticket.source_mode === "net_new_scope"
+      || ticket.source_mode === "split_scope"
+        ? ticket.source_mode
+        : undefined,
   }
+}
+
+function normalizeRepairFollowOnOutcome(value: unknown): RepairFollowOnOutcome | null {
+  if (value === "managed_blocked" || value === "source_follow_up" || value === "clean") return value
+  return null
+}
+
+function inferLegacyRepairFollowOnOutcome(
+  raw: Record<string, unknown> | undefined,
+  defaults: RepairFollowOnState,
+): RepairFollowOnOutcome {
+  if (!raw) return defaults.outcome
+  const requiredStages = normalizeStringArray(raw.required_stages)
+  const blockingReasons = normalizeStringArray(raw.blocking_reasons)
+  const verificationPassed = raw.verification_passed === true
+  const handoffAllowed = raw.handoff_allowed === true
+  return handoffAllowed && requiredStages.length === 0 && blockingReasons.length === 0 && verificationPassed ? "clean" : "managed_blocked"
 }
 
 export async function loadManifest(root = rootPath()): Promise<Manifest> {
@@ -483,6 +509,7 @@ export async function loadWorkflowState(root = rootPath()): Promise<WorkflowStat
     : processVersion
   const repairFollowOn = repairFollowOnRaw && typeof repairFollowOnRaw === "object" && !Array.isArray(repairFollowOnRaw)
     ? {
+        outcome: normalizeRepairFollowOnOutcome(repairFollowOnRecord?.outcome) ?? inferLegacyRepairFollowOnOutcome(repairFollowOnRecord, repairFollowOnDefaults),
         required_stages: normalizeStringArray(repairFollowOnRecord?.required_stages),
         completed_stages: normalizeStringArray(repairFollowOnRecord?.completed_stages),
         blocking_reasons: normalizeStringArray(repairFollowOnRecord?.blocking_reasons),
@@ -615,6 +642,12 @@ export async function validateSmokeTestArtifactEvidence(ticket: Ticket, root = r
 
 function blockedDependentTickets(manifest: Manifest, ticketId: string): Ticket[] {
   return manifest.tickets.filter((item) => item.depends_on.includes(ticketId) && item.status !== "done")
+}
+export function splitScopeChildren(manifest: Manifest, ticketId: string): Ticket[] {
+  return manifest.tickets.filter((item) => item.source_ticket_id === ticketId && item.source_mode === "split_scope")
+}
+export function openSplitScopeChildren(manifest: Manifest, ticketId: string): Ticket[] {
+  return splitScopeChildren(manifest, ticketId).filter((item) => item.status !== "done" && item.resolution_state !== "superseded")
 }
 
 export async function validateHandoffNextAction(manifest: Manifest, workflow: WorkflowState, nextAction: string, root = rootPath()): Promise<string | null> {
@@ -920,20 +953,15 @@ export function ticketsNeedingProcessVerification(manifest: Manifest, workflow: 
   return manifest.tickets.filter((ticket) => ticketNeedsProcessVerification(ticket, workflow))
 }
 export function hasPendingRepairFollowOn(workflow: WorkflowState): boolean {
-  return (
-    workflow.repair_follow_on.handoff_allowed !== true
-    && (
-      workflow.repair_follow_on.required_stages.length > 0
-      || workflow.repair_follow_on.blocking_reasons.length > 0
-      || workflow.repair_follow_on.verification_passed === false
-    )
-  )
+  return workflow.repair_follow_on.outcome === "managed_blocked"
 }
 export function nextRepairFollowOnStage(workflow: WorkflowState): string | null {
+  if (workflow.repair_follow_on.outcome !== "managed_blocked") return null
   const completed = new Set(workflow.repair_follow_on.completed_stages)
   return workflow.repair_follow_on.required_stages.find((stage) => !completed.has(stage)) || null
 }
 export function repairFollowOnBlockingReason(workflow: WorkflowState): string | null {
+  if (workflow.repair_follow_on.outcome !== "managed_blocked") return null
   return workflow.repair_follow_on.blocking_reasons[0] || null
 }
 
@@ -1015,8 +1043,9 @@ export function renderContextSnapshot(manifest: Manifest, workflow: WorkflowStat
   const leases = workflow.lane_leases.length > 0 ? workflow.lane_leases.map((lease) => `- ${lease.ticket_id}: ${lease.owner_agent} (${lease.lane})`).join("\n") : "- No active lane leases"
   const artifactLines = ticket.artifacts.length > 0 ? ticket.artifacts.slice(-5).map(renderArtifactLine).join("\n") : "- No artifacts recorded yet"
   const repairNextStage = nextRepairFollowOnStage(workflow) || "none"
+  const splitChildren = openSplitScopeChildren(manifest, ticket.id)
   const noteBlock = note ? `\n## Note\n\n${note}\n` : ""
-  return `# Context Snapshot\n\n## Project\n\n${manifest.project}\n\n## Active Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n- Approved plan: ${workflow.approved_plan ? "yes" : "no"}\n- Needs reverification: ${ticketState.needs_reverification ? "yes" : "no"}\n\n## Bootstrap\n\n- status: ${workflow.bootstrap.status}\n- last_verified_at: ${workflow.bootstrap.last_verified_at || "Not yet verified."}\n- proof_artifact: ${workflow.bootstrap.proof_artifact || "None"}\n\n## Process State\n\n- process_version: ${workflow.process_version}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- parallel_mode: ${workflow.parallel_mode}\n- state_revision: ${workflow.state_revision}\n\n## Repair Follow-On\n\n- required: ${hasPendingRepairFollowOn(workflow) ? "yes" : "no"}\n- next_required_stage: ${repairNextStage}\n- verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- handoff_allowed: ${workflow.repair_follow_on.handoff_allowed ? "true" : "false"}\n- last_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n\n## Lane Leases\n\n${leases}\n\n## Recent Artifacts\n\n${artifactLines}${noteBlock}`
+  return `# Context Snapshot\n\n## Project\n\n${manifest.project}\n\n## Active Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n- Approved plan: ${workflow.approved_plan ? "yes" : "no"}\n- Needs reverification: ${ticketState.needs_reverification ? "yes" : "no"}\n- Open split children: ${splitChildren.length > 0 ? splitChildren.map((item) => item.id).join(", ") : "none"}\n\n## Bootstrap\n\n- status: ${workflow.bootstrap.status}\n- last_verified_at: ${workflow.bootstrap.last_verified_at || "Not yet verified."}\n- proof_artifact: ${workflow.bootstrap.proof_artifact || "None"}\n\n## Process State\n\n- process_version: ${workflow.process_version}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- parallel_mode: ${workflow.parallel_mode}\n- state_revision: ${workflow.state_revision}\n\n## Repair Follow-On\n\n- outcome: ${workflow.repair_follow_on.outcome}\n- required: ${hasPendingRepairFollowOn(workflow) ? "yes" : "no"}\n- next_required_stage: ${repairNextStage}\n- verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- last_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n\n## Lane Leases\n\n${leases}\n\n## Recent Artifacts\n\n${artifactLines}${noteBlock}`
 }
 export function renderStartHere(manifest: Manifest, workflow: WorkflowState, options: StartHereOptions = {}): string {
   const ticket = getTicket(manifest, workflow.active_ticket)
@@ -1024,10 +1053,12 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, opt
   const suspectDone = manifest.tickets.filter((item) => item.status === "done" && item.verification_state !== "trusted" && item.verification_state !== "reverified")
   const reverification = manifest.tickets.filter((item) => getTicketWorkflowState(workflow, item.id).needs_reverification)
   const blockedDependents = blockedDependentTickets(manifest, ticket.id)
+  const splitChildren = openSplitScopeChildren(manifest, ticket.id)
   const verifierLabel = options.backlogVerifierAgent ? `\`${options.backlogVerifierAgent}\`` : "the backlog verifier"
   const repairNextStage = nextRepairFollowOnStage(workflow)
   const repairFollowOnPending = hasPendingRepairFollowOn(workflow)
   const repairBlocker = repairFollowOnBlockingReason(workflow)
+  const sourceFollowUpPending = workflow.repair_follow_on.outcome === "source_follow_up"
   const handoffStatus = options.handoffStatus || (
     workflow.bootstrap.status !== "ready"
       ? "bootstrap recovery required"
@@ -1042,6 +1073,8 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, opt
       ? "Run environment_bootstrap, register its proof artifact, rerun ticket_lookup, and do not continue lifecycle work until bootstrap is ready."
       : repairFollowOnPending
         ? (repairBlocker || (repairNextStage ? `Complete the required repair follow-on stage \`${repairNextStage}\` before resuming normal ticket lifecycle work.` : "Complete the required repair follow-on stages before resuming normal ticket lifecycle work."))
+      : splitChildren.length > 0
+        ? `Keep ${ticket.id} open as a split parent and continue the child ticket lane${splitChildren.length > 1 ? "s" : ""}: ${splitChildren.map((item) => item.id).join(", ")}.`
       : ticket.status !== "done"
         ? `Keep ${ticket.id} as the foreground ticket and continue its lifecycle from ${ticket.stage}. Historical done-ticket reverification stays secondary until the active open ticket is resolved.`
         : workflow.pending_process_verification
@@ -1054,11 +1087,13 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, opt
   const riskLines = [
     workflow.bootstrap.status !== "ready" ? "- Environment validation can fail for setup reasons until bootstrap proof exists." : null,
     repairFollowOnPending ? `- Repair follow-on remains incomplete${repairBlocker ? `: ${repairBlocker}` : "."}` : null,
+    sourceFollowUpPending ? "- Managed repair converged, but source-layer follow-up still remains in the ticket graph." : null,
     workflow.pending_process_verification ? "- Historical completion should not be treated as fully trusted until pending process verification is cleared." : null,
     suspectDone.length > 0 ? "- Some done tickets are not fully trusted yet; use the backlog verifier before relying on earlier closeout." : null,
+    splitChildren.length > 0 ? `- ${ticket.id} is an open split parent; child ticket${splitChildren.length > 1 ? "s" : ""} ${splitChildren.map((item) => item.id).join(", ")} remain the active foreground work.` : null,
     blockedDependents.length > 0 && ticket.status !== "done" ? `- Downstream tickets ${blockedDependents.map((item) => item.id).join(", ")} remain formally blocked until ${ticket.id} reaches done.` : null,
   ].filter((line): line is string => Boolean(line)).join("\n") || "- None recorded."
-  return `# START HERE\n\n${START_HERE_MANAGED_START}\n## What This Repo Is\n\n${manifest.project}\n\n## Current State\n\nThe repo is operating under the managed OpenCode workflow. Use the canonical state files below instead of memory or raw ticket prose.\n\n## Read In This Order\n\n1. README.md\n2. AGENTS.md\n3. docs/spec/CANONICAL-BRIEF.md\n4. docs/process/workflow.md\n5. tickets/manifest.json\n6. tickets/BOARD.md\n\n## Current Or Next Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Wave: ${ticket.wave}\n- Lane: ${ticket.lane}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n\n## Dependency Status\n\n- current_ticket_done: ${ticket.status === "done" ? "yes" : "no"}\n- dependent_tickets_waiting_on_current: ${summarizeTickets(blockedDependents)}\n\n## Generation Status\n\n- handoff_status: ${handoffStatus}\n- process_version: ${workflow.process_version}\n- parallel_mode: ${workflow.parallel_mode}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- repair_follow_on_required: ${repairFollowOnPending ? "true" : "false"}\n- repair_follow_on_next_stage: ${repairNextStage || "none"}\n- repair_follow_on_verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- repair_follow_on_handoff_allowed: ${workflow.repair_follow_on.handoff_allowed ? "true" : "false"}\n- repair_follow_on_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n- bootstrap_status: ${workflow.bootstrap.status}\n- bootstrap_proof: ${workflow.bootstrap.proof_artifact || "None"}\n\n## Post-Generation Audit Status\n\n- audit_or_repair_follow_up: ${repairFollowOnPending || reopened.length > 0 || suspectDone.length > 0 || reverification.length > 0 ? "follow-up required" : "none recorded"}\n- reopened_tickets: ${summarizeTickets(reopened)}\n- done_but_not_fully_trusted: ${summarizeTickets(suspectDone)}\n- pending_reverification: ${summarizeTickets(reverification)}\n- repair_follow_on_blockers: ${workflow.repair_follow_on.blocking_reasons.length > 0 ? workflow.repair_follow_on.blocking_reasons.join(" | ") : "none"}\n\n## Known Risks\n\n${riskLines}\n\n## Next Action\n\n${recommendedAction}\n${START_HERE_MANAGED_END}\n`
+  return `# START HERE\n\n${START_HERE_MANAGED_START}\n## What This Repo Is\n\n${manifest.project}\n\n## Current State\n\nThe repo is operating under the managed OpenCode workflow. Use the canonical state files below instead of memory or raw ticket prose.\n\n## Read In This Order\n\n1. README.md\n2. AGENTS.md\n3. docs/spec/CANONICAL-BRIEF.md\n4. docs/process/workflow.md\n5. tickets/manifest.json\n6. tickets/BOARD.md\n\n## Current Or Next Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Wave: ${ticket.wave}\n- Lane: ${ticket.lane}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n\n## Dependency Status\n\n- current_ticket_done: ${ticket.status === "done" ? "yes" : "no"}\n- dependent_tickets_waiting_on_current: ${summarizeTickets(blockedDependents)}\n- split_child_tickets: ${summarizeTickets(splitChildren)}\n\n## Generation Status\n\n- handoff_status: ${handoffStatus}\n- process_version: ${workflow.process_version}\n- parallel_mode: ${workflow.parallel_mode}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- repair_follow_on_outcome: ${workflow.repair_follow_on.outcome}\n- repair_follow_on_required: ${repairFollowOnPending ? "true" : "false"}\n- repair_follow_on_next_stage: ${repairNextStage || "none"}\n- repair_follow_on_verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- repair_follow_on_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n- bootstrap_status: ${workflow.bootstrap.status}\n- bootstrap_proof: ${workflow.bootstrap.proof_artifact || "None"}\n\n## Post-Generation Audit Status\n\n- audit_or_repair_follow_up: ${repairFollowOnPending || sourceFollowUpPending || reopened.length > 0 || suspectDone.length > 0 || reverification.length > 0 ? "follow-up required" : "none recorded"}\n- reopened_tickets: ${summarizeTickets(reopened)}\n- done_but_not_fully_trusted: ${summarizeTickets(suspectDone)}\n- pending_reverification: ${summarizeTickets(reverification)}\n- repair_follow_on_blockers: ${workflow.repair_follow_on.blocking_reasons.length > 0 ? workflow.repair_follow_on.blocking_reasons.join(" | ") : "none"}\n\n## Known Risks\n\n${riskLines}\n\n## Next Action\n\n${recommendedAction}\n${START_HERE_MANAGED_END}\n`
 }
 function escapeRegExp(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
 export function mergeStartHere(existing: string, rendered: string): string {

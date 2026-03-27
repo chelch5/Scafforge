@@ -61,4 +61,7 @@ If this file conflicts with any global AI instruction file, this file wins for t
 - Treat manager or section-leader hierarchies as advanced project-specific customization, not a first-class scaffold profile.
 - Treat `.opencode/meta/bootstrap-provenance.json` as the canonical source for the repo's process-contract version; workflow state mirrors that contract for active execution and verification routing.
 - Only create migration follow-up tickets from backlog-verifier findings during an active process-verification window.
+- Use `ticket_create(source_mode=split_scope)` when an open parent ticket needs child decomposition; do not encode that as `net_new_scope` or `post_completion_issue`.
+- Use `ticket_reconcile` to repair stale or contradictory ticket lineage from evidence instead of editing `tickets/manifest.json` directly.
+- Treat `.opencode/meta/bootstrap-provenance.json` as provenance only, not as a mutable resume or queue surface.
 - Use `smoke_test` to generate smoke-test proof. Do not fabricate smoke-test PASS artifacts through generic artifact tools.
