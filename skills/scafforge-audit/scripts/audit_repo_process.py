@@ -94,6 +94,15 @@ TRANSCRIPT_WORKAROUND_PATTERNS = (
     r"workaround",
     r"bypass",
 )
+TRANSCRIPT_SOFT_BYPASS_PATTERNS = (
+    r"\bclose\b.{0,40}\banyway\b",
+    r"\bdone\b.{0,20}\banyway\b",
+    r"\bdespite the dependency\b",
+    r"\bprocess\b.{0,40}\bdespite\b.{0,20}\bdependency\b",
+    r"\bstart\b.{0,40}\bdependent\b.{0,40}\bfirst\b",
+    r"\bknown issue\b.{0,40}\bclose(?:out)?\b",
+    r"\bclose(?:out)?\b.{0,40}\bknown issue\b",
+)
 TRANSCRIPT_VERIFICATION_FAILURE_PATTERNS = (
     r"Unable to run verification commands",
     r"could not be executed",
@@ -112,6 +121,18 @@ TRANSCRIPT_EXECUTION_RECOVERY_PATTERNS = (
     r"\b\d+\s+passed\b",
     r"\b0 failed\b",
     r"SYNTAX OK",
+)
+TRANSCRIPT_BROKEN_TOOL_PATTERNS = (
+    r"def\.execute is not a function",
+    r"def\.execute.*undefined",
+)
+TRANSCRIPT_SMOKE_OVERRIDE_FAILURE_PATTERNS = (
+    r"posix_spawn '[_A-Za-z][_A-Za-z0-9]*=",
+    r"ENOENT: no such file or directory, posix_spawn '[_A-Za-z][_A-Za-z0-9]*=",
+)
+TRANSCRIPT_SMOKE_ACCEPTANCE_PATTERNS = (
+    r"`[^`\n]*pytest[^`\n]*`\s+exits 0",
+    r"`[^`\n]*(?:cargo test|go test|ruff check|npm run test|pnpm run test|yarn test|bun run test)[^`\n]*`\s+exits 0",
 )
 COORDINATOR_ARTIFACT_STAGES = {"planning", "implementation", "review", "qa", "smoke-test"}
 DEPRECATED_MODEL_PATTERNS = (
@@ -135,6 +156,7 @@ class Finding:
     files: list[str]
     safer_pattern: str
     evidence: list[str]
+    provenance: str = "script"
 
 
 @dataclass
@@ -143,6 +165,17 @@ class TranscriptToolEvent:
     tool: str
     line_number: int
     args: dict[str, Any] | None
+    output: str | None
+    error: str | None
+
+
+@dataclass
+class InvocationLogEvent:
+    event: str
+    tool: str
+    agent: str
+    args: dict[str, Any] | None
+    line_number: int
 
 
 def read_text(path: Path) -> str:
@@ -310,12 +343,14 @@ def parse_transcript_tool_events(text: str) -> list[TranscriptToolEvent]:
 
         tool_name = tool_match.group(1).strip()
         args: dict[str, Any] | None = None
+        output: str | None = None
+        error: str | None = None
         cursor = index + 1
         while cursor < len(lines):
             candidate = lines[cursor].strip()
             if candidate.startswith("## Assistant ") or candidate.startswith("**Tool:"):
                 break
-            if candidate == "**Input:**":
+            if candidate in {"**Input:**", "**Output:**", "**Error:**"}:
                 fence_line = cursor + 1
                 if fence_line < len(lines) and lines[fence_line].strip().startswith("```"):
                     body_start = fence_line + 1
@@ -324,17 +359,149 @@ def parse_transcript_tool_events(text: str) -> list[TranscriptToolEvent]:
                         body_end += 1
                     body = "\n".join(lines[body_start:body_end]).strip()
                     if body:
-                        try:
-                            parsed = json.loads(body)
-                        except json.JSONDecodeError:
-                            parsed = None
-                        if isinstance(parsed, dict):
-                            args = parsed
-                break
+                        if candidate == "**Input:**":
+                            try:
+                                parsed = json.loads(body)
+                            except json.JSONDecodeError:
+                                parsed = None
+                            if isinstance(parsed, dict):
+                                args = parsed
+                        elif candidate == "**Output:**":
+                            output = body
+                        elif candidate == "**Error:**":
+                            error = body
+                    cursor = body_end
             cursor += 1
 
-        events.append(TranscriptToolEvent(assistant=current_assistant, tool=tool_name, line_number=index + 1, args=args))
+        events.append(
+            TranscriptToolEvent(
+                assistant=current_assistant,
+                tool=tool_name,
+                line_number=index + 1,
+                args=args,
+                output=output,
+                error=error,
+            )
+        )
         index += 1
+    return events
+
+
+def parse_json_object(text: str) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def normalize_shell_command(command: str) -> str:
+    return re.sub(r"\s+", " ", command.strip())
+
+
+def extract_transcript_smoke_acceptance_commands(text: str) -> list[str]:
+    commands: list[str] = []
+    seen: set[str] = set()
+    for match in re.finditer(r"`([^`\n]+)`\s+exits 0", text, re.IGNORECASE):
+        command = normalize_shell_command(match.group(1))
+        if not re.search(r"\b(pytest|cargo test|go test|ruff check|npm run test|pnpm run test|yarn test|bun run test)\b", command, re.IGNORECASE):
+            continue
+        lowered = command.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        commands.append(command)
+    return commands
+
+
+def matching_assistant_reasoning_line_numbers(text: str, patterns: tuple[str, ...]) -> list[tuple[int, str]]:
+    hits: list[tuple[int, str]] = []
+    current_section = ""
+    in_fence = False
+    in_tool_block = False
+
+    for index, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if line.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if re.match(r"^##\s+Assistant\s+\(.+?\)\s*$", line):
+            current_section = "assistant"
+            in_tool_block = False
+            continue
+        if re.match(r"^##\s+User\b", line):
+            current_section = "user"
+            in_tool_block = False
+            continue
+        if line.startswith("**Tool:"):
+            in_tool_block = True
+            continue
+        if line == "---":
+            in_tool_block = False
+            continue
+        if current_section != "assistant" or in_tool_block or not line:
+            continue
+        if any(re.search(pattern, line, re.IGNORECASE) for pattern in patterns):
+            hits.append((index, line))
+
+    return hits
+
+
+def matching_non_tool_line_numbers(text: str, patterns: tuple[str, ...]) -> list[tuple[int, str]]:
+    hits: list[tuple[int, str]] = []
+    in_fence = False
+    in_tool_block = False
+
+    for index, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if line.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if line.startswith("**Tool:"):
+            in_tool_block = True
+            continue
+        if line == "---":
+            in_tool_block = False
+            continue
+        if in_tool_block or not line:
+            continue
+        if any(re.search(pattern, line, re.IGNORECASE) for pattern in patterns):
+            hits.append((index, line))
+
+    return hits
+
+
+def parse_invocation_log_events(path: Path) -> list[InvocationLogEvent]:
+    events: list[InvocationLogEvent] = []
+    if not path.exists():
+        return events
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        tool = payload.get("tool")
+        event = payload.get("event")
+        agent = payload.get("agent")
+        args = payload.get("args")
+        events.append(
+            InvocationLogEvent(
+                event=str(event).strip() if isinstance(event, str) else "",
+                tool=str(tool).strip() if isinstance(tool, str) else "",
+                agent=str(agent).strip() if isinstance(agent, str) else "",
+                args=args if isinstance(args, dict) else None,
+                line_number=line_number,
+            )
+        )
     return events
 
 
@@ -739,7 +906,7 @@ def audit_workflow_vocabulary_drift(root: Path, findings: list[Finding]) -> None
 
     for path in iter_contract_paths(root):
         text = read_text(path)
-        allowed_terms = {"code_review", "security_review"} if normalized_path(path, root) == ".opencode/tools/_workflow.ts" else set()
+        allowed_terms = {"code_review", "security_review"} if normalized_path(path, root) == ".opencode/lib/workflow.ts" else set()
         hits = [term for term in DEPRECATED_WORKFLOW_TERMS if term in text and term not in allowed_terms]
         if not hits:
             continue
@@ -853,8 +1020,6 @@ def audit_invalid_tool_schemas(root: Path, findings: list[Finding]) -> None:
     offenders: list[str] = []
     evidence: list[str] = []
     for path in tools_dir.glob("*.ts"):
-        if path.name == "_workflow.ts":
-            continue
         text = read_text(path)
         if "export default tool(" not in text:
             continue
@@ -1391,7 +1556,7 @@ def audit_failed_repair_cycle(root: Path, findings: list[Finding]) -> None:
         return
 
     current_codes = {finding.code for finding in findings}
-    repeated_codes = sorted(previous_codes & current_codes)
+    repeated_codes = sorted(code for code in (previous_codes & current_codes) if code != "WFLOW008")
     if not repeated_codes:
         return
 
@@ -1515,10 +1680,72 @@ def audit_smoke_test_contract(root: Path, findings: list[Finding]) -> None:
     )
 
 
+def audit_smoke_test_override_contract(root: Path, findings: list[Finding]) -> None:
+    tool_path = root / ".opencode" / "tools" / "smoke_test.ts"
+    if not tool_path.exists():
+        return
+
+    text = read_text(tool_path)
+    evidence: list[str] = []
+    if 'argv: args.command_override' in text:
+        evidence.append(f"{normalize_path(tool_path, root)} passes command_override directly into argv without parsing shell-style overrides.")
+    if "parseCommandOverride" not in text:
+        evidence.append(f"{normalize_path(tool_path, root)} does not normalize one-item shell-style overrides before execution.")
+    if "env_overrides" not in text:
+        evidence.append(f"{normalize_path(tool_path, root)} does not peel leading KEY=VALUE tokens into spawn environment overrides.")
+
+    if not evidence:
+        return
+
+    add_finding(
+        findings,
+        Finding(
+            code="WFLOW016",
+            severity="error",
+            problem="The managed smoke-test override contract can fail before the requested smoke command even starts.",
+            root_cause="The generated `smoke_test` tool passes `command_override` directly into `spawn()` argv and does not separate shell-style environment assignments like `UV_CACHE_DIR=...` from the executable. Valid repo-standard override commands can therefore misfire as `ENOENT` instead of running the intended smoke check.",
+            files=[normalize_path(tool_path, root)],
+            safer_pattern="Parse one-item shell-style overrides into argv, treat leading `KEY=VALUE` tokens as environment overrides, and report malformed overrides as configuration errors instead of misclassifying them as runtime environment failures.",
+            evidence=evidence,
+        ),
+    )
+
+
+def audit_smoke_test_acceptance_contract(root: Path, findings: list[Finding]) -> None:
+    tool_path = root / ".opencode" / "tools" / "smoke_test.ts"
+    if not tool_path.exists():
+        return
+
+    text = read_text(tool_path)
+    evidence: list[str] = []
+    if "inferAcceptanceSmokeCommands" not in text:
+        evidence.append(f"{normalize_path(tool_path, root)} does not derive smoke commands from ticket acceptance criteria.")
+    if "ticket.acceptance" not in text:
+        evidence.append(f"{normalize_path(tool_path, root)} does not inspect `ticket.acceptance` before falling back to generic smoke command detection.")
+    if "Ticket acceptance criteria define an explicit smoke-test command." not in text:
+        evidence.append(f"{normalize_path(tool_path, root)} does not record acceptance-backed smoke commands as the canonical reason for execution.")
+
+    if not evidence:
+        return
+
+    add_finding(
+        findings,
+        Finding(
+            code="WFLOW017",
+            severity="error",
+            problem="The managed smoke-test tool can ignore ticket-specific acceptance commands and fall back to heuristic smoke scope.",
+            root_cause="The generated `smoke_test` tool does not inspect the ticket's explicit acceptance commands before falling back to generic repo-level smoke detection. That lets the coordinator run a broader full-suite command or an ad hoc narrowed subset that does not match the ticket's canonical smoke requirement.",
+            files=[normalize_path(tool_path, root)],
+            safer_pattern="Infer smoke commands from explicit ticket acceptance criteria first, treat those commands as canonical smoke scope, and only fall back to generic repo-level detection when no acceptance-backed smoke command exists.",
+            evidence=evidence,
+        ),
+    )
+
+
 def audit_review_stage_ambiguity(root: Path, findings: list[Finding]) -> None:
     workflow_doc = root / "docs" / "process" / "workflow.md"
     ticket_update = root / ".opencode" / "tools" / "ticket_update.ts"
-    workflow_tool = root / ".opencode" / "tools" / "_workflow.ts"
+    workflow_tool = root / ".opencode" / "lib" / "workflow.ts"
     if not workflow_doc.exists() or not ticket_update.exists() or not workflow_tool.exists():
         return
 
@@ -1555,7 +1782,7 @@ def audit_review_stage_ambiguity(root: Path, findings: list[Finding]) -> None:
 
 def audit_ticket_transition_contract(root: Path, findings: list[Finding]) -> None:
     ticket_update = root / ".opencode" / "tools" / "ticket_update.ts"
-    workflow_tool = root / ".opencode" / "tools" / "_workflow.ts"
+    workflow_tool = root / ".opencode" / "lib" / "workflow.ts"
     stage_gate = root / ".opencode" / "plugins" / "stage-gate-enforcer.ts"
     if not ticket_update.exists() or not workflow_tool.exists() or not stage_gate.exists():
         return
@@ -1610,11 +1837,20 @@ def audit_reverification_deadlock(root: Path, findings: list[Finding]) -> None:
     ticket_lookup_text = read_text(ticket_lookup) if ticket_lookup.exists() else ""
     evidence: list[str] = []
 
-    if 'if (input.tool === "ticket_reverify")' in stage_gate_text and "ensureTargetTicketWriteLease(ticketId)" in stage_gate_text:
+    ticket_reverify_block = ""
+    reverify_match = re.search(r'if \(input\.tool === "ticket_reverify"\) \{([\s\S]*?)\n\s{6}\}', stage_gate_text)
+    if reverify_match:
+        ticket_reverify_block = reverify_match.group(1)
+
+    if "ensureTargetTicketWriteLease(ticketId)" in ticket_reverify_block:
         evidence.append(f"{normalize_path(stage_gate, root)} still requires a normal write lease before `ticket_reverify` can run.")
     if "cannot be claimed because it is already closed" in ticket_claim_text:
         evidence.append(f"{normalize_path(ticket_claim, root)} still forbids claiming closed tickets.")
-    if "Ticket is already closed." in ticket_lookup_text:
+    if (
+        "Ticket is already closed." in ticket_lookup_text
+        and "historical trust still needs restoration" not in ticket_lookup_text
+        and 'next_action_tool: "ticket_reverify"' not in ticket_lookup_text
+    ):
         evidence.append(f"{normalize_path(ticket_lookup, root)} still presents closed tickets as terminal even when process verification may still be pending.")
 
     if len(evidence) < 2:
@@ -1727,6 +1963,7 @@ def audit_restart_surface_drift(root: Path, findings: list[Finding]) -> None:
     workflow_path = root / ".opencode" / "state" / "workflow-state.json"
     start_here_path = root / "START-HERE.md"
     context_snapshot_path = root / ".opencode" / "state" / "context-snapshot.md"
+    latest_handoff_path = root / ".opencode" / "state" / "latest-handoff.md"
     manifest = read_json(manifest_path)
     workflow = read_json(workflow_path)
     if not isinstance(manifest, dict) or not isinstance(workflow, dict):
@@ -1757,7 +1994,7 @@ def audit_restart_surface_drift(root: Path, findings: list[Finding]) -> None:
         compare_surface(
             normalize_path(start_here_path, root),
             parse_start_here_state(read_text(start_here_path)),
-            ("ticket_id", "stage", "status", "bootstrap_status", "bootstrap_proof", "pending_process_verification"),
+            ("ticket_id", "stage", "status", "handoff_status", "bootstrap_status", "bootstrap_proof", "pending_process_verification"),
         )
     else:
         files.append(normalize_path(start_here_path, root))
@@ -1774,6 +2011,17 @@ def audit_restart_surface_drift(root: Path, findings: list[Finding]) -> None:
         files.append(normalize_path(context_snapshot_path, root))
         evidence.append(f"Missing derived restart surface: {normalize_path(context_snapshot_path, root)}.")
 
+    if latest_handoff_path.exists():
+        files.append(normalize_path(latest_handoff_path, root))
+        compare_surface(
+            normalize_path(latest_handoff_path, root),
+            parse_start_here_state(read_text(latest_handoff_path)),
+            ("ticket_id", "stage", "status", "handoff_status", "bootstrap_status", "bootstrap_proof", "pending_process_verification"),
+        )
+    else:
+        files.append(normalize_path(latest_handoff_path, root))
+        evidence.append(f"Missing derived restart surface: {normalize_path(latest_handoff_path, root)}.")
+
     if not evidence:
         return
 
@@ -1783,9 +2031,9 @@ def audit_restart_surface_drift(root: Path, findings: list[Finding]) -> None:
             code="WFLOW010",
             severity="error",
             problem="Derived restart surfaces disagree with canonical workflow state, so resume guidance can route work from stale or contradictory facts.",
-            root_cause="`START-HERE.md` and `.opencode/state/context-snapshot.md` are not being regenerated from `tickets/manifest.json` plus `.opencode/state/workflow-state.json` after workflow mutations or managed repair, leaving bootstrap, lane-lease, and active-ticket state stale.",
+            root_cause="`START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` are not being regenerated from `tickets/manifest.json` plus `.opencode/state/workflow-state.json` after workflow mutations or managed repair, leaving bootstrap, verification, lane-lease, and active-ticket state stale.",
             files=list(dict.fromkeys(files)),
-            safer_pattern="Regenerate the managed START-HERE block and `.opencode/state/context-snapshot.md` from canonical manifest/workflow state after every workflow save and fail repair verification if those derived restart surfaces drift.",
+            safer_pattern="Regenerate `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` from canonical manifest/workflow state after every workflow save, keep handoff readiness verification-gated, and fail repair verification if any derived restart surface drifts.",
             evidence=evidence[:10],
         ),
     )
@@ -1847,6 +2095,179 @@ def audit_bootstrap_guidance_drift(root: Path, findings: list[Finding]) -> None:
                 f"{normalize_path(workflow_path, root)} records bootstrap.status = {bootstrap_status}.",
                 *evidence[:7],
             ],
+        ),
+    )
+
+
+def audit_lease_claim_guidance_drift(root: Path, findings: list[Finding]) -> None:
+    workflow_doc = root / "docs" / "process" / "workflow.md"
+    ticket_readme = root / "tickets" / "README.md"
+    kickoff = root / ".opencode" / "commands" / "kickoff.md"
+    run_lane = root / ".opencode" / "commands" / "run-lane.md"
+    ticket_execution = root / ".opencode" / "skills" / "ticket-execution" / "SKILL.md"
+    team_leader = next((path for path in (root / ".opencode" / "agents").glob("*team-leader*.md")), None)
+    implementer = next((path for path in (root / ".opencode" / "agents").glob("*implementer*.md")), None)
+    lane_executor = next((path for path in (root / ".opencode" / "agents").glob("*lane-executor*.md")), None)
+    docs_handoff = next((path for path in (root / ".opencode" / "agents").glob("*docs-handoff*.md")), None)
+
+    evidence: list[str] = []
+    files: list[str] = []
+
+    expected_coordination = "the team leader owns `ticket_claim` and `ticket_release`"
+    prebootstrap_guard = "only Wave 0 setup work may claim a write-capable lease before bootstrap is ready"
+
+    for path in (workflow_doc, ticket_readme, kickoff, run_lane, ticket_execution):
+        if not path.exists():
+            files.append(normalize_path(path, root))
+            evidence.append(f"Missing workflow contract surface: {normalize_path(path, root)}.")
+            continue
+        text = read_text(path)
+        files.append(normalize_path(path, root))
+        if expected_coordination not in text.lower():
+            evidence.append(f"{normalize_path(path, root)} does not state that the team leader owns ticket_claim and ticket_release.")
+        if prebootstrap_guard not in text:
+            evidence.append(f"{normalize_path(path, root)} does not limit pre-bootstrap write claims to Wave 0 setup work.")
+
+    if team_leader is None:
+        files.append(".opencode/agents/*team-leader*.md")
+        evidence.append("Missing team leader prompt; no canonical lease-owner guidance is available.")
+    else:
+        team_leader_text = read_text(team_leader)
+        files.append(normalize_path(team_leader, root))
+        if "grant a write lease with `ticket_claim` before any specialist writes planning, implementation, review, QA, or handoff artifact bodies or makes code changes" not in team_leader_text:
+            evidence.append(f"{normalize_path(team_leader, root)} does not make the coordinator-owned lease model explicit before specialist work.")
+        if "only Wave 0 setup work may claim a write-capable lease before bootstrap is ready" not in team_leader_text:
+            evidence.append(f"{normalize_path(team_leader, root)} does not preserve the Wave 0-only pre-bootstrap claim rule.")
+
+    worker_patterns = ("ticket_claim: allow", "ticket_release: allow", "claim the assigned ticket with `ticket_claim`", "release it with `ticket_release`")
+    for path in (implementer, lane_executor, docs_handoff):
+        if path is None:
+            continue
+        text = read_text(path)
+        files.append(normalize_path(path, root))
+        hits = [pattern for pattern in worker_patterns if pattern in text]
+        if hits:
+            evidence.append(f"{normalize_path(path, root)} still tells the specialist lane to claim or release its own lease: {', '.join(hits)}.")
+
+    if not evidence:
+        return
+
+    add_finding(
+        findings,
+        Finding(
+            code="WFLOW012",
+            severity="error",
+            problem="The generated lease-ownership contract is split across coordinator and worker surfaces, so agents can disagree about who should claim a ticket and when bootstrap gates apply.",
+            root_cause="Some workflow docs and prompts still describe worker-owned lease claims while others expect the team leader to coordinate claims. That contradiction is enough to make weaker models thrash around ticket ownership and pre-bootstrap write rules.",
+            files=list(dict.fromkeys(files)),
+            safer_pattern="Adopt one lease model everywhere: the team leader owns `ticket_claim` and `ticket_release`, specialists work only inside the already-active ticket lease, and only Wave 0 setup work may claim before bootstrap is ready.",
+            evidence=evidence[:10],
+        ),
+    )
+
+
+def audit_resume_truth_hierarchy(root: Path, findings: list[Finding]) -> None:
+    resume = root / ".opencode" / "commands" / "resume.md"
+    workflow_doc = root / "docs" / "process" / "workflow.md"
+    tooling_doc = root / "docs" / "process" / "tooling.md"
+    agents_doc = root / "AGENTS.md"
+    readme = root / "README.md"
+    latest_handoff = root / ".opencode" / "state" / "latest-handoff.md"
+    manifest_path = root / "tickets" / "manifest.json"
+    workflow_path = root / ".opencode" / "state" / "workflow-state.json"
+
+    evidence: list[str] = []
+    files: list[str] = []
+
+    for path in (manifest_path, workflow_path):
+        if path.exists():
+            files.append(normalize_path(path, root))
+
+    if not resume.exists():
+        files.append(normalize_path(resume, root))
+        evidence.append(f"Missing resume command: {normalize_path(resume, root)}.")
+    else:
+        resume_text = read_text(resume)
+        files.append(normalize_path(resume, root))
+        if "Resume from `tickets/manifest.json` and `.opencode/state/workflow-state.json` first." not in resume_text:
+            evidence.append(f"{normalize_path(resume, root)} does not make manifest + workflow-state the first-class resume source.")
+        if ".opencode/state/latest-handoff.md" not in resume_text:
+            evidence.append(f"{normalize_path(resume, root)} does not mention `.opencode/state/latest-handoff.md` as a derived restart surface.")
+        if "Treat the active open ticket as the primary lane even when historical reverification is pending." not in resume_text:
+            evidence.append(f"{normalize_path(resume, root)} does not preserve active open-ticket priority over backlog reverification.")
+
+    if not latest_handoff.exists():
+        files.append(normalize_path(latest_handoff, root))
+        evidence.append(f"Missing derived restart surface: {normalize_path(latest_handoff, root)}.")
+    else:
+        files.append(normalize_path(latest_handoff, root))
+
+    for path, required in (
+        (workflow_doc, "open active-ticket work remains the primary foreground lane"),
+        (tooling_doc, "`START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` are derived restart surfaces"),
+        (agents_doc, "`START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` are derived restart surfaces"),
+        (readme, "`START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` are derived restart surfaces"),
+    ):
+        if not path.exists():
+            files.append(normalize_path(path, root))
+            evidence.append(f"Missing resume contract surface: {normalize_path(path, root)}.")
+            continue
+        text = read_text(path)
+        files.append(normalize_path(path, root))
+        if required not in text:
+            evidence.append(f"{normalize_path(path, root)} does not encode the updated resume truth hierarchy.")
+
+    if not evidence:
+        return
+
+    add_finding(
+        findings,
+        Finding(
+            code="WFLOW013",
+            severity="error",
+            problem="The generated resume contract still gives too much authority to derived handoff text or lets reverification obscure the active open ticket.",
+            root_cause="When `/resume` and the surrounding docs do not put `tickets/manifest.json` plus `.opencode/state/workflow-state.json` first, weaker models start following stale restart text, ignore `.opencode/state/latest-handoff.md`, or abandon the active foreground ticket for historical reverification too early.",
+            files=list(dict.fromkeys(files)),
+            safer_pattern="Make manifest + workflow-state canonical for `/resume`, keep `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` derived-only, and preserve the active open ticket as the primary lane until it is resolved.",
+            evidence=evidence[:10],
+        ),
+    )
+
+
+def audit_invocation_log_coordinator_artifact_authorship(root: Path, findings: list[Finding]) -> None:
+    invocation_log = root / ".opencode" / "state" / "invocation-log.jsonl"
+    events = parse_invocation_log_events(invocation_log)
+    if not events:
+        return
+
+    evidence: list[str] = []
+    for event in events:
+        if event.tool != "artifact_write" or event.event != "tool.execute.before" or not isinstance(event.args, dict):
+            continue
+        if not is_coordinator_assistant(event.agent):
+            continue
+        stage = str(event.args.get("stage", "")).strip()
+        if stage not in COORDINATOR_ARTIFACT_STAGES:
+            continue
+        artifact_path = str(event.args.get("path", "")).strip()
+        evidence.append(
+            f"Invocation log line {event.line_number}: coordinator {event.agent or 'unknown agent'} wrote `{stage}` artifact"
+            + (f" at `{artifact_path}`." if artifact_path else ".")
+        )
+
+    if not evidence:
+        return
+
+    add_finding(
+        findings,
+        Finding(
+            code="WFLOW014",
+            severity="error",
+            problem="The repo's current invocation log shows the coordinator writing specialist stage artifacts directly, so that stage evidence is suspect.",
+            root_cause="Even after the workflow layer was generated, the coordinator still authored planning, implementation, review, QA, or smoke-test artifacts. That bypasses the specialist-lane ownership model and should not count as canonical proof of progression.",
+            files=[normalize_path(invocation_log, root)],
+            safer_pattern="Treat coordinator-authored specialist artifacts as suspect evidence, route remediation through the package contract and regenerated prompts, and rerun the affected stage through the owning specialist or deterministic tool.",
+            evidence=evidence[:6],
         ),
     )
 
@@ -1951,12 +2372,20 @@ def expected_restart_surface_state(manifest: dict[str, Any], workflow: dict[str,
     bootstrap = workflow.get("bootstrap") if isinstance(workflow.get("bootstrap"), dict) else {}
     lane_leases = workflow.get("lane_leases") if isinstance(workflow.get("lane_leases"), list) else []
     proof_artifact = bootstrap.get("proof_artifact") if isinstance(bootstrap, dict) else None
+    handoff_status = (
+        "bootstrap recovery required"
+        if str(bootstrap.get("status", "")).strip() != "ready"
+        else "workflow verification pending"
+        if workflow.get("pending_process_verification") is True
+        else "ready for continued development"
+    )
     return {
         "ticket_id": str(active_ticket.get("id", "")).strip(),
         "stage": str(active_ticket.get("stage", workflow.get("stage", ""))).strip(),
         "status": str(active_ticket.get("status", workflow.get("status", ""))).strip(),
         "bootstrap_status": str(bootstrap.get("status", "")).strip(),
         "bootstrap_proof": str(proof_artifact).strip() if isinstance(proof_artifact, str) and proof_artifact.strip() else "None",
+        "handoff_status": handoff_status,
         "pending_process_verification": "true" if workflow.get("pending_process_verification") is True else "false",
         "state_revision": str(workflow.get("state_revision")) if isinstance(workflow.get("state_revision"), int) else None,
         "has_lane_leases": bool(lane_leases),
@@ -1970,6 +2399,7 @@ def parse_start_here_state(text: str) -> dict[str, Any]:
         "ticket_id": current.get("id"),
         "stage": current.get("stage"),
         "status": current.get("status"),
+        "handoff_status": generation.get("handoff_status"),
         "bootstrap_status": generation.get("bootstrap_status"),
         "bootstrap_proof": generation.get("bootstrap_proof"),
         "pending_process_verification": generation.get("pending_process_verification"),
@@ -2132,9 +2562,16 @@ def audit_session_workaround_search(root: Path, findings: list[Finding], logs: l
             stage = str(event.args.get("stage", "")).strip()
             if stage and stage not in {"planning", "plan_review", "implementation", "review", "qa", "smoke-test", "closeout"}:
                 evidence.append(f"Line {event.line_number}: unsupported ticket_update stage `{stage}` from {event.assistant or 'unknown assistant'}.")
-        evidence.extend(
-            f"Line {line_number}: {line}" for line_number, line in matching_line_numbers(text, (r"\bworkaround\b", r"\bbypass\b"))[:5]
+        reasoning_hits = matching_assistant_reasoning_line_numbers(
+            text,
+            (r"\bworkaround\b", r"\bbypass\b", *TRANSCRIPT_SOFT_BYPASS_PATTERNS),
         )
+        if not reasoning_hits:
+            reasoning_hits = matching_non_tool_line_numbers(
+                text,
+                (r"\bworkaround\b", r"\bbypass\b", *TRANSCRIPT_SOFT_BYPASS_PATTERNS),
+            )
+        evidence.extend(f"Line {line_number}: {line}" for line_number, line in reasoning_hits[:5])
         if not evidence:
             continue
 
@@ -2143,11 +2580,159 @@ def audit_session_workaround_search(root: Path, findings: list[Finding], logs: l
             Finding(
                 code="SESSION003",
                 severity="error",
-                problem="The supplied session transcript shows the agent searching for workflow bypasses instead of following the lifecycle contract.",
-                root_cause="Once the lifecycle gate became confusing, the agent started trying unsupported stages or explicit workarounds rather than resolving the missing proof or contradictory contract.",
+                problem="The supplied session transcript shows the agent searching for workflow bypasses or soft dependency overrides instead of following the lifecycle contract.",
+                root_cause="Once the lifecycle gate became confusing, the agent started trying unsupported stages, explicit workarounds, or softer 'close it anyway' / dependency-override reasoning instead of resolving the missing proof or contradictory contract.",
                 files=[normalize_path(path, root)],
-                safer_pattern="Reject unsupported stages up front, tell the coordinator not to probe alternate transitions, and return the contract contradiction as a blocker when the required proof is missing.",
+                safer_pattern="Reject unsupported stages and dependency overrides up front, tell the coordinator not to probe alternate transitions or close blocked tickets anyway, and return the contract contradiction as a blocker when the required proof is missing.",
                 evidence=evidence,
+            ),
+        )
+
+
+def audit_session_broken_tooling(root: Path, findings: list[Finding], logs: list[Path]) -> None:
+    for path in logs:
+        text = read_text(path)
+        if not text:
+            continue
+
+        evidence: list[str] = []
+        for event in parse_transcript_tool_events(text):
+            if not event.error:
+                continue
+            if not any(re.search(pattern, event.error, re.IGNORECASE) for pattern in TRANSCRIPT_BROKEN_TOOL_PATTERNS):
+                continue
+            tool_class = "internal workflow helper" if event.tool.startswith("_workflow_") else "tool"
+            error_summary = event.error.splitlines()[0].strip()
+            evidence.append(f"Line {event.line_number}: {tool_class} `{event.tool}` failed with `{error_summary}`.")
+
+        evidence.extend(
+            f"Line {line_number}: {line}"
+            for line_number, line in matching_line_numbers(text, (r"Available tools:.*_workflow_",))[:3]
+        )
+        if not evidence:
+            continue
+
+        add_finding(
+            findings,
+            Finding(
+                code="WFLOW015",
+                severity="error",
+                problem="The supplied session transcript shows the runtime exposing or invoking broken workflow helper tools instead of only executable tool modules.",
+                root_cause="The tool surface leaked `_workflow_*` helpers or other non-executable exports into the model-visible tool list. When the coordinator called them, the runtime failed before any workflow logic could run.",
+                files=[normalize_path(path, root), ".opencode/lib/workflow.ts"],
+                safer_pattern="Keep workflow helpers private under `.opencode/lib/workflow.ts`, expose only real `tool({...})` modules to the model, and make audit treat transcript-level missing-`execute` failures as managed workflow-contract defects.",
+                evidence=evidence[:6],
+            ),
+        )
+
+
+def audit_session_smoke_test_override_failure(root: Path, findings: list[Finding], logs: list[Path]) -> None:
+    smoke_test = root / ".opencode" / "tools" / "smoke_test.ts"
+    for path in logs:
+        text = read_text(path)
+        if not text:
+            continue
+
+        evidence: list[str] = []
+        saw_override = False
+        for event in parse_transcript_tool_events(text):
+            if event.tool != "smoke_test" or not isinstance(event.args, dict):
+                continue
+            override = event.args.get("command_override")
+            if isinstance(override, list) and override:
+                saw_override = True
+                if event.output and '"failure_classification": "environment"' in event.output:
+                    evidence.append(
+                        f"Line {event.line_number}: smoke_test with command_override returned `failure_classification: environment` before the requested override command ran."
+                    )
+
+        if not saw_override:
+            continue
+
+        evidence.extend(
+            f"Line {line_number}: {line}"
+            for line_number, line in matching_line_numbers(text, TRANSCRIPT_SMOKE_OVERRIDE_FAILURE_PATTERNS)[:4]
+        )
+        if not evidence:
+            continue
+
+        add_finding(
+            findings,
+            Finding(
+                code="WFLOW016",
+                severity="error",
+                problem="The supplied session transcript shows the managed smoke-test override path failing before the requested smoke command starts.",
+                root_cause="The generated `smoke_test` tool treated a shell-style environment assignment like `UV_CACHE_DIR=...` as the executable name for `spawn()`. That turns a valid explicit override command into an `ENOENT` tool failure and misclassifies the result as a runtime environment problem.",
+                files=[normalize_path(path, root), normalize_path(smoke_test, root)],
+                safer_pattern="Parse shell-style smoke-test overrides before execution, strip leading `KEY=VALUE` env assignments into the spawn environment, and report malformed overrides as configuration errors rather than environment failures.",
+                evidence=evidence[:6],
+            ),
+    )
+
+
+def audit_session_smoke_test_acceptance_drift(root: Path, findings: list[Finding], logs: list[Path]) -> None:
+    smoke_test = root / ".opencode" / "tools" / "smoke_test.ts"
+    for path in logs:
+        text = read_text(path)
+        if not text:
+            continue
+
+        acceptance_commands = extract_transcript_smoke_acceptance_commands(text)
+        if not acceptance_commands:
+            continue
+
+        evidence: list[str] = []
+        for event in parse_transcript_tool_events(text):
+            if event.tool != "smoke_test":
+                continue
+            if not isinstance(event.args, dict):
+                continue
+            if isinstance(event.args.get("command_override"), list) and event.args.get("command_override"):
+                continue
+
+            payload = parse_json_object(event.output or "")
+            if not payload:
+                continue
+            raw_commands = payload.get("commands")
+            if not isinstance(raw_commands, list):
+                continue
+            executed_commands = [
+                normalize_shell_command(str(item.get("command", "")).strip())
+                for item in raw_commands
+                if isinstance(item, dict) and str(item.get("command", "")).strip()
+            ]
+            smoke_commands = [command for command in executed_commands if re.search(r"\b(pytest|cargo test|go test|ruff check|npm run test|pnpm run test|yarn test|bun run test)\b", command, re.IGNORECASE)]
+            if not smoke_commands:
+                continue
+
+            if any(command.lower() == acceptance.lower() for command in smoke_commands for acceptance in acceptance_commands):
+                continue
+
+            evidence.append(
+                f"Line {event.line_number}: smoke_test ran `{smoke_commands[0]}` even though transcript acceptance criteria already specified `{acceptance_commands[0]}`."
+            )
+            if isinstance(event.args.get("test_paths"), list) and event.args.get("test_paths"):
+                evidence.append(
+                    f"Line {event.line_number}: smoke_test relied on caller-supplied test_paths instead of the ticket's explicit smoke acceptance command."
+                )
+
+        evidence.extend(
+            f"Line {line_number}: {line}"
+            for line_number, line in matching_line_numbers(text, TRANSCRIPT_SMOKE_ACCEPTANCE_PATTERNS)[:3]
+        )
+        if not any(item.startswith("Line ") and "smoke_test ran `" in item for item in evidence):
+            continue
+
+        add_finding(
+            findings,
+            Finding(
+                code="WFLOW017",
+                severity="error",
+                problem="The supplied session transcript shows the smoke-test stage running a heuristic command that does not match the ticket's explicit acceptance command.",
+                root_cause="The generated `smoke_test` tool fell back to repo-level pytest detection or caller-supplied `test_paths` instead of binding itself to the ticket's canonical smoke acceptance command. That can widen smoke scope to unrelated failures or narrow it away from the actual closeout requirement.",
+                files=[normalize_path(path, root), normalize_path(smoke_test, root)],
+                safer_pattern="Treat acceptance-backed smoke commands as canonical, let `smoke_test` infer them automatically, and reject heuristic scope changes unless the caller provides an intentional exact command override.",
+                evidence=evidence[:6],
             ),
         )
 
@@ -2564,6 +3149,8 @@ def audit_repo(root: Path, logs: list[Path] | None = None) -> list[Finding]:
     audit_failed_repair_cycle(root, findings)
     audit_bootstrap_deadlock(root, findings)
     audit_smoke_test_contract(root, findings)
+    audit_smoke_test_override_contract(root, findings)
+    audit_smoke_test_acceptance_contract(root, findings)
     audit_review_stage_ambiguity(root, findings)
     audit_ticket_transition_contract(root, findings)
     audit_reverification_deadlock(root, findings)
@@ -2573,12 +3160,18 @@ def audit_repo(root: Path, logs: list[Path] | None = None) -> list[Finding]:
     audit_team_leader_workflow_contract(root, findings)
     audit_ticket_execution_skill_contract(root, findings)
     audit_bootstrap_guidance_drift(root, findings)
+    audit_lease_claim_guidance_drift(root, findings)
+    audit_resume_truth_hierarchy(root, findings)
+    audit_invocation_log_coordinator_artifact_authorship(root, findings)
     audit_environment_prerequisites(root, findings)
     audit_python_execution(root, findings)
     audit_handoff_evidence_gap(root, findings)
     audit_session_chronology(root, findings, logs or [])
     audit_session_transition_thrash(root, findings, logs or [])
     audit_session_workaround_search(root, findings, logs or [])
+    audit_session_broken_tooling(root, findings, logs or [])
+    audit_session_smoke_test_override_failure(root, findings, logs or [])
+    audit_session_smoke_test_acceptance_drift(root, findings, logs or [])
     audit_session_evidence_free_verification(root, findings, logs or [])
     audit_session_coordinator_artifact_authorship(root, findings, logs or [])
     return findings
@@ -2677,6 +3270,18 @@ def prevention_action(finding: Finding) -> str:
         return "Regenerate derived restart surfaces from canonical manifest and workflow state after every workflow mutation so resume guidance never contradicts active bootstrap, ticket, or lease facts."
     if finding.code == "WFLOW011":
         return "Make bootstrap-first routing explicit across ticket lookup, the team leader prompt, and the repo-local workflow skill so failed or stale bootstrap short-circuits normal lifecycle guidance."
+    if finding.code == "WFLOW012":
+        return "Use one lease-ownership model everywhere: the team leader claims and releases ticket leases, specialists work under the active lease, and only Wave 0 setup work may claim before bootstrap is ready."
+    if finding.code == "WFLOW013":
+        return "Make `/resume` trust canonical manifest plus workflow state first, keep all restart surfaces derived-only, include `.opencode/state/latest-handoff.md`, and preserve the active open ticket as the primary lane."
+    if finding.code == "WFLOW014":
+        return "Teach audit, repair, and generated prompts to treat coordinator-authored specialist artifacts in invocation logs as suspect evidence that requires remediation and stage reruns through the owning specialist."
+    if finding.code == "WFLOW015":
+        return "Audit transcript tool errors directly, keep `_workflow_*` helpers out of the model-visible tool surface, and fail package verification when internal helper exports can be selected like executable tools."
+    if finding.code == "WFLOW016":
+        return "Make `smoke_test` parse shell-style override commands correctly, treat leading `KEY=VALUE` tokens as environment overrides, and detect transcript-level `ENOENT` override failures as workflow-surface defects instead of generic test failures."
+    if finding.code == "WFLOW017":
+        return "Make `smoke_test` infer explicit acceptance-backed smoke commands before generic test-surface detection, and detect transcript runs where smoke scope drifted away from the ticket's canonical acceptance command."
     if finding.code == "SESSION001":
         return "Teach scafforge-audit to treat supplied session logs as first-class temporal evidence and explain final reasoning failures before reconciling current repo state."
     if finding.code == "SESSION002":
@@ -2879,7 +3484,7 @@ def render_report_four(root: Path, findings: list[Finding], recommendations: lis
                     "",
                 ]
             )
-        if any(finding.code in {"SKILL002", "SESSION002", "SESSION003", "SESSION004", "SESSION005", "WFLOW007"} for finding in findings):
+        if any(finding.code in {"SKILL002", "SESSION002", "SESSION003", "SESSION004", "SESSION005", "WFLOW007", "WFLOW012", "WFLOW013", "WFLOW014", "WFLOW015", "WFLOW016", "WFLOW017"} for finding in findings):
             lines.extend(
                 [
                     "- Rerun project-local skill regeneration and prompt hardening after the deterministic refresh so the repo-local `ticket-execution` skill and team-leader prompt explain the same state machine the tools enforce.",

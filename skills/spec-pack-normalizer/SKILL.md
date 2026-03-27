@@ -85,6 +85,14 @@ Verify the brief:
 
 Return to `../scaffold-kickoff/SKILL.md` step 2 to resolve ambiguities, then proceed to step 3 only after all blocking decisions are resolved.
 
+## Output contract
+
+Before leaving this skill, confirm all of these are true:
+- `docs/spec/CANONICAL-BRIEF.md` exists and contains all 12 required sections
+- the batched decision packet is written into the canonical brief or a directly referenced companion file
+- blocking decisions are explicitly separated from non-blocking open questions
+- backlog readiness states whether ticket generation may proceed now or which areas remain blocked
+
 ## Rules
 
 - Prefer opportunistic intake over rigid required input structure

@@ -1,5 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
-import { defaultArtifactPath, getTicket, loadManifest, normalizeRepoPath, writeText } from "./_workflow"
+import { canonicalizeRepoPath, defaultArtifactPath, describeArtifactPathMismatch, getTicket, loadManifest, writeText } from "../lib/workflow"
 
 export default tool({
   description: "Write the full body for a canonical planning, implementation, review, or QA artifact.",
@@ -13,19 +13,25 @@ export default tool({
   async execute(args) {
     const manifest = await loadManifest()
     const ticket = getTicket(manifest, args.ticket_id)
-    const resolvedPath = normalizeRepoPath(args.path)
+    const resolved = canonicalizeRepoPath(args.path)
     const expectedPath = defaultArtifactPath(ticket.id, args.stage, args.kind)
 
-    if (resolvedPath !== expectedPath) {
-      throw new Error(`Artifact path must be the canonical path: ${expectedPath}`)
+    if (resolved.path !== expectedPath) {
+      throw new Error(
+        describeArtifactPathMismatch({
+          provided_path: args.path,
+          expected_path: expectedPath,
+          mismatch_class: resolved.mismatch_class || "non_canonical",
+        }),
+      )
     }
 
-    await writeText(resolvedPath, args.content)
+    await writeText(resolved.path, args.content)
 
     return JSON.stringify(
       {
         ticket_id: ticket.id,
-        path: resolvedPath,
+        path: resolved.path,
         bytes: Buffer.byteLength(args.content, "utf8"),
       },
       null,

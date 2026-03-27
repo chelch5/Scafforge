@@ -66,6 +66,7 @@ For each piece of work, create a ticket with these fields:
 - `depends_on` — list of ticket IDs this depends on
 - `source_ticket_id` — source ticket when this is a follow-up or remediation ticket, otherwise `null`
 - `follow_up_ticket_ids` — linked downstream remediation or expansion tickets, initially empty
+- `source_mode` — `process_verification`, `post_completion_issue`, or `net_new_scope` when the ticket was created from later diagnosis or reverification work; omit for greenfield bootstrap tickets
 - `summary` — one-paragraph description of what needs to be done
 - `acceptance` — list of specific acceptance criteria tied to finalized repo-local commands, checks, or observable workflow surfaces
 - `artifacts` — empty list (populated during execution)
@@ -114,6 +115,7 @@ Write `tickets/manifest.json` with the structure defined in `references/ticket-s
 - `project`: project name from canonical brief
 - `active_ticket`: first ticket in wave 0
 - `tickets`: array of all ticket objects
+- keep ticket objects aligned with the runtime contract in `.opencode/lib/workflow.ts`
 
 ### 6. Generate the board
 
@@ -138,13 +140,13 @@ Ensure `.opencode/state/workflow-state.json` reflects the first active ticket:
       "needs_reverification": false
     }
   },
-  "process_version": 5,
+  "process_version": 6,
   "process_last_changed_at": null,
   "process_last_change_summary": null,
   "pending_process_verification": false,
   "parallel_mode": "sequential",
   "bootstrap": {
-    "status": "pending",
+    "status": "missing",
     "last_verified_at": null,
     "environment_fingerprint": null,
     "proof_artifact": null
@@ -153,6 +155,15 @@ Ensure `.opencode/state/workflow-state.json` reflects the first active ticket:
   "state_revision": 0
 }
 ```
+
+## Output contract
+
+Before leaving this skill, confirm all of these are true:
+- `tickets/manifest.json` exists, uses `version: 3`, and every ticket record matches the runtime ticket contract
+- `tickets/BOARD.md` exists and is clearly derived from the manifest instead of carrying extra machine state
+- every `tickets/<id>.md` file exists for the manifest entries created or changed in this run
+- `.opencode/state/workflow-state.json` names the foreground ticket from the manifest and seeds `bootstrap.status: "missing"` on fresh scaffolds until bootstrap proof exists
+- follow-up tickets preserve `source_ticket_id`, `follow_up_ticket_ids`, and `source_mode` linkage when the work came from diagnosis, repair, or reverification evidence
 
 ## Refine mode
 
@@ -218,6 +229,7 @@ Continue to `../handoff-brief/SKILL.md` as directed by scaffold-kickoff.
 - Do NOT use ticket status for transient approval state (that's in workflow-state.json)
 - Treat `plan_review` and `smoke_test` as workflow-tool-owned queue values, not as free-form authoring choices
 - Keep closeout acceptance criteria aligned with the deterministic `smoke_test` tool rather than generic PASS prose
+- When a ticket needs a smoke gate, prefer one explicit backticked repo-local smoke command so `smoke_test` can treat that command as the canonical smoke scope instead of improvising a heuristic subset or full-suite fallback
 - Keep `wave`, `lane`, `parallel_safe`, and `overlap_risk` aligned with real execution boundaries
 - Record dependencies explicitly
 - Put acceptance criteria on every ticket

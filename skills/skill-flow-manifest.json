@@ -52,6 +52,12 @@
       "modes": ["greenfield", "retrofit", "managed-repair", "diagnosis-review"],
       "inputs": ["messy project inputs", "normalized decisions"],
       "outputs": ["orchestrated run", "required downstream sequence"],
+      "required_outputs": [
+        "canonical brief or diagnosis scope",
+        "selected run-type completion state",
+        "aligned ticket/workflow restart surface",
+        "same-session workflow contract conformance check"
+      ],
       "upstreams": [],
       "downstreams": ["spec-pack-normalizer", "repo-scaffold-factory", "project-skill-bootstrap", "opencode-team-bootstrap", "agent-prompt-engineering", "ticket-pack-builder", "scafforge-audit", "scafforge-repair", "handoff-brief"]
     },
@@ -60,6 +66,11 @@
       "modes": ["normalize"],
       "inputs": ["docs", "notes", "spec packs", "fragmented plans"],
       "outputs": ["canonical brief", "decision packet", "backlog readiness"],
+      "required_outputs": [
+        "docs/spec/CANONICAL-BRIEF.md",
+        "batched blocking-decision packet",
+        "backlog readiness signal"
+      ],
       "upstreams": ["scaffold-kickoff"],
       "downstreams": ["repo-scaffold-factory"]
     },
@@ -76,6 +87,11 @@
       "modes": ["design", "retrofit"],
       "inputs": ["canonical brief", "base scaffold agents or existing repo", "repo-local skill pack when present", "project type"],
       "outputs": ["project-specific agents", "customized tools/plugins", "team structure"],
+      "required_outputs": [
+        "project-specific .opencode/agents/",
+        "agent/skill allowlist consistency",
+        "lease-ownership and delegation consistency"
+      ],
       "upstreams": ["project-skill-bootstrap", "spec-pack-normalizer", "scaffold-kickoff", "scafforge-repair"],
       "downstreams": ["project-skill-bootstrap", "agent-prompt-engineering", "ticket-pack-builder", "scafforge-audit"]
     },
@@ -84,6 +100,12 @@
       "modes": ["bootstrap", "refine", "remediation-follow-up"],
       "inputs": ["canonical brief", "decision packet", "backlog readiness", "finalized local workflow surfaces", "audit/repair ticket recommendations"],
       "outputs": ["tickets", "manifest", "board", "decision/blocker tickets", "remediation/verification tickets"],
+      "required_outputs": [
+        "tickets/manifest.json",
+        "tickets/BOARD.md",
+        "tickets/<id>.md files",
+        ".opencode/state/workflow-state.json aligned to active ticket"
+      ],
       "upstreams": ["agent-prompt-engineering", "opencode-team-bootstrap", "scafforge-audit", "scafforge-repair"],
       "downstreams": ["handoff-brief"]
     },
@@ -92,6 +114,11 @@
       "modes": ["full-greenfield-pass", "repair-or-regeneration"],
       "inputs": ["repo structure", "stack evidence", "workflow contract", "selected downstream model profile"],
       "outputs": ["repo-local skill pack", "synthesized local skills", "model operating profile"],
+      "required_outputs": [
+        "baseline .opencode/skills pack populated",
+        ".opencode/skills/model-operating-profile/SKILL.md",
+        "no scaffold placeholder text in generated local skills"
+      ],
       "upstreams": ["repo-scaffold-factory", "opencode-team-bootstrap", "scaffold-kickoff", "scafforge-repair"],
       "downstreams": ["opencode-team-bootstrap", "agent-prompt-engineering", "scafforge-audit"]
     },
@@ -100,6 +127,11 @@
       "modes": ["required-pass"],
       "inputs": ["workflow contract", "weak-model constraints", "repo context"],
       "outputs": ["hardened prompts", "blocker rules", "anti-summary rails"],
+      "required_outputs": [
+        "team-leader prompt aligned to transition guidance",
+        "specialist prompts aligned to lease and artifact ownership",
+        "slash-command human-entrypoint boundary"
+      ],
       "upstreams": ["project-skill-bootstrap", "opencode-team-bootstrap", "repo-scaffold-factory"],
       "downstreams": ["ticket-pack-builder", "scafforge-audit"]
     },
@@ -124,6 +156,12 @@
       "modes": ["publish"],
       "inputs": ["tickets", "workflow state", "artifacts", "diagnosis"],
       "outputs": ["START-HERE refresh", "closeout summary", "restart surface"],
+      "required_outputs": [
+        "START-HERE.md",
+        ".opencode/state/latest-handoff.md",
+        "read order with manifest before board",
+        "next action bounded by current evidence"
+      ],
       "upstreams": ["scafforge-audit", "scafforge-repair", "ticket-pack-builder"],
       "downstreams": []
     }

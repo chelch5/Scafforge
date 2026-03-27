@@ -2,10 +2,12 @@ import { tool } from "@opencode-ai/plugin"
 import { readFile } from "node:fs/promises"
 import {
   currentArtifacts,
+  defaultArtifactPath,
   describeAllowedStatusesForStage,
   getTicket,
   getTicketWorkflowState,
   hasArtifact,
+  hasPendingRepairFollowOn,
   hasReviewArtifact,
   historicalArtifacts,
   isPlanApprovedForTicket,
@@ -13,19 +15,24 @@ import {
   latestReviewArtifact,
   loadManifest,
   loadWorkflowState,
+  nextRepairFollowOnStage,
+  repairFollowOnBlockingReason,
   ticketNeedsProcessVerification,
   ticketsNeedingProcessVerification,
   validateImplementationArtifactEvidence,
   validateLifecycleStageStatus,
   validateQaArtifactEvidence,
   validateSmokeTestArtifactEvidence,
-} from "./_workflow"
+} from "../lib/workflow"
 
 async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, workflow: Awaited<ReturnType<typeof loadWorkflowState>>) {
   const blocker = validateLifecycleStageStatus(ticket.stage, ticket.status)
   const approvedPlan = isPlanApprovedForTicket(workflow, ticket.id)
   const needsProcessVerification = ticketNeedsProcessVerification(ticket, workflow)
   const bootstrapStatus = workflow.bootstrap.status
+  const repairFollowOnPending = hasPendingRepairFollowOn(workflow)
+  const repairFollowOnStage = nextRepairFollowOnStage(workflow)
+  const repairFollowOnBlocker = repairFollowOnBlockingReason(workflow)
   const base = {
     current_stage: ticket.stage,
     current_status: ticket.status,
@@ -34,6 +41,13 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
     current_state_blocker: blocker,
     next_allowed_stages: [] as string[],
     required_artifacts: [] as string[],
+    next_action_kind: null as string | null,
+    next_action_tool: null as string | null,
+    delegate_to_agent: null as string | null,
+    required_owner: null as string | null,
+    canonical_artifact_path: null as string | null,
+    artifact_stage: null as string | null,
+    artifact_kind: null as string | null,
     recommended_action: "",
     recommended_ticket_update: null as Record<string, unknown> | null,
   }
@@ -43,8 +57,31 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
       ...base,
       next_allowed_stages: [],
       required_artifacts: ["bootstrap"],
+      next_action_kind: "run_tool",
+      next_action_tool: "environment_bootstrap",
+      delegate_to_agent: null,
+      required_owner: "team-leader",
       recommended_action: `Bootstrap is ${bootstrapStatus}. Run environment_bootstrap first, then rerun ticket_lookup before attempting lifecycle transitions.`,
       current_state_blocker: blocker || `Bootstrap ${bootstrapStatus}. Lifecycle execution is blocked until environment_bootstrap succeeds.`,
+    }
+  }
+
+  if (repairFollowOnPending) {
+    const repairBlocker = repairFollowOnBlocker || (
+      repairFollowOnStage
+        ? `Repair follow-on remains incomplete. Complete \`${repairFollowOnStage}\` before resuming ticket lifecycle execution.`
+        : "Repair follow-on remains incomplete. Complete the required repair stages before resuming ticket lifecycle execution."
+    )
+    return {
+      ...base,
+      next_allowed_stages: [],
+      required_artifacts: ["repair_follow_on"],
+      next_action_kind: "report_blocker",
+      next_action_tool: null,
+      delegate_to_agent: null,
+      required_owner: "host",
+      recommended_action: repairBlocker,
+      current_state_blocker: repairBlocker,
     }
   }
 
@@ -55,6 +92,13 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           ...base,
           next_allowed_stages: ["planning"],
           required_artifacts: ["planning"],
+          next_action_kind: "write_artifact",
+          next_action_tool: "artifact_write",
+          delegate_to_agent: "planner",
+          required_owner: "team-leader",
+          canonical_artifact_path: defaultArtifactPath(ticket.id, "planning", "plan"),
+          artifact_stage: "planning",
+          artifact_kind: "plan",
           recommended_action: "Write and register the planning artifact before moving into plan_review.",
         }
       }
@@ -62,6 +106,10 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
         ...base,
         next_allowed_stages: ["plan_review"],
         required_artifacts: ["planning"],
+        next_action_kind: "ticket_update",
+        next_action_tool: "ticket_update",
+        delegate_to_agent: null,
+        required_owner: "team-leader",
         recommended_action: "Move the ticket into plan_review. Do not probe implementation until plan_review is recorded first.",
         recommended_ticket_update: { ticket_id: ticket.id, stage: "plan_review", activate: true },
       }
@@ -71,6 +119,10 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           ...base,
           next_allowed_stages: ["plan_review"],
           required_artifacts: ["planning"],
+          next_action_kind: "ticket_update",
+          next_action_tool: "ticket_update",
+          delegate_to_agent: null,
+          required_owner: "team-leader",
           recommended_action: "Keep the ticket in plan_review and record approval in workflow-state first. Only move to implementation after approval is already recorded.",
           recommended_ticket_update: { ticket_id: ticket.id, stage: "plan_review", approved_plan: true, activate: true },
         }
@@ -79,6 +131,10 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
         ...base,
         next_allowed_stages: ["implementation"],
         required_artifacts: ["planning"],
+        next_action_kind: "ticket_update",
+        next_action_tool: "ticket_update",
+        delegate_to_agent: "implementer",
+        required_owner: "team-leader",
         recommended_action: "Move the ticket into implementation, then delegate the write-capable implementation lane.",
         recommended_ticket_update: { ticket_id: ticket.id, stage: "implementation", activate: true },
       }
@@ -89,6 +145,13 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           ...base,
           next_allowed_stages: ["implementation"],
           required_artifacts: ["implementation"],
+          next_action_kind: "write_artifact",
+          next_action_tool: "artifact_write",
+          delegate_to_agent: "implementer",
+          required_owner: "team-leader",
+          canonical_artifact_path: defaultArtifactPath(ticket.id, "implementation", "implementation"),
+          artifact_stage: "implementation",
+          artifact_kind: "implementation",
           recommended_action: "Stay in implementation. Produce and register the implementation artifact with real execution evidence before review.",
           current_state_blocker: implementationBlocker,
         }
@@ -97,6 +160,10 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
         ...base,
         next_allowed_stages: ["review"],
         required_artifacts: ["implementation"],
+        next_action_kind: "ticket_update",
+        next_action_tool: "ticket_update",
+        delegate_to_agent: "reviewer-code",
+        required_owner: "team-leader",
         recommended_action: "Move the ticket into review once the implementation artifact is current.",
         recommended_ticket_update: { ticket_id: ticket.id, stage: "review", activate: true },
       }
@@ -107,6 +174,13 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           ...base,
           next_allowed_stages: ["review"],
           required_artifacts: ["review"],
+          next_action_kind: "write_artifact",
+          next_action_tool: "artifact_write",
+          delegate_to_agent: "reviewer-code",
+          required_owner: "team-leader",
+          canonical_artifact_path: defaultArtifactPath(ticket.id, "review", "review"),
+          artifact_stage: "review",
+          artifact_kind: "review",
           recommended_action: "Keep the ticket in review until at least one current review artifact exists.",
           current_state_blocker: "Review artifact missing.",
         }
@@ -115,6 +189,10 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
         ...base,
         next_allowed_stages: ["qa"],
         required_artifacts: ["review"],
+        next_action_kind: "ticket_update",
+        next_action_tool: "ticket_update",
+        delegate_to_agent: "tester-qa",
+        required_owner: "team-leader",
         recommended_action: "Move the ticket into QA after review approval is registered.",
         recommended_ticket_update: { ticket_id: ticket.id, stage: "qa", activate: true },
       }
@@ -125,6 +203,13 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           ...base,
           next_allowed_stages: ["qa"],
           required_artifacts: ["qa"],
+          next_action_kind: "write_artifact",
+          next_action_tool: "artifact_write",
+          delegate_to_agent: "tester-qa",
+          required_owner: "team-leader",
+          canonical_artifact_path: defaultArtifactPath(ticket.id, "qa", "qa"),
+          artifact_stage: "qa",
+          artifact_kind: "qa",
           recommended_action: "Keep the ticket in QA until the QA artifact includes real command output and passes size checks.",
           current_state_blocker: qaBlocker,
         }
@@ -133,6 +218,10 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
         ...base,
         next_allowed_stages: ["smoke-test"],
         required_artifacts: ["qa"],
+        next_action_kind: "ticket_update",
+        next_action_tool: "ticket_update",
+        delegate_to_agent: "tester-qa",
+        required_owner: "team-leader",
         recommended_action: "Advance to smoke-test, then use the smoke_test tool. Do not write smoke-test artifacts through artifact_write or artifact_register.",
         recommended_ticket_update: { ticket_id: ticket.id, stage: "smoke-test", activate: true },
       }
@@ -144,6 +233,13 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           ...base,
           next_allowed_stages: ["smoke-test"],
           required_artifacts: ["smoke-test"],
+          next_action_kind: "run_tool",
+          next_action_tool: "smoke_test",
+          delegate_to_agent: "tester-qa",
+          required_owner: "team-leader",
+          canonical_artifact_path: defaultArtifactPath(ticket.id, "smoke-test", "smoke-test"),
+          artifact_stage: "smoke-test",
+          artifact_kind: "smoke-test",
           recommended_action: "Use the smoke_test tool to produce the current smoke-test artifact. Do not fabricate a PASS artifact through generic artifact tools.",
           current_state_blocker: smokeBlocker,
         }
@@ -152,6 +248,10 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
         ...base,
         next_allowed_stages: ["closeout"],
         required_artifacts: ["smoke-test"],
+        next_action_kind: "ticket_update",
+        next_action_tool: "ticket_update",
+        delegate_to_agent: null,
+        required_owner: "team-leader",
         recommended_action: "Move the ticket into closeout/done now that a passing smoke-test artifact exists.",
         recommended_ticket_update: { ticket_id: ticket.id, stage: "closeout", activate: true },
       }
@@ -162,6 +262,13 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           ...base,
           next_allowed_stages: [],
           required_artifacts: ["review/backlog-verification or linked follow-up evidence"],
+          next_action_kind: "reverify",
+          next_action_tool: "ticket_reverify",
+          delegate_to_agent: "backlog-verifier",
+          required_owner: "team-leader",
+          canonical_artifact_path: defaultArtifactPath(ticket.id, "review", "backlog-verification"),
+          artifact_stage: "review",
+          artifact_kind: "backlog-verification",
           recommended_action: "Ticket is already closed, but historical trust still needs restoration. Use the backlog verifier to produce current evidence, then run ticket_reverify on this closed ticket instead of trying to reclaim it.",
           recommended_ticket_update: null,
         }
@@ -170,6 +277,10 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
         ...base,
         next_allowed_stages: [],
         required_artifacts: ["smoke-test"],
+        next_action_kind: ticket.status === "done" ? "noop" : "ticket_update",
+        next_action_tool: ticket.status === "done" ? null : "ticket_update",
+        delegate_to_agent: null,
+        required_owner: "team-leader",
         recommended_action: ticket.status === "done" ? "Ticket is already closed." : "Finish closeout and mark the ticket done.",
         recommended_ticket_update: ticket.status === "done" ? null : { ticket_id: ticket.id, stage: "closeout", activate: true },
       }
@@ -177,6 +288,9 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
       return {
         ...base,
         next_allowed_stages: [],
+        next_action_kind: "inspect",
+        next_action_tool: "ticket_lookup",
+        required_owner: "team-leader",
         recommended_action: "Current stage is invalid. Repair the workflow contract before continuing.",
       }
   }
@@ -272,6 +386,7 @@ export default tool({
           follow_up_ticket_ids: ticket.follow_up_ticket_ids,
         },
         bootstrap: workflow.bootstrap,
+        repair_follow_on: workflow.repair_follow_on,
         transition_guidance: {
           ...transitionGuidance,
           allowed_statuses_for_current_stage: describeAllowedStatusesForStage(ticket.stage),

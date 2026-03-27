@@ -91,6 +91,14 @@ Re-read the final prompt and ask:
 - Are all delegation boundaries named?
 - Is there a clear stop condition?
 
+## Output contract
+
+Before leaving this skill, confirm all of these are true:
+- the team leader prompt treats `ticket_lookup.transition_guidance` as canonical, routes bootstrap failures to `environment_bootstrap`, and does not stop at summary when work remains
+- specialist prompts describe the same lease-ownership model, artifact ownership model, and blocker behavior as the workflow tools
+- read-only prompts do not tell agents to mutate repo-tracked files
+- slash commands are described only as human entrypoints, not as autonomous workflow tools
+
 ## Rules
 
 - Prefer tool-backed state over raw file choreography

@@ -9,7 +9,7 @@ If this file conflicts with any global AI instruction file, this file wins for t
 1. Read `START-HERE.md` first.
 2. Treat `docs/spec/CANONICAL-BRIEF.md` as the project source of truth.
 3. Use `tickets/manifest.json` as the machine-readable work queue.
-4. Use `.opencode/state/workflow-state.json` for transient stage approval, bootstrap, lease, and reverification state.
+4. Use `.opencode/state/workflow-state.json` for transient stage approval, bootstrap, coordinator-owned lease, and reverification state.
 5. Treat the stage-specific artifact directories as the canonical stage-proof body locations.
 6. Use the process version and verification state in `.opencode/state/workflow-state.json` before trusting old completed work.
 7. Keep the repo signposted and deterministic for weaker models.
@@ -20,11 +20,11 @@ If this file conflicts with any global AI instruction file, this file wins for t
 - `docs/spec/CANONICAL-BRIEF.md` owns durable project facts and decisions
 - `tickets/manifest.json` owns machine queue state and registered artifact metadata
 - `tickets/BOARD.md` is the derived human queue board
-- `.opencode/state/workflow-state.json` owns the transient foreground stage, per-ticket approval state, bootstrap readiness, lane leases, and the active process-version plus post-migration verification state
+- `.opencode/state/workflow-state.json` owns the transient foreground stage, per-ticket approval state, bootstrap readiness, coordinator-owned lane leases, and the active process-version plus post-migration verification state
 - `.opencode/state/plans/`, `.opencode/state/implementations/`, `.opencode/state/reviews/`, `.opencode/state/qa/`, `.opencode/state/smoke-tests/`, and `.opencode/state/handoffs/` own stage artifact bodies
 - `.opencode/state/artifacts/registry.json` owns the cross-stage artifact registry
 - `.opencode/meta/bootstrap-provenance.json` owns bootstrap and repair provenance
-- `START-HERE.md` is the derived restart surface
+- `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` are derived restart surfaces
 
 ## Required read order
 
@@ -52,6 +52,8 @@ If this file conflicts with any global AI instruction file, this file wins for t
 - Use ticket tools and workflow-state instead of raw file edits for stage transitions.
 - Treat `ticket_lookup.transition_guidance` as the canonical description of the next legal stage move.
 - If the same lifecycle-tool error repeats, stop and return a blocker instead of probing alternate stage or status values.
+- Only Wave 0 setup work may claim a write-capable lease before bootstrap is ready.
+- The team leader owns `ticket_claim` and `ticket_release`. Specialists work only inside the already-active lease for the current ticket.
 - Default to one active write lane at a time. Use lane leases only for bounded parallel work instead of overlapping unmanaged edits.
 - Keep `START-HERE.md`, `tickets/BOARD.md`, and `tickets/manifest.json` aligned with the canonical sources that feed them.
 - Use Ubuntu-safe commands and paths in generated project docs unless the project explicitly says otherwise.

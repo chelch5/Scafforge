@@ -11,11 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-AUDIT_SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts"
-if str(AUDIT_SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(AUDIT_SCRIPT_DIR))
-
 from audit_repo_process import audit_repo, load_latest_previous_diagnosis, supporting_log_paths
+from regenerate_restart_surfaces import regenerate_restart_surfaces
 
 
 START_HERE_MANAGED_START = "<!-- SCAFFORGE:START_HERE_BLOCK START -->"
@@ -347,7 +344,7 @@ def render_start_here(manifest: dict[str, Any], workflow: dict[str, Any], backlo
         f"- dependent_tickets_waiting_on_current: {summarize(blocked)}\n\n"
         "## Generation Status\n\n"
         "- handoff_status: ready for continued development\n"
-        f"- process_version: {workflow.get('process_version', 5)}\n"
+        f"- process_version: {workflow.get('process_version', 6)}\n"
         f"- parallel_mode: {workflow.get('parallel_mode', 'sequential')}\n"
         f"- pending_process_verification: {'true' if workflow.get('pending_process_verification') is True else 'false'}\n"
         f"- bootstrap_status: {bootstrap_status}\n"
@@ -412,7 +409,7 @@ def render_context_snapshot(manifest: dict[str, Any], workflow: dict[str, Any]) 
         f"- last_verified_at: {bootstrap.get('last_verified_at') or 'Not yet verified.'}\n"
         f"- proof_artifact: {bootstrap.get('proof_artifact') or 'None'}\n\n"
         "## Process State\n\n"
-        f"- process_version: {workflow.get('process_version', 5)}\n"
+        f"- process_version: {workflow.get('process_version', 6)}\n"
         f"- pending_process_verification: {'true' if workflow.get('pending_process_verification') is True else 'false'}\n"
         f"- parallel_mode: {workflow.get('parallel_mode', 'sequential')}\n"
         f"- state_revision: {workflow.get('state_revision', 0)}\n\n"
@@ -481,21 +478,37 @@ def update_workflow_state(repo_root: Path, rendered_provenance: dict[str, Any], 
     existing_bootstrap = workflow.get("bootstrap") if isinstance(workflow, dict) and isinstance(workflow.get("bootstrap"), dict) else {}
     existing_lane_leases = workflow.get("lane_leases") if isinstance(workflow, dict) and isinstance(workflow.get("lane_leases"), list) else []
     existing_state_revision = workflow.get("state_revision") if isinstance(workflow, dict) and isinstance(workflow.get("state_revision"), int) and workflow.get("state_revision") >= 0 else 0
+    bootstrap_status = existing_bootstrap.get("status")
+    if bootstrap_status not in {"missing", "ready", "stale", "failed"}:
+        bootstrap_status = "missing"
 
     workflow_contract = rendered_provenance.get("workflow_contract", {}) if isinstance(rendered_provenance, dict) else {}
+    process_version = workflow_contract.get("process_version", 6)
+    changed_at = current_iso_timestamp()
     payload = {
         "active_ticket": active_ticket,
         "stage": stage,
         "status": status,
         "approved_plan": approved_plan,
         "ticket_state": ticket_state,
-        "process_version": workflow_contract.get("process_version", 5),
-        "process_last_changed_at": current_iso_timestamp(),
+        "process_version": process_version,
+        "process_last_changed_at": changed_at,
         "process_last_change_summary": change_summary,
         "pending_process_verification": True,
         "parallel_mode": workflow_contract.get("parallel_mode", "sequential"),
+        "repair_follow_on": {
+            "required_stages": [],
+            "completed_stages": [],
+            "blocking_reasons": [
+                "Managed repair refreshed workflow surfaces. Run the full scafforge-repair follow-on flow before resuming normal ticket lifecycle execution."
+            ],
+            "verification_passed": False,
+            "handoff_allowed": False,
+            "last_updated_at": changed_at,
+            "process_version": process_version,
+        },
         "bootstrap": {
-            "status": existing_bootstrap.get("status", "pending"),
+            "status": bootstrap_status,
             "last_verified_at": existing_bootstrap.get("last_verified_at"),
             "environment_fingerprint": existing_bootstrap.get("environment_fingerprint"),
             "proof_artifact": existing_bootstrap.get("proof_artifact"),
@@ -540,7 +553,7 @@ def apply_repair(repo_root: Path, rendered_root: Path, change_summary: str) -> l
     replace_file(rendered_root / "opencode.jsonc", repo_root / "opencode.jsonc")
     replaced_surfaces.append("opencode.jsonc")
 
-    for relative in (".opencode/tools", ".opencode/plugins", ".opencode/commands"):
+    for relative in (".opencode/tools", ".opencode/lib", ".opencode/plugins", ".opencode/commands"):
         replace_directory(rendered_root / relative, repo_root / relative)
         replaced_surfaces.append(relative)
 
@@ -567,8 +580,14 @@ def apply_repair(repo_root: Path, rendered_root: Path, change_summary: str) -> l
 
     update_provenance(repo_root, rendered_root, replaced_surfaces, change_summary)
     update_workflow_state(repo_root, read_json(rendered_root / ".opencode" / "meta" / "bootstrap-provenance.json"), change_summary)
-    refresh_restart_surfaces(repo_root)
+    regenerate_restart_surfaces(
+        repo_root,
+        reason=change_summary,
+        source="scafforge-repair",
+        verification_passed=False,
+    )
     replaced_surfaces.append(".opencode/state/context-snapshot.md")
+    replaced_surfaces.append(".opencode/state/latest-handoff.md")
     return replaced_surfaces
 
 
@@ -584,6 +603,19 @@ def main() -> int:
 
     logs = verification_logs(repo_root, args.supporting_log)
     findings = [] if args.skip_verify else audit_repo(repo_root, logs=logs)
+    verification_passed = False if args.skip_verify else not findings
+    verification_next_action = None
+    if args.skip_verify:
+        verification_next_action = "Run scafforge-audit before relying on this restart narrative for continued development."
+    elif not verification_passed:
+        verification_next_action = "Resolve the post-repair audit findings, then rerun scafforge-audit before treating the repo as ready for continued development."
+    regenerate_restart_surfaces(
+        repo_root,
+        reason=args.change_summary,
+        source="scafforge-repair",
+        next_action=verification_next_action,
+        verification_passed=verification_passed,
+    )
     pending_process_verification = load_pending_process_verification(repo_root)
     managed_surface_findings = [finding for finding in findings if finding.code.startswith(("WFLOW", "BOOT", "MODEL", "SKILL", "CYCLE"))]
     environment_findings = [finding for finding in findings if finding.code.startswith("ENV")]
@@ -603,6 +635,7 @@ def main() -> int:
             "process_follow_up_count": len(process_follow_up_findings),
             "supporting_log_count": len(logs),
             "pending_process_verification": pending_process_verification,
+            "verification_passed": verification_passed,
             "clean": not findings and not pending_process_verification,
         },
     }

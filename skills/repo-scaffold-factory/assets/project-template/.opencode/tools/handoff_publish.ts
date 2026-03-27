@@ -9,8 +9,7 @@ import {
   renderStartHere,
   startHerePath,
   validateHandoffNextAction,
-  writeText,
-} from "./_workflow"
+} from "../lib/workflow"
 
 export default tool({
   description: "Publish the top-level START-HERE handoff and the latest handoff copy in .opencode/state.",
@@ -38,11 +37,8 @@ export default tool({
       nextAction: args.next_action,
       backlogVerifierAgent: typeof backlogVerifierAgent === "string" ? backlogVerifierAgent : undefined,
     })
-
-    const handoffCopy = latestHandoffPath()
-    await writeText(handoffCopy, content)
     await refreshRestartSurfaces({ manifest, workflow, nextAction: args.next_action })
 
-    return JSON.stringify({ start_here: startHerePath(), latest_handoff: handoffCopy }, null, 2)
+    return JSON.stringify({ start_here: startHerePath(), latest_handoff: latestHandoffPath() }, null, 2)
   },
 })

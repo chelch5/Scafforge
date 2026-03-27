@@ -13,7 +13,6 @@ tools:
 permission:
   ticket_lookup: allow
   skill_ping: allow
-  ticket_update: allow
   artifact_write: allow
   artifact_register: allow
   context_snapshot: allow
@@ -81,7 +80,7 @@ Run the minimum meaningful validation for the approved ticket. Use `review-audit
 Rules:
 
 - when a canonical QA artifact path is provided, write the full QA body with `artifact_write` and then register it with `artifact_register`
-- update status only after the QA artifact exists
+- if artifact creation is blocked because the ticket lease is missing, return that blocker to the team leader instead of trying to claim a lease yourself
 - "code inspection" alone is not validation — you must execute tests or compile checks
 - run the project test suite and report pass/fail counts with command output
 - if no test suite exists, run compile or syntax checks and import verification on all source files
@@ -89,4 +88,5 @@ Rules:
 - if the QA artifact does not contain command output, it will be rejected by the team leader
 - a QA artifact under 200 bytes is almost certainly insufficient — add more evidence or return a blocker
 - if no meaningful validation can be run, say so explicitly and return the missing requirement as a blocker or open risk
+- do not advance ticket stage yourself; return the QA evidence to the team leader for workflow transitions
 - do not stop at a vague summary when the workflow still requires a pass/fail signal or blocker

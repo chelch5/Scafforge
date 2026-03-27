@@ -127,7 +127,7 @@
 
 ## Restart-surface drift (WFLOW010 — derived restart files contradict canonical state)
 
-- `START-HERE.md` or `.opencode/state/context-snapshot.md` disagrees with `tickets/manifest.json` or `.opencode/state/workflow-state.json` about the active ticket, bootstrap status, proof artifact, pending process verification, state revision, or lane-lease presence
+- `START-HERE.md`, `.opencode/state/context-snapshot.md`, or `.opencode/state/latest-handoff.md` disagrees with `tickets/manifest.json` or `.opencode/state/workflow-state.json` about the active ticket, handoff status, bootstrap status, proof artifact, pending process verification, state revision, or lane-lease presence
 - result: the next session starts from stale resume data and can route the wrong ticket, skip bootstrap recovery, or ignore an active lease
 - why agents miss it: the repo still has the canonical state files, so shallow audits can assume restart surfaces were regenerated even when repair or tool saves left them stale
 
@@ -142,6 +142,36 @@
 - bootstrap is `missing`, `failed`, or `stale`, but `ticket_lookup`, the team leader prompt, or the repo-local workflow skill do not make `environment_bootstrap` the first required action
 - result: weaker coordinators keep attempting normal lifecycle moves, probing alternate stages, or treating environment failures as product defects before the repo can even validate code
 - why agents miss it: each surface may contain a vague bootstrap hint, but none of them deterministically short-circuit the workflow when bootstrap is not ready
+
+## Lease-ownership split (WFLOW012 — coordinator and specialists disagree about who claims tickets)
+
+- workflow docs or prompts still mix coordinator-owned and worker-owned `ticket_claim` / `ticket_release` instructions
+- result: the team leader and specialists can both think they should claim the same ticket, especially around planning and pre-bootstrap work
+- why agents miss it: each surface looks locally plausible, but together they create a contradictory lease model that weaker agents cannot reconcile
+
+## Resume truth-hierarchy drift (WFLOW013 — derived handoff text outranks canonical state)
+
+- `/resume` or surrounding docs do not make `tickets/manifest.json` plus `.opencode/state/workflow-state.json` canonical, omit `.opencode/state/latest-handoff.md`, or let backlog reverification displace the active open ticket too early
+- result: resumed sessions can follow stale restart text, ignore the current active lane, or treat historical reverification as a higher priority than current open work
+- why agents miss it: the restart narrative feels authoritative unless the truth hierarchy is made explicit in every resume-facing surface
+
+## Invocation-log coordinator artifact authorship (WFLOW014 — current repo evidence shows the wrong agent wrote stage proof)
+
+- `.opencode/state/invocation-log.jsonl` shows the coordinator using `artifact_write` for planning, implementation, review, QA, or smoke-test artifacts
+- result: current stage proof is suspect even if the artifact body itself looks plausible, because the routing agent bypassed the owning specialist or deterministic tool
+- why agents miss it: transcript-based checks can miss the current repo-local invocation history unless audit inspects the structured log directly
+
+## Smoke-test override execution defect (WFLOW016 — explicit smoke override fails before the command starts)
+
+- the generated `smoke_test` tool passes `command_override` directly into `spawn()` argv, fails to parse one-item shell-style commands, or treats leading `KEY=VALUE` tokens as the executable name instead of environment overrides
+- result: valid explicit smoke-test commands fail with `ENOENT` or similar launch errors before the requested verification command even starts, and the failure can be misreported as a generic environment issue
+- why agents miss it: the transcript still looks like a failed smoke run unless audit inspects the tool contract and the launch error closely enough to see that the tool surface itself mis-executed the override
+
+## Acceptance-command smoke drift (WFLOW017 — smoke-test scope ignores the ticket’s canonical acceptance command)
+
+- the generated `smoke_test` tool does not inspect ticket acceptance criteria for explicit smoke commands, and instead falls back to generic repo-level pytest detection or caller-supplied `test_paths`
+- result: the smoke-test stage can widen to unrelated full-suite failures or narrow to an ad hoc subset that does not match the ticket’s real closeout requirement
+- why agents miss it: the smoke artifact still contains a legitimate test command, so shallow audit reduces the problem to “tests failed” instead of noticing that the tool ran the wrong smoke scope
 
 ## Thin workflow explainer (SKILL002 — repo-local `ticket-execution` skill omits key lifecycle mechanics)
 
@@ -165,7 +195,7 @@
 
 - the transcript shows attempts like `stage=todo`, direct jumps to later stages, or explicit "workaround" language
 - result: the agent is no longer following the lifecycle contract and is searching for whatever the tool layer will accept
-- why agents miss it: current audits may treat the transcript as implementation progress instead of as evidence of state-machine confusion
+- why agents miss it: current audits may treat stale JSON inside tool output as if it were the coordinator's own reasoning, or they may treat the transcript as implementation progress instead of evidence of state-machine confusion
 
 ## Evidence-free PASS claims (SESSION004 — validation failure followed by PASS artifacts or summaries)
 
@@ -178,6 +208,12 @@
 - the transcript shows the coordinator using `artifact_write` to create planning, implementation, review, QA, or smoke-test artifacts directly
 - result: ticket proof is shaped by the routing agent instead of the owning specialist lane or deterministic tool
 - why agents miss it: current audits may focus on the artifact content and overlook that the wrong agent authored the stage evidence in the first place
+
+## Broken helper tool surface (WFLOW015 — internal workflow helpers exposed as callable tools)
+
+- the transcript shows a `_workflow_*` helper call or similar internal helper call failing with `def.execute is not a function` or another missing-handler runtime error
+- result: the coordinator can select a non-executable helper instead of a real tool, so the workflow fails before normal transition guidance or deterministic routing can even run
+- why agents miss it: transcript parsers often capture only tool name and input args, discard `Error` blocks, and never distinguish internal helper exports from real executable `tool({...})` modules
 
 ## Execution blindness (EXEC001 — module import failure)
 

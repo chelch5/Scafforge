@@ -9,7 +9,7 @@ import {
   syncWorkflowSelection,
   ticketFilePath,
   type TicketSourceMode,
-} from "./_workflow"
+} from "../lib/workflow"
 
 function normalizeOptional(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined

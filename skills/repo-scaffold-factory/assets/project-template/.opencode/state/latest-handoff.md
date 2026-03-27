@@ -33,14 +33,9 @@ The repo is operating with a ticketed OpenCode workflow that separates historica
 ## Generation Status
 
 - handoff_status: bootstrap recovery required
-- process_version: 6
+- process_version: 5
 - parallel_mode: sequential
 - pending_process_verification: false
-- repair_follow_on_required: false
-- repair_follow_on_next_stage: none
-- repair_follow_on_verification_passed: true
-- repair_follow_on_handoff_allowed: true
-- repair_follow_on_updated_at: Not yet recorded.
 - bootstrap_status: missing
 - bootstrap_proof: None
 - process_changed_at: Not yet recorded.
@@ -53,7 +48,6 @@ The repo is operating with a ticketed OpenCode workflow that separates historica
 - reopened_tickets: none
 - done_but_not_fully_trusted: none
 - pending_reverification: none
-- repair_follow_on_blockers: none
 
 ## Known Risks
 

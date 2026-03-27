@@ -9,7 +9,7 @@ import {
   requireBootstrapReady,
   rootPath,
   saveWorkflowState,
-} from "./_workflow"
+} from "../lib/workflow"
 
 export default tool({
   description: "Claim a ticket lane lease before write-capable work begins.",

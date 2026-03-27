@@ -17,11 +17,36 @@ Required ticket fields:
 - `overlap_risk`
 - `stage`
 - `status`
+- `resolution_state`
+- `verification_state`
 - `depends_on`
+- `source_ticket_id`
+- `follow_up_ticket_ids`
 - `summary`
 - `acceptance`
 - `artifacts`
 - `decision_blockers`
+
+Optional ticket fields with controlled meaning:
+
+- `source_mode` — one of `process_verification`, `post_completion_issue`, or `net_new_scope`
+
+Manifest contract:
+
+- `tickets/manifest.json` uses `version: 3`
+- `active_ticket` must reference a ticket that exists in the `tickets` array
+- ticket objects must stay aligned with the runtime `Ticket` type in `.opencode/lib/workflow.ts`
+
+Workflow-state seed contract for fresh scaffolds:
+
+- `.opencode/state/workflow-state.json` seeds `bootstrap.status: "missing"`
+- the foreground `active_ticket` in workflow-state matches `tickets/manifest.json`
+- `ticket_state.<active_ticket>` exists with `approved_plan: false`, `reopen_count: 0`, and `needs_reverification: false`
+
+Artifact registry contract:
+
+- `.opencode/state/artifacts/registry.json` starts at `version: 2`
+- artifact metadata is owned by the ticket entry in `tickets/manifest.json` and mirrored into `.opencode/state/artifacts/registry.json`
 
 Recommended statuses:
 
@@ -34,6 +59,15 @@ Recommended statuses:
 - `qa`
 - `smoke_test`
 - `done`
+
+Required initial values for new tickets:
+
+- `stage: planning`
+- `status: todo` or `blocked`
+- `resolution_state: open`
+- `verification_state: suspect`
+- `artifacts: []`
+- `follow_up_ticket_ids: []`
 
 Lifecycle notes:
 
@@ -49,6 +83,6 @@ Rules:
 - use `wave`, `lane`, `parallel_safe`, and `overlap_risk` to make cross-ticket concurrency explicit instead of implied
 - keep `tickets/BOARD.md` human-readable only; do not turn it into a second state machine
 - treat the manifest as the machine routing source and keep ticket files synchronized as detailed human-readable views
-- keep artifact metadata on the owning ticket entry so the manifest acts as the artifact registry
+- keep artifact metadata on the owning ticket entry so the manifest acts as the primary artifact-routing record, while `.opencode/state/artifacts/registry.json` mirrors it for deterministic tooling
 - during bootstrap, detail the first execution wave only where blocking decisions are resolved
 - convert unresolved major choices into explicit blocked, decision, or discovery tickets instead of fabricating implementation detail

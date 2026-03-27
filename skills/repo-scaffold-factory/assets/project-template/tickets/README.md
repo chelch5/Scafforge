@@ -14,6 +14,8 @@ Rules:
 - keep `wave`, `lane`, `parallel_safe`, and `overlap_risk` aligned with the real ownership and concurrency boundaries
 - keep plan approval in `.opencode/state/workflow-state.json`
 - treat `tickets/BOARD.md` as a derived human board, not a second state machine
+- only Wave 0 setup work may claim a write-capable lease before bootstrap is ready
+- the team leader owns `ticket_claim` and `ticket_release`; specialist agents write stage artifacts and code under the active ticket lease
 - use registered artifacts for stage proof instead of inferring state from raw ticket text
 - keep artifact metadata on the owning ticket entry in `tickets/manifest.json`
 - keep `tickets/<id>.md` synchronized with manifest-backed ticket state; use the Notes section for durable human context

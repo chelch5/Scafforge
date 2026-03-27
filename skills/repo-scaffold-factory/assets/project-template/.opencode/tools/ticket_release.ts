@@ -1,5 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
-import { loadWorkflowState, releaseLaneLease, saveWorkflowState } from "./_workflow"
+import { loadWorkflowState, releaseLaneLease, saveWorkflowState } from "../lib/workflow"
 
 export default tool({
   description: "Release an active lane lease after a worker finishes or yields ownership.",

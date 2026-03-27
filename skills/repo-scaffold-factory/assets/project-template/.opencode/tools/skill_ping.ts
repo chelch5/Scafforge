@@ -1,5 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
-import { appendJsonl, invocationLogPath } from "./_workflow"
+import { appendJsonl, invocationLogPath } from "../lib/workflow"
 
 export default tool({
   description: "Record that a project or global skill was intentionally invoked in this repo.",

@@ -7,6 +7,8 @@ description: Create concise project handoff artifacts, especially a top-level ST
 
 Use this skill to create a restartable handoff surface with actual project state.
 
+The top-level handoff must stay derived from canonical state. `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` summarize the repo; they do not outrank `tickets/manifest.json` or `.opencode/state/workflow-state.json`.
+
 ## Procedure
 
 ### 1. Gather current state
@@ -34,8 +36,8 @@ Use the template in `assets/templates/START-HERE.template.md` as a starting stru
 2. AGENTS.md
 3. docs/spec/CANONICAL-BRIEF.md
 4. docs/process/workflow.md
-5. tickets/BOARD.md
-6. tickets/manifest.json
+5. tickets/manifest.json
+6. tickets/BOARD.md
 
 **Current Or Next Ticket** — the actual active ticket or recommended next ticket from the manifest
 
@@ -51,10 +53,19 @@ Use the template in `assets/templates/START-HERE.template.md` as a starting stru
 
 Verify the handoff:
 - START-HERE.md exists and has all sections populated with real content
+- `.opencode/state/latest-handoff.md` exists and agrees with the same canonical state
 - The referenced ticket actually exists in the manifest
 - The reading order files all exist
 - The next action is specific and actionable
 - The handoff is valid for immediate development even when no later audit or repair has run yet
+
+## Output contract
+
+Before leaving this skill, confirm all of these are true:
+- `START-HERE.md` exists and uses canonical manifest/workflow-state facts rather than stale narrative memory
+- `.opencode/state/latest-handoff.md` exists and agrees with `START-HERE.md` on active ticket, bootstrap status, and pending process verification
+- the read order lists `tickets/manifest.json` before `tickets/BOARD.md`
+- the next action is actionable and does not overclaim readiness beyond current evidence
 
 ## After this step
 

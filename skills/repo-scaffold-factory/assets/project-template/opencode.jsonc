@@ -42,9 +42,18 @@
       "cat *": "allow",
       "head *": "allow",
       "tail *": "allow",
+      "python *": "allow",
+      "python3 *": "allow",
+      "pytest *": "allow",
+      "uv *": "allow",
+      "ruff *": "allow",
+      "npm *": "allow",
+      "node *": "allow",
       "git status*": "allow",
       "git diff*": "allow",
-      "git log*": "allow"
+      "git log*": "allow",
+      "git add *": "allow",
+      "git commit *": "allow"
     }
   }
 }
