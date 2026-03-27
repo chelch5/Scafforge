@@ -108,9 +108,11 @@ Generation, audit, and repair are separate lifecycle stages.
 
 - `scafforge-audit` is read-only and always validates review evidence, runs the audit script, and emits the four-report diagnosis pack in the subject repo's `diagnosis/` folder.
 - `scafforge-repair` is the public repair contract: it must apply safe managed-surface repairs, continue into any required local-skill or agent/prompt/ticket follow-up, record provenance, and route ticket follow-up when needed.
+- Source-layer `EXEC*` follow-up and visible `pending_process_verification` are not, by themselves, proof that managed repair failed. They remain live repo follow-up after the managed workflow layer is repaired.
 - `skills/scafforge-repair/scripts/run_managed_repair.py` is the public fail-closed repair runner. It emits the machine-readable repair plan and execution record, reruns verification, and blocks handoff when required downstream stages still have not run.
 - `skills/scafforge-repair/scripts/apply_repo_process_repair.py` is the deterministic refresh engine for the first repair phase only. Invoking that script alone does not satisfy the full repair contract unless no downstream regeneration or ticket follow-up is required.
 - When the diagnosis identifies package defects or prevention gaps, the user manually copies the diagnosis pack into the Scafforge dev repo, package changes are implemented there, and repair happens only after returning to the subject repo with the updated package surface.
+- If repeated diagnosis packs report the same repair-routed findings and no newer package or process-version change exists, stop auditing the subject repo and fix the Scafforge package first.
 
 PR comments, review threads, and check metadata are optional evidence only. They do not become canonical findings until the repo validates them.
 

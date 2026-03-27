@@ -29,6 +29,7 @@ Rules:
 - let `ticket_update` derive the matching queue status from the lifecycle stage unless a compatible status is explicitly required
 - stop on repeated lifecycle-tool contradictions; re-run `ticket_lookup`, inspect `transition_guidance`, and return a blocker instead of probing alternate stage/status values
 - treat bootstrap readiness as a pre-lifecycle execution gate; if `ticket_lookup.bootstrap.status` is not `ready`, run `environment_bootstrap` first, then rerun `ticket_lookup` before any stage change
+- if repeated bootstrap artifacts show the same command trace but it still omits the extra or group flags the repo layout requires, treat that as a managed bootstrap defect and stop retrying until audit or repair refreshes the tool
 - only Wave 0 setup work may claim a write-capable lease before bootstrap is ready
 - the team leader owns `ticket_claim` and `ticket_release`; planning, implementation, review, QA, and optional handoff specialists write only under the already-active ticket lease
 - do not substitute raw shell package-manager commands for `environment_bootstrap` when bootstrap is missing, stale, or failed
@@ -52,13 +53,20 @@ Rules:
 - `.opencode/meta/bootstrap-provenance.json` owns the canonical `workflow_contract.process_version`; `.opencode/state/workflow-state.json` mirrors the active process state for day-to-day execution
 - if `.opencode/state/workflow-state.json` shows `pending_process_verification: true`, completed tickets are not treated as fully trusted yet
 - `repair_follow_on` in `.opencode/state/workflow-state.json` owns post-repair follow-on stage truth; do not infer that state from restart prose or from `.opencode/meta/repair-execution.json`
+- `repair_follow_on.outcome` is explicit:
+  - `managed_blocked` means managed repair follow-on still blocks ordinary lifecycle routing
+  - `source_follow_up` means Scafforge repair converged but source-layer follow-up remains
+  - `clean` means managed repair itself is no longer blocking execution
 - the affected done-ticket set is: done tickets whose latest smoke-test proof (or QA proof from an older contract) predates the current recorded process change, plus any done ticket without a registered `review` / `backlog-verification` artifact for the current process window
 - use `ticket_lookup` to inspect the affected done-ticket set before routing work to the backlog verifier
 - do not let pending process verification overwrite the active foreground lane when that active ticket is still open and its dependencies remain trusted
 - use `ticket_reverify` to restore trust on a closed done ticket after current backlog-verification or follow-up evidence exists; this trust-restoration path is allowed on closed tickets and does not require reopening them
 - create migration, remediation, or reverification follow-up tickets only through the guarded `ticket_create` tool and only from current registered evidence
+- use `ticket_create(source_mode=split_scope)` when an open or reopened parent ticket needs planned child decomposition; do not encode open-parent splits as `net_new_scope` or `post_completion_issue`
+- keep split parents open and non-foreground while their child lanes are active; do not mark an earlier ticket blocked just because later split children now carry the work
+- use `ticket_reconcile` when fresh evidence proves an existing follow-up graph is stale or contradictory; do not hand-edit `tickets/manifest.json`
 - treat post-audit and post-repair follow-up as a first-class workflow path when diagnosis or repair work identifies concrete next tickets
-- treat incomplete `repair_follow_on` as a fail-closed gate; do not continue ordinary ticket lifecycle work, dependency overrides, or closeout until the required repair stages and verification are complete
+- treat `repair_follow_on.outcome == managed_blocked` as the fail-closed gate; `source_follow_up` and truthful `pending_process_verification` remain visible but do not by themselves stop ordinary active-ticket lifecycle work
 
 ## Canonical ownership
 
@@ -67,6 +75,7 @@ Rules:
 - transient foreground stage and per-ticket approval state live in `.opencode/state/workflow-state.json`
 - artifact bodies live in the stage-specific directories under `.opencode/state/`
 - cross-stage artifact metadata lives in `.opencode/state/artifacts/registry.json`
+- `.opencode/meta/bootstrap-provenance.json` stays provenance-only; queue and restart routing belong to manifest, workflow-state, and the derived restart surfaces
 - restart guidance lives in `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md`; all three are derived views that should be regenerated from canonical state after workflow mutations
 
 ## Stage Proof

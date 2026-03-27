@@ -15,7 +15,9 @@ permission:
   issue_intake: allow
   lease_cleanup: allow
   ticket_claim: allow
+  ticket_create: allow
   ticket_lookup: allow
+  ticket_reconcile: allow
   ticket_release: allow
   ticket_reopen: allow
   ticket_reverify: allow
@@ -56,10 +58,11 @@ Start by resolving the active ticket through `ticket_lookup`.
 Treat `ticket_lookup.transition_guidance` as the canonical next-step summary before you call `ticket_update`.
 Treat `ticket_lookup.transition_guidance.next_action_tool`, `next_action_kind`, `required_owner`, and `canonical_artifact_path` as the executable contract, not optional hints.
 At session start, and again before you clear `pending_process_verification` or route migration follow-up work, re-run `ticket_lookup` and inspect `process_verification`.
-If `ticket_lookup.repair_follow_on.handoff_allowed` is `false`, treat repair follow-on as the primary blocker and do not continue normal ticket lifecycle execution until that canonical state is cleared.
+If `ticket_lookup.repair_follow_on.outcome` is `managed_blocked`, treat repair follow-on as the primary blocker and do not continue normal ticket lifecycle execution until that canonical state is cleared.
 Treat `tickets/manifest.json` and `.opencode/state/workflow-state.json` as canonical state. `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` are derived restart views that must agree with canonical state.
 If bootstrap is incomplete or stale, route the environment bootstrap flow before treating validation failures as product defects.
 If `ticket_lookup.bootstrap.status` is not `ready`, treat `environment_bootstrap` as the next required tool call, rerun `ticket_lookup` after it completes, and do not continue normal lifecycle routing until bootstrap succeeds.
+If repeated bootstrap proofs show the same command trace but it still contradicts the repo's declared dependency layout, stop retrying and surface a managed bootstrap defect instead of bypassing the workflow with raw package-manager commands.
 If stale leases remain after a crash or abandoned session, use `lease_cleanup` before attempting a new ticket claim.
 
 Use local skills only when they materially reduce ambiguity or provide the required closeout procedure:
@@ -112,6 +115,8 @@ Process-change verification:
 - only route to `__AGENT_PREFIX__-ticket-creator` after you read the backlog-verifier artifact content and confirm the verification decision is `NEEDS_FOLLOW_UP`
 - clear `pending_process_verification` only after `ticket_lookup.process_verification.affected_done_tickets` is empty
 - treat `repair_follow_on` as separate from `pending_process_verification`; historical trust restoration does not mean managed repair follow-on is complete
+- use `ticket_create(source_mode=split_scope)` when an open or reopened parent ticket needs planned child decomposition; keep the parent open and linked instead of blocking it behind the child work
+- use `ticket_reconcile` when source/follow-up linkage or parent dependencies are stale or contradictory to current evidence
 
 Post-completion defects:
 
@@ -127,7 +132,7 @@ Rules:
 - use `ticket_lookup` and `ticket_update` for workflow state instead of raw file edits
 - do not probe alternate stage or status values when a lifecycle error repeats; re-run `ticket_lookup`, inspect `transition_guidance`, load `ticket-execution` if needed, and return a blocker instead of inventing a workaround
 - when `ticket_lookup.transition_guidance` identifies a valid next action, you must either execute that tool path, delegate that exact action, or report a concrete blocker; summary-only stopping is invalid
-- when `ticket_lookup.repair_follow_on.handoff_allowed` is `false`, stop ordinary lifecycle routing and report the repair blocker instead of trying to close tickets, skip dependencies, or continue downstream follow-up work
+- when `ticket_lookup.repair_follow_on.outcome` is `managed_blocked`, stop ordinary lifecycle routing and report the repair blocker instead of trying to close tickets, skip dependencies, or continue downstream follow-up work
 - when bootstrap is failed, missing, or stale, stop normal lifecycle routing, run `environment_bootstrap`, then re-check `ticket_lookup` before any `ticket_update`
 - do not use raw bash or ad hoc package-manager commands as a substitute for `environment_bootstrap`
 - keep the active ticket synchronized through the ticket tools

@@ -91,6 +91,24 @@ def blocked_dependents(manifest: dict[str, Any], ticket_id: str) -> list[dict[st
     return blocked
 
 
+def open_split_scope_children(manifest: dict[str, Any], ticket_id: str) -> list[dict[str, Any]]:
+    tickets = manifest.get("tickets") if isinstance(manifest.get("tickets"), list) else []
+    children: list[dict[str, Any]] = []
+    for ticket in tickets:
+        if not isinstance(ticket, dict):
+            continue
+        if str(ticket.get("source_ticket_id", "")).strip() != ticket_id:
+            continue
+        if str(ticket.get("source_mode", "")).strip() != "split_scope":
+            continue
+        if ticket.get("status") == "done":
+            continue
+        if str(ticket.get("resolution_state", "open")).strip() not in {"open", "reopened"}:
+            continue
+        children.append(ticket)
+    return children
+
+
 def summarize_ticket_ids(items: list[dict[str, Any]]) -> str:
     values = [str(item.get("id", "")).strip() for item in items if isinstance(item, dict) and str(item.get("id", "")).strip()]
     return ", ".join(values) if values else "none"
@@ -114,32 +132,39 @@ def normalize_string_list(value: Any) -> list[str]:
 
 def load_repair_follow_on(workflow: dict[str, Any]) -> dict[str, Any]:
     raw = workflow.get("repair_follow_on") if isinstance(workflow.get("repair_follow_on"), dict) else {}
+    outcome = raw.get("outcome") if isinstance(raw.get("outcome"), str) else None
+    if outcome not in {"managed_blocked", "source_follow_up", "clean"}:
+        required_stages = normalize_string_list(raw.get("required_stages"))
+        blocking_reasons = normalize_string_list(raw.get("blocking_reasons"))
+        verification_passed = raw.get("verification_passed") is True
+        handoff_allowed = raw.get("handoff_allowed") is True
+        outcome = "clean" if handoff_allowed and not required_stages and not blocking_reasons and verification_passed else "managed_blocked"
     return {
+        "outcome": outcome,
         "required_stages": normalize_string_list(raw.get("required_stages")),
         "completed_stages": normalize_string_list(raw.get("completed_stages")),
         "blocking_reasons": normalize_string_list(raw.get("blocking_reasons")),
         "verification_passed": raw.get("verification_passed") is True,
         "handoff_allowed": raw.get("handoff_allowed") is True,
         "last_updated_at": raw.get("last_updated_at") if isinstance(raw.get("last_updated_at"), str) and raw.get("last_updated_at") else None,
-        "process_version": raw.get("process_version") if isinstance(raw.get("process_version"), int) and raw.get("process_version") > 0 else workflow.get("process_version", 6),
+        "process_version": raw.get("process_version") if isinstance(raw.get("process_version"), int) and raw.get("process_version") > 0 else workflow.get("process_version", 7),
     }
 
 
 def has_pending_repair_follow_on(workflow: dict[str, Any], verification_passed: bool | None = None) -> bool:
     repair_follow_on = load_repair_follow_on(workflow)
     effective_verification = repair_follow_on["verification_passed"] if verification_passed is None else verification_passed
-    return (
-        repair_follow_on["handoff_allowed"] is not True
-        and (
-            bool(repair_follow_on["required_stages"])
-            or bool(repair_follow_on["blocking_reasons"])
-            or effective_verification is False
-        )
-    )
+    if repair_follow_on["outcome"] == "managed_blocked":
+        return True
+    if repair_follow_on["outcome"] in {"source_follow_up", "clean"}:
+        return False
+    return effective_verification is False and bool(repair_follow_on["blocking_reasons"])
 
 
 def next_repair_follow_on_stage(workflow: dict[str, Any]) -> str | None:
     repair_follow_on = load_repair_follow_on(workflow)
+    if repair_follow_on["outcome"] != "managed_blocked":
+        return None
     completed = set(repair_follow_on["completed_stages"])
     for stage in repair_follow_on["required_stages"]:
         if stage not in completed:
@@ -149,6 +174,8 @@ def next_repair_follow_on_stage(workflow: dict[str, Any]) -> str | None:
 
 def repair_follow_on_blocker(workflow: dict[str, Any]) -> str | None:
     repair_follow_on = load_repair_follow_on(workflow)
+    if repair_follow_on["outcome"] != "managed_blocked":
+        return None
     blockers = repair_follow_on["blocking_reasons"]
     return blockers[0] if blockers else None
 
@@ -182,6 +209,7 @@ def default_next_action(manifest: dict[str, Any], workflow: dict[str, Any], back
     bootstrap = workflow.get("bootstrap") if isinstance(workflow.get("bootstrap"), dict) else {}
     bootstrap_status = str(bootstrap.get("status", "")).strip() or "missing"
     blocked = blocked_dependents(manifest, str(ticket.get("id", "")))
+    split_children = open_split_scope_children(manifest, str(ticket.get("id", "")))
     verifier_label = f"`{backlog_verifier_agent}`" if backlog_verifier_agent else "the backlog verifier"
 
     if bootstrap_status != "ready":
@@ -194,6 +222,11 @@ def default_next_action(manifest: dict[str, Any], workflow: dict[str, Any], back
         )
     if verification_passed is False and workflow.get("pending_process_verification") is not True:
         return "Resolve the post-repair audit blockers and rerun scafforge-audit before treating the restart narrative as ready for continued development."
+    if split_children and ticket.get("status") != "done":
+        return (
+            f"Keep {ticket.get('id')} open as a split parent and continue the child ticket lane"
+            f"{'s' if len(split_children) > 1 else ''}: {summarize_ticket_ids(split_children)}."
+        )
     if ticket.get("status") != "done":
         return f"Keep {ticket.get('id')} as the foreground ticket and continue its lifecycle from {ticket.get('stage')}. Historical done-ticket reverification stays secondary until the active open ticket is resolved."
     if workflow.get("pending_process_verification") is True:
@@ -230,11 +263,13 @@ def render_start_here(
         if isinstance(item, dict) and get_ticket_state(workflow, str(item.get("id", ""))).get("needs_reverification") is True
     ]
     blocked = blocked_dependents(manifest, str(ticket.get("id", "")))
+    split_children = open_split_scope_children(manifest, str(ticket.get("id", "")))
     bootstrap = workflow.get("bootstrap") if isinstance(workflow.get("bootstrap"), dict) else {}
     bootstrap_status = str(bootstrap.get("status", "")).strip() or "missing"
     bootstrap_proof = bootstrap.get("proof_artifact") if isinstance(bootstrap.get("proof_artifact"), str) and bootstrap.get("proof_artifact") else "None"
     repair_follow_on = load_repair_follow_on(workflow)
     repair_follow_on_pending = has_pending_repair_follow_on(workflow, verification_passed)
+    source_follow_up_pending = repair_follow_on["outcome"] == "source_follow_up"
     repair_follow_on_next_stage = next_repair_follow_on_stage(workflow) or "none"
     handoff_status = compute_handoff_status(workflow, verification_passed)
     recommended_action = next_action or default_next_action(manifest, workflow, backlog_verifier_agent, verification_passed)
@@ -245,12 +280,16 @@ def render_start_here(
     if repair_follow_on_pending:
         repair_blocker = repair_follow_on_blocker(workflow)
         risk_lines.append(f"- Repair follow-on remains incomplete{': ' + repair_blocker if repair_blocker else '.'}")
+    if source_follow_up_pending:
+        risk_lines.append("- Managed repair converged, but source-layer follow-up still remains in the ticket graph.")
     if workflow.get("pending_process_verification") is True:
         risk_lines.append("- Historical completion should not be treated as fully trusted until pending process verification is cleared.")
     if suspect_done:
         risk_lines.append("- Some done tickets are not fully trusted yet; use the backlog verifier before relying on earlier closeout.")
     if blocked and ticket.get("status") != "done":
         risk_lines.append(f"- Downstream tickets {summarize_ticket_ids(blocked)} remain formally blocked until {ticket.get('id')} reaches done.")
+    if split_children and ticket.get("status") != "done":
+        risk_lines.append(f"- {ticket.get('id')} is an open split parent; child tickets {summarize_ticket_ids(split_children)} now carry the foreground implementation lanes.")
     if verification_passed is False:
         risk_lines.append("- Post-repair audit verification has not passed yet; derived restart surfaces should remain verification-pending.")
     if not risk_lines:
@@ -281,21 +320,22 @@ def render_start_here(
         f"- Verification: {ticket.get('verification_state')}\n\n"
         "## Dependency Status\n\n"
         f"- current_ticket_done: {'yes' if ticket.get('status') == 'done' else 'no'}\n"
-        f"- dependent_tickets_waiting_on_current: {summarize_ticket_ids(blocked)}\n\n"
+        f"- dependent_tickets_waiting_on_current: {summarize_ticket_ids(blocked)}\n"
+        f"- split_child_tickets: {summarize_ticket_ids(split_children)}\n\n"
         "## Generation Status\n\n"
         f"- handoff_status: {handoff_status}\n"
-        f"- process_version: {workflow.get('process_version', 6)}\n"
+        f"- process_version: {workflow.get('process_version', 7)}\n"
         f"- parallel_mode: {workflow.get('parallel_mode', 'sequential')}\n"
         f"- pending_process_verification: {'true' if workflow.get('pending_process_verification') is True else 'false'}\n"
+        f"- repair_follow_on_outcome: {repair_follow_on['outcome']}\n"
         f"- repair_follow_on_required: {'true' if repair_follow_on_pending else 'false'}\n"
         f"- repair_follow_on_next_stage: {repair_follow_on_next_stage}\n"
         f"- repair_follow_on_verification_passed: {'true' if repair_follow_on['verification_passed'] else 'false'}\n"
-        f"- repair_follow_on_handoff_allowed: {'true' if repair_follow_on['handoff_allowed'] else 'false'}\n"
         f"- repair_follow_on_updated_at: {repair_follow_on['last_updated_at'] or 'Not yet recorded.'}\n"
         f"- bootstrap_status: {bootstrap_status}\n"
         f"- bootstrap_proof: {bootstrap_proof}\n\n"
         "## Post-Generation Audit Status\n\n"
-        f"- audit_or_repair_follow_up: {'follow-up required' if repair_follow_on_pending or reopened or suspect_done or reverification or verification_passed is False else 'none recorded'}\n"
+        f"- audit_or_repair_follow_up: {'follow-up required' if repair_follow_on_pending or source_follow_up_pending or reopened or suspect_done or reverification or verification_passed is False else 'none recorded'}\n"
         f"- reopened_tickets: {summarize_ticket_ids(reopened)}\n"
         f"- done_but_not_fully_trusted: {summarize_ticket_ids(suspect_done)}\n"
         f"- pending_reverification: {summarize_ticket_ids(reverification)}\n"
@@ -316,6 +356,7 @@ def render_context_snapshot(manifest: dict[str, Any], workflow: dict[str, Any], 
     bootstrap = workflow.get("bootstrap") if isinstance(workflow.get("bootstrap"), dict) else {}
     repair_follow_on = load_repair_follow_on(workflow)
     ticket_state = get_ticket_state(workflow, str(ticket.get("id", "")))
+    split_children = open_split_scope_children(manifest, str(ticket.get("id", "")))
     lane_leases = workflow.get("lane_leases") if isinstance(workflow.get("lane_leases"), list) else []
     if lane_leases:
         lease_lines = "\n".join(
@@ -351,21 +392,22 @@ def render_context_snapshot(manifest: dict[str, Any], workflow: dict[str, Any], 
         f"- Resolution: {ticket.get('resolution_state')}\n"
         f"- Verification: {ticket.get('verification_state')}\n"
         f"- Approved plan: {'yes' if ticket_state.get('approved_plan') is True else 'no'}\n"
-        f"- Needs reverification: {'yes' if ticket_state.get('needs_reverification') is True else 'no'}\n\n"
+        f"- Needs reverification: {'yes' if ticket_state.get('needs_reverification') is True else 'no'}\n"
+        f"- Open split children: {summarize_ticket_ids(split_children)}\n\n"
         "## Bootstrap\n\n"
         f"- status: {bootstrap.get('status', 'missing')}\n"
         f"- last_verified_at: {bootstrap.get('last_verified_at') or 'Not yet verified.'}\n"
         f"- proof_artifact: {bootstrap.get('proof_artifact') or 'None'}\n\n"
         "## Process State\n\n"
-        f"- process_version: {workflow.get('process_version', 6)}\n"
+        f"- process_version: {workflow.get('process_version', 7)}\n"
         f"- pending_process_verification: {'true' if workflow.get('pending_process_verification') is True else 'false'}\n"
         f"- parallel_mode: {workflow.get('parallel_mode', 'sequential')}\n"
         f"- state_revision: {workflow.get('state_revision', 0)}\n\n"
         "## Repair Follow-On\n\n"
+        f"- outcome: {repair_follow_on['outcome']}\n"
         f"- required: {'yes' if has_pending_repair_follow_on(workflow, verification_passed=None) else 'no'}\n"
         f"- next_required_stage: {next_repair_follow_on_stage(workflow) or 'none'}\n"
         f"- verification_passed: {'true' if repair_follow_on['verification_passed'] else 'false'}\n"
-        f"- handoff_allowed: {'true' if repair_follow_on['handoff_allowed'] else 'false'}\n"
         f"- last_updated_at: {repair_follow_on['last_updated_at'] or 'Not yet recorded.'}\n\n"
         "## Lane Leases\n\n"
         f"{lease_lines}\n\n"

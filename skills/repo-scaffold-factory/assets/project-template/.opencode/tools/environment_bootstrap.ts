@@ -70,10 +70,35 @@ function isMissingModulePip(output: string): boolean {
   return /No module named pip/i.test(output)
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function extractTomlSectionBody(text: string, section: string): string {
+  const header = `[${section}]`
+  const lines = text.split(/\r?\n/)
+  const body: string[] = []
+  let inSection = false
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!inSection) {
+      if (trimmed === header) {
+        inSection = true
+      }
+      continue
+    }
+    if (/^\[[^\]]+\]\s*$/.test(trimmed)) {
+      break
+    }
+    body.push(line)
+  }
+  return body.join("\n")
+}
+
 function hasSectionValue(text: string, section: string, key: string): boolean {
-  const blockMatch = text.match(new RegExp(`\\[${section.replace(".", "\\.")}\\]([\\s\\S]*?)(?:\\n\\[|$)`, "m"))
-  if (!blockMatch) return false
-  return new RegExp(`^\\s*${key.replace("-", "\\-")}\\s*=\\s*(?:\\[|\\{)`, "m").test(blockMatch[1] || "")
+  const sectionBody = extractTomlSectionBody(text, section)
+  if (!sectionBody.trim()) return false
+  return new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*(?:\\[|\\{)`, "m").test(sectionBody)
 }
 
 // Supported Python dev layouts: [project.optional-dependencies], [dependency-groups], and [tool.uv.dev-dependencies].

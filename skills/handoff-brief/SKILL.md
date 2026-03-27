@@ -57,7 +57,7 @@ Verify the handoff:
 - The referenced ticket actually exists in the manifest
 - The reading order files all exist
 - The next action is specific and actionable
-- The handoff is valid for immediate development even when no later audit or repair has run yet
+- The handoff is a truthful restart surface bounded by current evidence, even when later audit, repair, or backlog reverification is still pending
 
 ## Output contract
 

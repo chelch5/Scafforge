@@ -174,6 +174,15 @@ function looksLikeSmokeCommand(command: string): boolean {
   return SMOKE_COMMAND_PATTERNS.some((pattern) => pattern.test(command))
 }
 
+function renderCommand(command: Pick<CommandSpec, "argv" | "env_overrides">): string {
+  const envPrefix = command.env_overrides
+    ? Object.entries(command.env_overrides)
+        .map(([key, value]) => `${key}=${value}`)
+        .join(" ")
+    : ""
+  return `${envPrefix ? `${envPrefix} ` : ""}${command.argv.join(" ")}`.trim()
+}
+
 function inferAcceptanceSmokeCommands(ticket: { acceptance?: unknown }): CommandSpec[] {
   const commands: CommandSpec[] = []
   const seen = new Set<string>()
@@ -185,7 +194,7 @@ function inferAcceptanceSmokeCommands(ticket: { acceptance?: unknown }): Command
       if (!looksLikeSmokeCommand(candidate)) continue
       const normalized = candidate.trim().toLowerCase()
       if (seen.has(normalized)) continue
-      const parsed = parseCommandOverride([candidate])
+      const parsed = parseCommandOverride([candidate])[0]
       commands.push({
         ...parsed,
         label: `acceptance command ${commands.length + 1}`,
@@ -278,12 +287,9 @@ async function detectAcceptanceCommands(root: string, ticket: { acceptance?: unk
   if (acceptanceCommands.length === 0) {
     return []
   }
-
-  const compileCommand = await detectPythonCompileCommand(root)
-  const commands = compileCommand ? [compileCommand, ...acceptanceCommands] : acceptanceCommands
   const seen = new Set<string>()
-  return commands.filter((command) => {
-    const key = command.argv.join("\u0000")
+  return acceptanceCommands.filter((command) => {
+    const key = renderCommand(command)
     if (seen.has(key)) {
       return false
     }
@@ -324,6 +330,10 @@ async function detectMakeSmokeTarget(root: string): Promise<CommandSpec[]> {
     }
   }
   return []
+}
+
+function looksLikeShellStyleOverride(command: string): boolean {
+  return /\s|["'`;&|]/.test(command.trim())
 }
 
 function tokenizeCommandString(command: string): string[] {
@@ -376,8 +386,7 @@ function tokenizeCommandString(command: string): string[] {
   return tokens
 }
 
-function parseCommandOverride(rawOverride: string[]): CommandSpec {
-  const tokens = rawOverride.length === 1 ? tokenizeCommandString(rawOverride[0] ?? "") : [...rawOverride]
+function parseOverrideTokens(tokens: string[], label: string): CommandSpec {
   const env_overrides: Record<string, string> = {}
 
   while (tokens.length > 0 && ENV_ASSIGNMENT_PATTERN.test(tokens[0] ?? "")) {
@@ -394,16 +403,35 @@ function parseCommandOverride(rawOverride: string[]): CommandSpec {
   }
 
   return {
-    label: "command override",
+    label,
     argv: tokens,
     reason: "Explicit smoke-test command override supplied by the caller.",
     env_overrides: Object.keys(env_overrides).length > 0 ? env_overrides : undefined,
   }
 }
 
+function parseCommandOverride(rawOverride: string[]): CommandSpec[] {
+  if (rawOverride.length === 0) {
+    return []
+  }
+  if (rawOverride.length === 1) {
+    return [parseOverrideTokens(tokenizeCommandString(rawOverride[0] ?? ""), "command override 1")]
+  }
+
+  const shellStyleEntries = rawOverride.filter((item) => looksLikeShellStyleOverride(item))
+  if (shellStyleEntries.length === 0) {
+    return [parseOverrideTokens([...rawOverride], "command override 1")]
+  }
+  if (shellStyleEntries.length !== rawOverride.length) {
+    throw new Error("command_override cannot mix tokenized argv entries with multiple shell-style command strings.")
+  }
+
+  return rawOverride.map((command, index) => parseOverrideTokens(tokenizeCommandString(command), `command override ${index + 1}`))
+}
+
 async function detectCommands(root: string, ticket: { acceptance?: unknown }, args: SmokeArgs): Promise<CommandSpec[]> {
   if (Array.isArray(args.command_override) && args.command_override.length > 0) {
-    return [parseCommandOverride(args.command_override)]
+    return parseCommandOverride(args.command_override)
   }
   const acceptanceCommands = await detectAcceptanceCommands(root, ticket)
   if (acceptanceCommands.length > 0) {
@@ -423,7 +451,7 @@ async function detectCommands(root: string, ticket: { acceptance?: unknown }, ar
 
   const seen = new Set<string>()
   return commands.filter((command) => {
-    const key = command.argv.join("\u0000")
+    const key = renderCommand(command)
     if (seen.has(key)) {
       return false
     }
@@ -500,7 +528,7 @@ function renderArtifact(ticketId: string, commands: CommandResult[], passed: boo
   const commandSections = commands.length
     ? commands
         .map(
-          (command, index) => `### ${index + 1}. ${command.label}\n\n- reason: ${command.reason}\n- command: \`${command.argv.join(" ")}\`\n- exit_code: ${command.exit_code}\n- duration_ms: ${command.duration_ms}\n\n#### stdout\n\n${fence(command.stdout)}\n\n#### stderr\n\n${fence(command.stderr)}`,
+          (command, index) => `### ${index + 1}. ${command.label}\n\n- reason: ${command.reason}\n- command: \`${renderCommand(command)}\`\n- exit_code: ${command.exit_code}\n- duration_ms: ${command.duration_ms}\n\n#### stdout\n\n${fence(command.stdout)}\n\n#### stderr\n\n${fence(command.stderr)}`,
         )
         .join("\n\n")
     : "No deterministic smoke-test commands were detected."
@@ -547,7 +575,7 @@ export default tool({
     ticket_id: tool.schema.string().describe("Optional ticket id. Defaults to the active ticket.").optional(),
     scope: tool.schema.string().describe("Optional smoke-test scope hint such as full-suite or ticket.").optional(),
     test_paths: tool.schema.array(tool.schema.string()).describe("Optional scoped pytest paths to run instead of the full detected Python suite.").optional(),
-    command_override: tool.schema.array(tool.schema.string()).describe("Optional explicit smoke-test command override. Accepts tokenized argv, or a one-item shell-style command string. Leading KEY=VALUE entries are treated as environment overrides.").optional(),
+    command_override: tool.schema.array(tool.schema.string()).describe("Optional explicit smoke-test command override. Accepts tokenized argv for one command, one shell-style command string, or multiple shell-style command strings executed in order. Leading KEY=VALUE entries are treated as environment overrides.").optional(),
   },
   async execute(args) {
     const manifest = await loadManifest()
@@ -643,7 +671,7 @@ export default tool({
         failure_classification: failureClassification,
         commands: results.map((result) => ({
           label: result.label,
-          command: result.argv.join(" "),
+          command: renderCommand(result),
           exit_code: result.exit_code,
           duration_ms: result.duration_ms,
         })),

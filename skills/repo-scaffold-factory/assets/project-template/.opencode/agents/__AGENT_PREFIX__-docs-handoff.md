@@ -37,7 +37,7 @@ Required outputs:
 Rules:
 
 - do not mark the ticket done before the required passing smoke-test artifact exists
-- the team leader already owns lease claim and release; if the required ticket lease is missing, return a blocker instead of claiming it yourself
+- the team leader already owns lease claim and release for ticket-bound artifact work; `handoff_publish` refreshes derived restart surfaces and does not require you to claim a separate ticket lane
 - keep the board and manifest as derived state, not manual editing targets
 - when a canonical handoff artifact path is provided, write the full handoff body with `artifact_write` and then register it with `artifact_register`; `handoff_publish` still owns `START-HERE.md` and `.opencode/state/latest-handoff.md`
 - if a required artifact is missing, return a blocker instead of improvising closeout

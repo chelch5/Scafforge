@@ -16,6 +16,7 @@ import {
   loadManifest,
   loadWorkflowState,
   nextRepairFollowOnStage,
+  openSplitScopeChildren,
   repairFollowOnBlockingReason,
   ticketNeedsProcessVerification,
   ticketsNeedingProcessVerification,
@@ -26,6 +27,7 @@ import {
 } from "../lib/workflow"
 
 async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, workflow: Awaited<ReturnType<typeof loadWorkflowState>>) {
+  const manifest = await loadManifest()
   const blocker = validateLifecycleStageStatus(ticket.stage, ticket.status)
   const approvedPlan = isPlanApprovedForTicket(workflow, ticket.id)
   const needsProcessVerification = ticketNeedsProcessVerification(ticket, workflow)
@@ -33,6 +35,7 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
   const repairFollowOnPending = hasPendingRepairFollowOn(workflow)
   const repairFollowOnStage = nextRepairFollowOnStage(workflow)
   const repairFollowOnBlocker = repairFollowOnBlockingReason(workflow)
+  const splitChildren = openSplitScopeChildren(manifest, ticket.id)
   const base = {
     current_stage: ticket.stage,
     current_status: ticket.status,
@@ -63,6 +66,21 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
       required_owner: "team-leader",
       recommended_action: `Bootstrap is ${bootstrapStatus}. Run environment_bootstrap first, then rerun ticket_lookup before attempting lifecycle transitions.`,
       current_state_blocker: blocker || `Bootstrap ${bootstrapStatus}. Lifecycle execution is blocked until environment_bootstrap succeeds.`,
+    }
+  }
+
+  if (splitChildren.length > 0 && ticket.status !== "done") {
+    const foregroundChild = splitChildren[0]
+    return {
+      ...base,
+      next_allowed_stages: [foregroundChild.stage],
+      required_artifacts: [],
+      next_action_kind: "ticket_update",
+      next_action_tool: "ticket_update",
+      delegate_to_agent: null,
+      required_owner: "team-leader",
+      recommended_action: `Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly.`,
+      recommended_ticket_update: { ticket_id: foregroundChild.id, activate: true },
     }
   }
 
@@ -222,7 +240,7 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
         next_action_tool: "ticket_update",
         delegate_to_agent: "tester-qa",
         required_owner: "team-leader",
-        recommended_action: "Advance to smoke-test, then use the smoke_test tool. Do not write smoke-test artifacts through artifact_write or artifact_register.",
+        recommended_action: "Advance to smoke-test, return control to the team leader, then use the smoke_test tool. Do not delegate smoke_test to tester-qa or write smoke-test artifacts through artifact_write or artifact_register.",
         recommended_ticket_update: { ticket_id: ticket.id, stage: "smoke-test", activate: true },
       }
     }
@@ -235,7 +253,7 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           required_artifacts: ["smoke-test"],
           next_action_kind: "run_tool",
           next_action_tool: "smoke_test",
-          delegate_to_agent: "tester-qa",
+          delegate_to_agent: null,
           required_owner: "team-leader",
           canonical_artifact_path: defaultArtifactPath(ticket.id, "smoke-test", "smoke-test"),
           artifact_stage: "smoke-test",

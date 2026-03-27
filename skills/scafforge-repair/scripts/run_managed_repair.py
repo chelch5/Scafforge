@@ -125,31 +125,58 @@ def derive_required_follow_on_stages(
                 "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff.",
             }
         )
-    if pending_process_verification or any(code.startswith(("EXEC", "ENV")) for code in finding_codes):
+    if any(code.startswith("EXEC") for code in finding_codes):
         required.append(
             {
                 "stage": "ticket-pack-builder",
                 "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
             }
         )
-    required.append(
-        {
-            "stage": "handoff-brief",
-            "reason": "Restart surfaces must be regenerated only after required follow-on repair stages are complete.",
-        }
-    )
     return required
 
 
-def summarize_verification(findings: list[Any], pending_process_verification: bool, performed: bool, supporting_logs: list[Path]) -> dict[str, Any]:
+def classify_verification_findings(findings: list[Any]) -> dict[str, list[Any]]:
+    managed_blockers: list[Any] = []
+    source_follow_up: list[Any] = []
+    manual_prerequisites: list[Any] = []
+    process_state_only: list[Any] = []
+    for finding in findings:
+        code = getattr(finding, "code", "")
+        if code.startswith("EXEC"):
+            source_follow_up.append(finding)
+        elif code == "WFLOW008":
+            process_state_only.append(finding)
+        elif code.startswith("ENV"):
+            manual_prerequisites.append(finding)
+        else:
+            managed_blockers.append(finding)
+    return {
+        "managed_blockers": managed_blockers,
+        "source_follow_up": source_follow_up,
+        "manual_prerequisites": manual_prerequisites,
+        "process_state_only": process_state_only,
+    }
+
+
+def summarize_verification(
+    findings: list[Any],
+    pending_process_verification: bool,
+    performed: bool,
+    supporting_logs: list[Path],
+    classes: dict[str, list[Any]],
+) -> dict[str, Any]:
+    blocking_findings = [*classes["managed_blockers"], *classes["manual_prerequisites"]]
     return {
         "performed": performed,
         "finding_count": len(findings),
         "error_count": sum(1 for finding in findings if getattr(finding, "severity", "") == "error"),
         "warning_count": sum(1 for finding in findings if getattr(finding, "severity", "") == "warning"),
         "codes": [getattr(finding, "code", "") for finding in findings],
+        "blocking_codes": [getattr(finding, "code", "") for finding in blocking_findings],
+        "source_follow_up_codes": [getattr(finding, "code", "") for finding in classes["source_follow_up"]],
+        "process_state_codes": [getattr(finding, "code", "") for finding in classes["process_state_only"]],
         "pending_process_verification": pending_process_verification,
-        "verification_passed": performed and not findings,
+        "verification_passed": performed and not blocking_findings,
         "supporting_logs": [str(path) for path in supporting_logs],
     }
 
@@ -157,6 +184,7 @@ def summarize_verification(findings: list[Any], pending_process_verification: bo
 def update_repair_follow_on_state(
     repo_root: Path,
     *,
+    outcome: str,
     required_stage_names: list[str],
     completed_stage_names: list[str],
     blocking_reasons: list[str],
@@ -167,8 +195,9 @@ def update_repair_follow_on_state(
     workflow = read_json(workflow_path)
     if not isinstance(workflow, dict):
         workflow = {}
-    process_version = workflow.get("process_version") if isinstance(workflow.get("process_version"), int) and workflow.get("process_version") > 0 else 6
+    process_version = workflow.get("process_version") if isinstance(workflow.get("process_version"), int) and workflow.get("process_version") > 0 else 7
     repair_follow_on = {
+        "outcome": outcome,
         "required_stages": required_stage_names,
         "completed_stages": completed_stage_names,
         "blocking_reasons": blocking_reasons,
@@ -197,7 +226,8 @@ def main() -> int:
     logs = verification_logs(repo_root, args.supporting_log)
     findings = [] if args.skip_verify else audit_repo(repo_root, logs=logs)
     pending_process_verification = load_pending_process_verification(repo_root)
-    verification_status = summarize_verification(findings, pending_process_verification, not args.skip_verify, logs)
+    finding_classes = classify_verification_findings(findings)
+    verification_status = summarize_verification(findings, pending_process_verification, not args.skip_verify, logs, finding_classes)
 
     required_follow_on = derive_required_follow_on_stages(repo_root, findings, replaced_surfaces, pending_process_verification)
     required_stage_names = [item["stage"] for item in required_follow_on]
@@ -205,10 +235,7 @@ def main() -> int:
     completed_stage_names = {"deterministic-refresh"} if not args.skip_deterministic_refresh else set()
 
     executed_stages = [{"stage": "deterministic-refresh", "status": "completed"}] if not args.skip_deterministic_refresh else []
-    handoff_requested = "handoff-brief" in requested_stage_names
     for stage in requested_stage_names:
-        if stage == "handoff-brief":
-            continue
         completed_stage_names.add(stage)
         executed_stages.append({"stage": stage, "status": "completed"})
 
@@ -230,37 +257,21 @@ def main() -> int:
     blocking_reasons = [f"{item['stage']} must still run: {item['reason']}" for item in skipped_stages]
     if args.skip_verify:
         blocking_reasons.append("Post-repair verification was skipped; rerun scafforge-audit before handoff.")
-    elif findings:
-        blocking_reasons.append("Post-repair verification still reports findings; handoff must remain blocked until they are resolved.")
+    elif finding_classes["managed_blockers"] or finding_classes["manual_prerequisites"]:
+        blocking_reasons.append("Post-repair verification still reports managed workflow or environment findings; handoff must remain blocked until they are resolved.")
 
     deferred_stages = []
-    if handoff_requested:
-        if blocking_reasons or not verification_status["verification_passed"]:
-            deferred_stages.append(
-                {
-                    "stage": "handoff-brief",
-                    "status": "deferred",
-                    "reason": "Handoff remains blocked until verification passes and the other required repair follow-on stages are complete.",
-                }
-            )
-        else:
-            completed_stage_names.add("handoff-brief")
-            executed_stages.append({"stage": "handoff-brief", "status": "completed"})
-    elif "handoff-brief" in required_stage_names:
-        skipped_stages.append(
-            {
-                "stage": "handoff-brief",
-                "status": "required_not_run",
-                "reason": next(item["reason"] for item in required_follow_on if item["stage"] == "handoff-brief"),
-            }
-        )
-        blocking_reasons.append(
-            f"handoff-brief must still run: {next(item['reason'] for item in required_follow_on if item['stage'] == 'handoff-brief')}"
-        )
-
-    handoff_allowed = verification_status["verification_passed"] and not blocking_reasons and "handoff-brief" in completed_stage_names
+    repair_follow_on_outcome = (
+        "managed_blocked"
+        if blocking_reasons or not verification_status["verification_passed"]
+        else "source_follow_up"
+        if verification_status["source_follow_up_codes"]
+        else "clean"
+    )
+    handoff_allowed = verification_status["verification_passed"] and not blocking_reasons
     repair_follow_on_state = update_repair_follow_on_state(
         repo_root,
+        outcome=repair_follow_on_outcome,
         required_stage_names=required_stage_names,
         completed_stage_names=sorted(completed_stage_names),
         blocking_reasons=blocking_reasons,
@@ -282,6 +293,7 @@ def main() -> int:
             "deferred_stages": deferred_stages,
             "skipped_stages": skipped_stages,
             "blocking_reasons": blocking_reasons,
+            "repair_follow_on_outcome": repair_follow_on_outcome,
             "verification_status": verification_status,
             "handoff_allowed": handoff_allowed,
         },
@@ -300,12 +312,12 @@ def main() -> int:
     print(json.dumps(payload, indent=2))
 
     if args.fail_on == "never":
-        return 0 if handoff_allowed else 3
-    if args.fail_on == "warning" and (findings or blocking_reasons):
+        return 0 if repair_follow_on_outcome != "managed_blocked" else 3
+    if args.fail_on == "warning" and ([*finding_classes["managed_blockers"], *finding_classes["manual_prerequisites"]] or blocking_reasons):
         return 3
-    if args.fail_on == "error" and any(getattr(finding, "severity", "") == "error" for finding in findings):
+    if args.fail_on == "error" and any(getattr(finding, "severity", "") == "error" for finding in [*finding_classes["managed_blockers"], *finding_classes["manual_prerequisites"]]):
         return 3
-    return 0 if handoff_allowed else 3
+    return 0 if repair_follow_on_outcome != "managed_blocked" else 3
 
 
 if __name__ == "__main__":

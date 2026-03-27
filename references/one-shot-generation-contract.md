@@ -40,3 +40,5 @@ scaffold-kickoff
 - `scafforge-repair` is a later repair lifecycle skill.
 - Audit and repair are outside the initial generation cycle.
 - Audit and repair are outside the generation cycle.
+- If repeated diagnosis packs report the same repair-routed findings and no newer package or process-version change exists, stop the subject-repo audit loop and fix Scafforge first.
+- Managed repair may still leave `pending_process_verification` or source follow-up work behind; restart surfaces must report that truthfully instead of claiming immediate development readiness by default.

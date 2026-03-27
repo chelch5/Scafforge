@@ -154,15 +154,34 @@ export const StageGateEnforcer: Plugin = async () => {
         if (sourceMode === "process_verification" && !workflow.pending_process_verification) {
           throw new Error("process_verification follow-up creation is only available while pending_process_verification is true.")
         }
-        await ensureTargetTicketWriteLease(sourceTicketId || workflow.active_ticket)
+        if (sourceMode === "net_new_scope") {
+          await ensureTargetTicketWriteLease(workflow.active_ticket)
+        } else if (sourceMode === "split_scope") {
+          if (!sourceTicketId) throw new Error("split_scope ticket creation requires source_ticket_id.")
+          await ensureTargetTicketWriteLease(sourceTicketId)
+          const sourceTicket = getTicket(manifest, sourceTicketId)
+          if (!["open", "reopened"].includes(sourceTicket.resolution_state) || sourceTicket.status === "done") {
+            throw new Error(`split_scope ticket creation requires an open or reopened source ticket. ${sourceTicket.id} is not currently eligible.`)
+          }
+        }
         if (sourceMode === "post_completion_issue") {
           if (!sourceTicketId) throw new Error("post_completion_issue ticket creation requires source_ticket_id.")
           if (typeof output.args.evidence_artifact_path !== "string" || !output.args.evidence_artifact_path.trim()) {
             throw new Error("post_completion_issue ticket creation requires evidence_artifact_path.")
           }
           const sourceTicket = getTicket(manifest, sourceTicketId)
-          if (sourceTicket.status !== "done" && sourceTicket.resolution_state !== "reopened" && sourceTicket.resolution_state !== "superseded") {
+          if (sourceTicket.status !== "done" && sourceTicket.resolution_state !== "done" && sourceTicket.resolution_state !== "superseded") {
             throw new Error(`Source ticket ${sourceTicket.id} is not in a completed historical state suitable for post-completion issue follow-up.`)
+          }
+        }
+        if (sourceMode === "process_verification") {
+          if (!sourceTicketId) throw new Error("process_verification ticket creation requires source_ticket_id.")
+          if (typeof output.args.evidence_artifact_path !== "string" || !output.args.evidence_artifact_path.trim()) {
+            throw new Error("process_verification ticket creation requires evidence_artifact_path.")
+          }
+          const sourceTicket = getTicket(manifest, sourceTicketId)
+          if (sourceTicket.status !== "done" && sourceTicket.resolution_state !== "done" && sourceTicket.resolution_state !== "superseded") {
+            throw new Error(`Source ticket ${sourceTicket.id} must already be complete before process-verification follow-up can be created.`)
           }
         }
       }
@@ -186,13 +205,41 @@ export const StageGateEnforcer: Plugin = async () => {
         if (!sourceTicketId) {
           throw new Error("issue_intake requires source_ticket_id.")
         }
-        await ensureTargetTicketWriteLease(sourceTicketId)
         if (typeof output.args.evidence_artifact_path !== "string" || !output.args.evidence_artifact_path.trim()) {
           throw new Error("issue_intake requires evidence_artifact_path.")
         }
         const sourceTicket = getTicket(manifest, sourceTicketId)
-        if (sourceTicket.status !== "done" && sourceTicket.resolution_state !== "done") {
+        if (sourceTicket.status !== "done" && sourceTicket.resolution_state !== "done" && sourceTicket.resolution_state !== "superseded") {
           throw new Error(`issue_intake can only route issues from a completed source ticket. ${sourceTicket.id} is not complete.`)
+        }
+      }
+
+      if (input.tool === "ticket_reconcile") {
+        const manifest = await loadManifest()
+        const sourceTicketId = typeof output.args.source_ticket_id === "string" ? output.args.source_ticket_id : ""
+        const targetTicketId = typeof output.args.target_ticket_id === "string" ? output.args.target_ticket_id : ""
+        const replacementSourceTicketId = typeof output.args.replacement_source_ticket_id === "string" ? output.args.replacement_source_ticket_id : ""
+        if (!sourceTicketId || !targetTicketId) {
+          throw new Error("ticket_reconcile requires source_ticket_id and target_ticket_id.")
+        }
+        if (typeof output.args.evidence_artifact_path !== "string" || !output.args.evidence_artifact_path.trim()) {
+          throw new Error("ticket_reconcile requires evidence_artifact_path.")
+        }
+        const sourceTicket = getTicket(manifest, sourceTicketId)
+        const targetTicket = getTicket(manifest, targetTicketId)
+        const replacementSourceTicket = replacementSourceTicketId ? getTicket(manifest, replacementSourceTicketId) : sourceTicket
+        if (["open", "reopened"].includes(sourceTicket.resolution_state) && sourceTicket.status !== "done") {
+          await ensureTargetTicketWriteLease(sourceTicket.id)
+        }
+        if (["open", "reopened"].includes(targetTicket.resolution_state) && targetTicket.status !== "done") {
+          await ensureTargetTicketWriteLease(targetTicket.id)
+        }
+        if (
+          replacementSourceTicket.id !== sourceTicket.id &&
+          ["open", "reopened"].includes(replacementSourceTicket.resolution_state) &&
+          replacementSourceTicket.status !== "done"
+        ) {
+          await ensureTargetTicketWriteLease(replacementSourceTicket.id)
         }
       }
 
@@ -320,7 +367,6 @@ export const StageGateEnforcer: Plugin = async () => {
 
       if (input.tool === "handoff_publish") {
         const manifest = await loadManifest()
-        await ensureTargetTicketWriteLease(workflow.active_ticket)
         await ensureBootstrapReadyForValidation()
         const activeTicket = getTicket(manifest, workflow.active_ticket)
         if (activeTicket.resolution_state === "reopened") {

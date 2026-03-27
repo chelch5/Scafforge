@@ -82,7 +82,7 @@ export default tool({
     if (!defectClass) {
       throw new Error("defect_class must not be empty.")
     }
-    if (sourceTicket.resolution_state !== "done" && sourceTicket.status !== "done") {
+    if (sourceTicket.status !== "done" && !["done", "superseded"].includes(sourceTicket.resolution_state)) {
       throw new Error(`Source ticket ${sourceTicket.id} must already be complete before issue intake can route post-completion work.`)
     }
 
@@ -129,6 +129,9 @@ export default tool({
       })
       if (manifest.tickets.some((ticket) => ticket.id === followUp.id)) {
         throw new Error(`Ticket already exists: ${followUp.id}`)
+      }
+      if (followUp.depends_on.includes(sourceTicket.id)) {
+        throw new Error(`Follow-up ticket ${followUp.id} cannot depend on its source ticket ${sourceTicket.id}; route that relationship through source/follow-up linkage instead.`)
       }
       for (const dependency of followUp.depends_on) {
         getTicket(manifest, dependency)
