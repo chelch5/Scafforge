@@ -1,9 +1,12 @@
 import { tool } from "@opencode-ai/plugin"
 import {
   createTicketRecord,
+  currentRegistryArtifact,
   getTicket,
+  loadArtifactRegistry,
   loadManifest,
   loadWorkflowState,
+  normalizeRepoPath,
   saveWorkflowBundle,
   setPlanApprovedForTicket,
   syncWorkflowSelection,
@@ -41,6 +44,7 @@ export default tool({
     const sourceMode: TicketSourceMode = args.source_mode || "net_new_scope"
     const sourceTicketId = normalizeOptional(args.source_ticket_id)
     const evidenceArtifactPath = normalizeOptional(args.evidence_artifact_path)
+    const registry = await loadArtifactRegistry()
 
     if (manifest.tickets.some((ticket) => ticket.id === args.id.trim())) {
       throw new Error(`Ticket already exists: ${args.id.trim()}`)
@@ -93,9 +97,13 @@ export default tool({
             artifact.kind === "backlog-verification" &&
             artifact.trust_state === "current",
         )
-        if (!verificationArtifact) {
+        const registryArtifact = evidenceArtifactPath ? currentRegistryArtifact(registry, normalizeRepoPath(evidenceArtifactPath)) : undefined
+        if (
+          !verificationArtifact &&
+          !(registryArtifact && registryArtifact.stage === "review" && registryArtifact.kind === "backlog-verification")
+        ) {
           throw new Error(
-            `Source ticket ${sourceTicket.id} does not have a current review/backlog-verification artifact at ${evidenceArtifactPath}.`,
+            `No current registered review/backlog-verification artifact exists at ${evidenceArtifactPath} for ${sourceTicket.id}.`,
           )
         }
       }
@@ -108,8 +116,9 @@ export default tool({
           throw new Error("evidence_artifact_path is required for post_completion_issue ticket creation.")
         }
         const evidenceArtifact = sourceTicket.artifacts.find((artifact) => artifact.path === evidenceArtifactPath)
-        if (!evidenceArtifact) {
-          throw new Error(`Source ticket ${sourceTicket.id} does not reference the evidence artifact ${evidenceArtifactPath}.`)
+        const registryArtifact = currentRegistryArtifact(registry, normalizeRepoPath(evidenceArtifactPath))
+        if (!evidenceArtifact && !registryArtifact) {
+          throw new Error(`No current registered evidence artifact exists at ${evidenceArtifactPath} for ${sourceTicket.id}.`)
         }
       }
 

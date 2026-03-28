@@ -49,6 +49,8 @@ Do not collapse these layers together.
 6. Generate the smallest surface compatible with the selected profile; for the default full profile, keep heavier packs thin or lazy-activated until they are actually needed.
 7. Never treat public skill discovery as permission to auto-install random skills.
 
+The package competence bar is defined in `references/competence-contract.md`. If the generated workflow leaves the operator unsure what the next legal move is, treat that as a Scafforge defect.
+
 ## Default scaffold spine
 
 These skills are the current backbone and should remain coherent as a chain:
@@ -92,9 +94,11 @@ These refinements now govern implementation of the package contract:
 - `scaffold-kickoff` remains the **single public entrypoint** for greenfield, retrofit, managed-repair/update, and diagnosis/review flows; downstream skills are routing targets, not user-facing starting points
 - the greenfield path is **one-shot**: one batched blocking-decision round, one uninterrupted same-session generation pass, then direct handoff into development
 - the generated repo must have a **structured truth hierarchy** with exact canonical owners for facts, queue state, transient workflow state, artifacts, provenance, and restart surfaces
+- the generated repo must always expose **one legal next move** with one named owner and one blocker return path
 - the initial backlog should be **implementation-ready where decisions are resolved**, while unresolved major choices become explicit blocked or decision tickets instead of fabricated detail
 - `scafforge-audit` should own read-only diagnosis, review validation, and full diagnosis-pack generation on every audit run
 - `scafforge-repair` should consume audit outputs, apply safe repairs, continue into required project-specific regeneration steps, and escalate intent-changing repairs
+- post-repair verification must prove both current-state cleanliness and causal-regression coverage whenever the repair basis was transcript-backed
 - package-level PR evidence intake should be folded into `scafforge-audit` instead of surviving as a separate primary skill
 - standalone refinement routing should not remain as a package-level flow
 - managed-surface process replacement must leave explicit version and verification state so the generated repo can tell when its workflow contract changed
@@ -144,9 +148,10 @@ Use this path when a repo needs read-only diagnosis, evidence validation, or the
 2. `scafforge-audit` validates findings and emits the diagnosis outputs
 3. if package defects or prevention work are required, the user manually carries the diagnosis pack into the Scafforge dev repo
 4. Scafforge package changes land there before any subject-repo repair run
-5. `scafforge-repair` runs only if the audit still recommends workflow repair after those package changes exist
-6. `ticket-pack-builder` follows up when remediation tickets are needed
-7. `handoff-brief` publishes restart state when a closeout surface is needed
+5. the user runs exactly one fresh subject-repo audit as post-package revalidation against the updated package
+6. `scafforge-repair` runs only if that revalidation pack no longer requires package work first
+7. `ticket-pack-builder` follows up when remediation tickets are needed
+8. `handoff-brief` publishes restart state when a closeout surface is needed
 
 ### Review / QA flow
 
@@ -289,6 +294,7 @@ When changing the package:
 - verify generated template paths still match current OpenCode conventions
 - verify any runtime assumptions about tools/plugins are still current
 - remove stale host-specific wording from core skills and docs
+- verify the package still meets the competence contract in `references/competence-contract.md`
 
 ## Definition of done for package changes
 

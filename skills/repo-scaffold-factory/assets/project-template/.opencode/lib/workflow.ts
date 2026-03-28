@@ -604,6 +604,10 @@ export function currentArtifacts(ticket: Ticket, options: Omit<ArtifactMatcher, 
 export function historicalArtifacts(ticket: Ticket, options: Omit<ArtifactMatcher, "trust_state"> = {}): Artifact[] {
   return ticket.artifacts.filter((artifact) => artifact.trust_state !== "current" && matchesArtifact(artifact, options))
 }
+export function currentRegistryArtifact(registry: ArtifactRegistry, artifactPath: string): ArtifactRegistryEntry | undefined {
+  const normalized = normalizeRepoPath(artifactPath)
+  return [...registry.artifacts].reverse().find((artifact) => artifact.path === normalized && artifact.trust_state === "current")
+}
 export function hasArtifact(ticket: Ticket, options: ArtifactMatcher): boolean {
   return latestArtifact(ticket, { ...options, trust_state: options.trust_state ?? "current" }) !== undefined
 }

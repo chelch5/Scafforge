@@ -101,6 +101,12 @@
 - result: the team burns time generating new diagnosis packs that add no new decision-making evidence and still cannot proceed into a trustworthy repair run
 - why agents miss it: current audits can treat every rerun as fresh evidence unless they compare same-day diagnosis manifests against the current findings and the absence of later package-side change
 
+## Verification-basis regression (CYCLE003 — a later clean pack drops the earlier transcript basis)
+
+- a transcript-backed diagnosis pack identified workflow defects, but a later zero-finding verification pack on the same day omitted the supporting logs and still recorded clean state
+- result: the repo appears repaired on current-state evidence alone even though nobody proved the original deadlock no longer traps the operator
+- why agents miss it: repair verification still looks successful when it reruns current-state audit only; the transcript basis has to be carried forward automatically or the workflow silently narrows the evidence set
+
 ## Smoke-test contract drift (WFLOW001 — generated smoke test ignores repo-managed Python)
 
 - the generated `smoke_test` tool still uses system `python3 -m pytest` even when the repo exposes `uv.lock` or `.venv`
@@ -209,11 +215,29 @@
 - result: planned decomposition from active parent scope drifts into remediation semantics and later produces stale dependencies or follow-up graphs
 - why agents miss it: the queue still shows parent and child tickets, but the contract does not distinguish open-parent splitting from historical remediation
 
+## Historical reconciliation deadlock (WFLOW024 — superseded invalidated history has no legal path forward)
+
+- a completed ticket is both `resolution_state == superseded` and `verification_state == invalidated`, but `ticket_reconcile`, `ticket_create(post_completion_issue)`, `issue_intake`, or closeout publication still require evidence or state that no longer exists on the historical source ticket
+- result: the repo can truthfully recognize that a historical ticket was superseded, yet still strand the operator with no legal path to reconcile the queue, publish handoff, or move the workflow forward
+- why agents miss it: the queue state looks internally descriptive, but the tool contract still assumes direct historical artifacts or pre-supersede evidence ownership that the reconciled ticket no longer has
+
 ## Legacy repair-gate leak (WFLOW021 — prompts or restart surfaces still reason from `handoff_allowed`)
 
 - generated prompts, `/resume`, `START-HERE.md`, `.opencode/state/context-snapshot.md`, or `.opencode/state/latest-handoff.md` still tell agents to reason from `repair_follow_on.handoff_allowed`, `repair_follow_on_handoff_allowed`, or a rendered `handoff_allowed` bullet
 - result: weaker models keep treating an old boolean gate as authoritative even though `repair_follow_on.outcome` is now the canonical repair-state contract
 - why agents miss it: the restart surface still looks internally consistent, so they keep following the stale boolean instead of the newer outcome model
+
+## Closeout lease contradiction (WFLOW022 — restart publication still needs an open-ticket lease)
+
+- the transcript shows `handoff_publish` or equivalent restart-surface publication failing with `missing_ticket_write_lease` after the ticket is already closed
+- result: the workflow has no legal way to publish truthful restart surfaces at closeout time
+- why agents miss it: the surface failure can look like a one-off tool error unless audit treats closeout publication as a distinct contract from ordinary open-ticket lane mutation
+
+## Acceptance-scope contamination (WFLOW023 — the ticket’s literal closeout command reaches into later-ticket work)
+
+- a ticket’s acceptance says a command must exit 0, but the same transcript shows that command still fails on later-ticket or sibling-ticket scope that the current ticket explicitly does not own
+- result: the coordinator is forced to choose between violating scope, falsifying acceptance, or stalling on a contradiction that should have been prevented during ticket generation
+- why agents miss it: the acceptance command looks concrete and executable, so shallow review treats it as good ticket hygiene instead of noticing that the command is broader than the ticket’s owned scope
 
 ## Thin workflow explainer (SKILL002 — repo-local `ticket-execution` skill omits key lifecycle mechanics)
 
@@ -250,6 +274,12 @@
 - the transcript shows the coordinator using `artifact_write` to create planning, implementation, review, QA, or smoke-test artifacts directly
 - result: ticket proof is shaped by the routing agent instead of the owning specialist lane or deterministic tool
 - why agents miss it: current audits may focus on the artifact content and overlook that the wrong agent authored the stage evidence in the first place
+
+## No-legal-next-move trap (SESSION006 — the operator is left to infer how to proceed)
+
+- the transcript contains multiple contradictory blockers at once: lifecycle rejections, closeout lease contradictions, acceptance-scope tension, or deterministic tool failures
+- result: the operator keeps reasoning about workarounds because the workflow does not expose one competent legal next move
+- why agents miss it: individual findings are often recorded separately, so nobody states the higher-level truth that the workflow itself stopped being navigable
 
 ## Broken helper tool surface (WFLOW015 — internal workflow helpers exposed as callable tools)
 

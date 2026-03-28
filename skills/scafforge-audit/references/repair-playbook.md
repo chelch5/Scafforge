@@ -104,7 +104,7 @@ BOOT findings mean the managed bootstrap layer is broken on the current machine.
 - surface missing prerequisites accurately; a failed bootstrap artifact must not report `Missing Prerequisites: None` when `pip` or `uv` is actually missing
 - rerun the subject repo's `environment_bootstrap` flow after the managed-surface refresh, then rerun `audit_repo_process.py`; source-layer EXEC tickets should proceed only after `BOOT001` and `BOOT002` are gone
 
-## Workflow repair actions (WFLOW001 / WFLOW002 / WFLOW003 / WFLOW004 / WFLOW005 / WFLOW006 / WFLOW007 / WFLOW008 / WFLOW010 / WFLOW011 / WFLOW012 / WFLOW013 / WFLOW014 / WFLOW015 / WFLOW016 / WFLOW017 / WFLOW018 / WFLOW019 / WFLOW020 / WFLOW021 / SESSION001 / SESSION002 / SESSION003 / SESSION004 / SESSION005)
+## Workflow repair actions (WFLOW001 / WFLOW002 / WFLOW003 / WFLOW004 / WFLOW005 / WFLOW006 / WFLOW007 / WFLOW008 / WFLOW010 / WFLOW011 / WFLOW012 / WFLOW013 / WFLOW014 / WFLOW015 / WFLOW016 / WFLOW017 / WFLOW018 / WFLOW019 / WFLOW020 / WFLOW021 / WFLOW022 / WFLOW023 / WFLOW024 / SESSION001 / SESSION002 / SESSION003 / SESSION004 / SESSION005 / SESSION006)
 
 Workflow findings mean the generated repo contract itself is causing or misreporting the deadlock.
 
@@ -128,11 +128,15 @@ Workflow findings mean the generated repo contract itself is causing or misrepor
 - `WFLOW019`: add or repair `ticket_reconcile` so stale source/follow-up linkage, contradictory parent dependencies, and superseded follow-up tickets can be reconciled atomically from current evidence
 - `WFLOW020`: add first-class `split_scope` support across `ticket_create`, workflow docs, and team-leader guidance so open-parent decomposition does not drift into non-canonical source modes or leave the parent falsely marked blocked
 - `WFLOW021`: keep legacy `handoff_allowed` parsing internal only and refresh `/resume`, prompts, and restart surfaces so public guidance routes from `repair_follow_on.outcome` instead of stale boolean gates
+- `WFLOW022`: keep closeout publication outside the ordinary open-ticket lease contract so `handoff_publish` can update derived restart surfaces after the ticket closes
+- `WFLOW023`: tighten `ticket-pack-builder`, ticket docs, and closeout guidance together so a ticket's literal acceptance command never depends on later-ticket scope
+- `WFLOW024`: repair `ticket_reconcile`, historical evidence routing, and closeout publication together so a superseded invalidated historical ticket can be reconciled from current registered evidence without leaving a publish-blocking dead end
 - `SESSION001`: when a supplied transcript proves the causal failure, carry that transcript into package-side audit fixes first; do not treat the resulting report as ordinary current-state repo drift
 - `SESSION002`: repeated lifecycle retries are not just noisy transcript details; treat them as evidence that the prompt, local workflow skill, or tool contract is underspecified
 - `SESSION003`: unsupported-stage or explicit workaround attempts mean the tool contract and prompt hardening must be refreshed together; do not rely on the next session to "just use it correctly"
 - `SESSION004`: if the transcript shows validation could not run and later artifacts still claim PASS without later executable recovery evidence, treat that as a workflow-surface defect first: tighten artifact ownership, QA proof rules, and smoke-test ownership before trusting any closeout generated under the older contract
 - `SESSION005`: if the coordinator wrote specialist stage artifacts directly, regenerate the repo-local workflow skill and team-leader prompt together so routing ownership and artifact authorship boundaries are explicit
+- `SESSION006`: treat operator confusion as workflow evidence; if the transcript shows no legal next move, audit adjacent surfaces together until one explicit owner and blocker route exists
 
 ## SKILL repair actions (SKILL001)
 
@@ -175,6 +179,14 @@ CYCLE findings of this type mean the repo is generating repeated same-day diagno
 - stop rerunning the subject-repo audit once the repeated finding set is established
 - carry the latest diagnosis pack into the Scafforge dev repo, land the package fix there first, then rerun one fresh subject-repo audit against the updated package output
 - treat another subject-repo diagnosis run before package change as churn, not progress
+
+## Verification-basis repair actions (CYCLE003)
+
+CYCLE findings of this type mean a later clean verification pack dropped the earlier transcript-backed diagnosis basis.
+
+- make `run_managed_repair.py` own the final verification diagnosis pack instead of leaving that step to a later manual audit
+- automatically inherit transcript evidence from the repair basis and fail closed if the causal transcript basis was not replayed
+- record current-state cleanliness separately from causal-regression verification so a later clean-looking repo is not mistaken for a proved fix
 
 ## EXEC repair actions (EXEC001 / EXEC002 / EXEC003)
 

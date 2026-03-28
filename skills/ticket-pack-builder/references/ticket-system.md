@@ -29,7 +29,7 @@ Required ticket fields:
 
 Optional ticket fields with controlled meaning:
 
-- `source_mode` — one of `process_verification`, `post_completion_issue`, or `net_new_scope`
+- `source_mode` — one of `process_verification`, `post_completion_issue`, `net_new_scope`, or `split_scope`
 
 Manifest contract:
 
@@ -86,3 +86,4 @@ Rules:
 - keep artifact metadata on the owning ticket entry so the manifest acts as the primary artifact-routing record, while `.opencode/state/artifacts/registry.json` mirrors it for deterministic tooling
 - during bootstrap, detail the first execution wave only where blocking decisions are resolved
 - convert unresolved major choices into explicit blocked, decision, or discovery tickets instead of fabricating implementation detail
+- keep acceptance commands scope-isolated; if a literal closeout command depends on later-ticket work, split the ticket or encode the dependency explicitly instead of shipping contradictory acceptance

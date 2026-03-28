@@ -9,6 +9,7 @@ Use this skill to inspect an existing repository in full diagnostic mode without
 
 This is the host-side diagnosis surface. It replaces the old mixed doctor-plus-bridge behavior by keeping diagnosis, review evidence intake, and report generation together in one non-mutating skill.
 Every audit run produces the full four-report diagnosis pack.
+Use [../../references/competence-contract.md](../../references/competence-contract.md) as the package-level bar for whether the workflow is actually competent.
 
 ## When to use this skill
 
@@ -31,6 +32,7 @@ Read the repo state first.
 - If the repo already has repeated diagnosis packs with materially identical repair-routed findings and no newer Scafforge package or process-version change, treat that as audit churn and stop recommending another subject-repo audit-first loop
 - Inspect `.opencode/state/invocation-log.jsonl` when it exists and treat coordinator-authored specialist artifacts there as suspect workflow evidence
 - If session logs or transcript exports were supplied, inspect them before current-state reconciliation and treat them as first-class temporal evidence
+- If the transcript shows the operator spending time figuring out how to move forward on basic workflow, treat that confusion as package evidence; the workflow should already expose one legal next move
 - Treat coordinator narration inside supplied logs as candidate explanation, not ground truth; prefer concrete tool calls, tool outputs, tool errors, and current repo state when deciding what actually failed and why
 - Reconstruct transcript chronology explicitly when logs are supplied:
   - repeated lifecycle errors
@@ -65,6 +67,7 @@ python3 scripts/audit_repo_process.py <repo-root> --format both --emit-diagnosis
 The script is at `scripts/audit_repo_process.py` relative to this skill.
 Pass `--supporting-log <path>` for each supplied session log or transcript export.
 If the audited repo is outside the current host's writable roots, pass `--diagnosis-output-dir <writable-path>` so the diagnosis pack is still emitted in a host-writable location.
+Use `--diagnosis-kind initial_diagnosis` for the first subject-repo diagnosis, `--diagnosis-kind post_package_revalidation` for the single fresh audit after Scafforge package changes land, and reserve `post_repair_verification` for the public repair runner.
 
 It produces:
 - a markdown audit report
@@ -96,6 +99,11 @@ For each finding, identify:
 - whether the resume truth hierarchy keeps `tickets/manifest.json` plus `.opencode/state/workflow-state.json` canonical over derived restart surfaces
 - whether pending backlog process verification is merely visible current state or an actual workflow defect that the repo is hiding or contradicting
 - whether lease ownership is consistently coordinator-owned or still split across worker prompts
+- whether the workflow exposed one clear legal next move or forced the operator to infer a workaround from contradictory surfaces
+- which adjacent surfaces should be inspected before the issue is considered understood:
+  - lifecycle thrash or bypass-seeking -> prompts, `ticket_lookup`, `ticket-execution`, and stage gates
+  - smoke-test defects -> ticket acceptance scope, `smoke_test`, and team-leader guidance together
+  - closeout contradictions -> `handoff_publish`, restart surfaces, and lease rules together
 
 ### 4. Validate review findings when present
 
@@ -152,7 +160,8 @@ This skill is non-mutating.
 - If the diagnosis identifies a Scafforge package defect or prevention gap, stop after writing the diagnosis pack
 - Tell the user to manually copy the diagnosis pack from the subject repo into the Scafforge dev repo
 - Apply Scafforge package changes in the Scafforge dev repo before recommending repair
-- Return to the subject repo and route to `../scafforge-repair/SKILL.md` only after the required package changes are available to the repair run
+- Return to the subject repo and run exactly one fresh `post_package_revalidation` audit against the updated package before recommending repair
+- Route to `../scafforge-repair/SKILL.md` only from that fresh revalidation pack once package work is no longer the next required step
 - If safe workflow repair is needed but no package work is required and the current repair surface already matches Report 4, repair may be the next separate step
 - If only source-layer follow-up is needed, recommend tickets through `ticket-pack-builder`
 
@@ -193,6 +202,7 @@ Keep those responsibilities separate.
 - Do not answer a supplied causal transcript question with current-state findings alone
 - Do not treat script output as self-sufficient when the user asked about a supplied transcript or session log
 - Do not keep recommending another subject-repo audit when repeated diagnosis packs show the same repair-routed findings and no newer package or process-version change exists
+- Do not collapse the intended loop into audit -> package patch -> many more audits. After package work, one fresh post-package revalidation audit is the only normal subject-repo audit before repair.
 - Do not treat repeated lifecycle retries, unsupported-stage probing, or PASS artifacts without executable proof as harmless transcript noise
 - Do not collapse a transcript-backed tool-execution defect into a generic test failure when the tool never launched the requested command
 - Do not collapse acceptance-command drift in `smoke_test` into a generic failing-test finding when the tool ran the wrong smoke scope
@@ -200,6 +210,8 @@ Keep those responsibilities separate.
 - Do not treat `pending_process_verification` by itself as a package defect when restart surfaces and routing already expose it truthfully
 - Do not collapse stale source/follow-up graph contradictions into generic ticket noise when the repo lacks a canonical `ticket_reconcile` path
 - Do not treat open-parent child decomposition as ordinary remediation when `split_scope` routing is missing or drifted
+- Do not treat operator confusion as mere user error when the workflow did not expose one clear legal next move
+- Do not accept a later zero-finding verification audit as proof of repair if the earlier transcript-backed causal basis was dropped
 - Keep workflow-layer findings separate from source-layer implementation findings
 - Fold review validation into this skill instead of reviving a separate bridge
 

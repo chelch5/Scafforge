@@ -4,6 +4,7 @@
 
 - State the agent's job in one sentence.
 - Name what the agent does not own.
+- Expose one legal next move and one blocker return path.
 - Keep status semantics coarse and queue-oriented.
 - Put transient approvals in workflow state or explicit artifacts.
 - Require proof before stage changes.

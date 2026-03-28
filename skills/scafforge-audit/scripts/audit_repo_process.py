@@ -134,6 +134,20 @@ TRANSCRIPT_SMOKE_ACCEPTANCE_PATTERNS = (
     r"`[^`\n]*pytest[^`\n]*`\s+exits 0",
     r"`[^`\n]*(?:cargo test|go test|ruff check|npm run test|pnpm run test|yarn test|bun run test)[^`\n]*`\s+exits 0",
 )
+TRANSCRIPT_HANDOFF_LEASE_CONTRADICTION_PATTERNS = (
+    r"handoff_publish.*missing_ticket_write_lease",
+    r"requires active lease on closed ticket",
+    r"closed ticket cannot hold a lease",
+)
+TRANSCRIPT_ACCEPTANCE_SCOPE_TENSION_PATTERNS = (
+    r"acceptance criterion.*exits 0",
+    r"acceptance criteria.*exits 0",
+    r"literal acceptance criterion",
+    r"creates a tension",
+    r"out of .* scope",
+    r"pre-existing .* scope",
+    r"handled by EXEC-\d+",
+)
 COORDINATOR_ARTIFACT_STAGES = {"planning", "implementation", "review", "qa", "smoke-test"}
 DEPRECATED_MODEL_PATTERNS = (
     r"MiniMax-M2\.5",
@@ -583,6 +597,58 @@ def load_latest_previous_diagnosis(root: Path) -> tuple[Path, dict[str, Any]] | 
         return None
     _, latest_path, latest_manifest = diagnoses[-1]
     return latest_path, latest_manifest
+
+
+def package_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def current_package_commit() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=package_root(),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        return "unknown"
+    return result.stdout.strip() or "unknown"
+
+
+def manifest_supporting_logs(manifest: dict[str, Any]) -> list[str]:
+    value = manifest.get("supporting_logs")
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if isinstance(item, str) and str(item).strip()]
+
+
+def manifest_package_commit(manifest: dict[str, Any]) -> str:
+    value = manifest.get("audit_package_commit")
+    return value.strip() if isinstance(value, str) and value.strip() else "unknown"
+
+
+def manifest_diagnosis_kind(manifest: dict[str, Any]) -> str:
+    value = manifest.get("diagnosis_kind")
+    return value.strip() if isinstance(value, str) and value.strip() else "initial_diagnosis"
+
+
+def repair_routed_codes_from_manifest(manifest: dict[str, Any]) -> set[str]:
+    return {
+        str(item.get("source_finding_code", "")).strip()
+        for item in manifest.get("ticket_recommendations", [])
+        if isinstance(item, dict) and str(item.get("route", "")).strip() == "scafforge-repair"
+    }
+
+
+def load_latest_previous_diagnosis_with_supporting_logs(root: Path) -> tuple[Path, dict[str, Any]] | None:
+    diagnoses = load_previous_diagnoses(root)
+    for _, diagnosis_path, manifest in reversed(diagnoses):
+        if manifest_supporting_logs(manifest):
+            return diagnosis_path, manifest
+    return None
 
 
 def load_previous_diagnoses(root: Path) -> list[tuple[datetime, Path, dict[str, Any]]]:
@@ -1633,11 +1699,7 @@ def audit_failed_repair_cycle(root: Path, findings: list[Finding]) -> None:
     if not repairs_after_diagnosis:
         return
 
-    previous_codes = {
-        str(item.get("source_finding_code", "")).strip()
-        for item in manifest.get("ticket_recommendations", [])
-        if isinstance(item, dict) and str(item.get("route", "")).strip() == "scafforge-repair"
-    }
+    previous_codes = repair_routed_codes_from_manifest(manifest)
     if not previous_codes:
         return
 
@@ -1702,12 +1764,11 @@ def audit_repeated_diagnosis_churn(root: Path, findings: list[Finding]) -> None:
 
     repeated_codes: set[str] = set()
     compared_packs: list[str] = []
+    current_package = current_package_commit()
     for _, diagnosis_path, manifest in same_day[-4:]:
-        codes = {
-            str(item.get("source_finding_code", "")).strip()
-            for item in manifest.get("ticket_recommendations", [])
-            if isinstance(item, dict) and str(item.get("route", "")).strip() == "scafforge-repair"
-        }
+        if manifest_package_commit(manifest) != current_package:
+            continue
+        codes = repair_routed_codes_from_manifest(manifest)
         overlap = current_codes & codes
         if overlap:
             compared_packs.append(normalize_path(diagnosis_path, root))
@@ -1731,8 +1792,78 @@ def audit_repeated_diagnosis_churn(root: Path, findings: list[Finding]) -> None:
             evidence=[
                 f"Same-day diagnosis packs considered: {len(same_day)} on {latest_generated_at.date().isoformat()}",
                 f"Latest diagnosis pack without later repair: {normalize_path(latest_path, root)}",
+                f"Current audit package commit: {current_package}",
                 f"Repeated repair-routed findings: {', '.join(sorted(repeated_codes))}",
                 f"Compared packs: {', '.join(compared_packs[:4])}",
+            ],
+        ),
+    )
+
+
+def audit_verification_basis_regression(root: Path, findings: list[Finding]) -> None:
+    diagnoses = load_previous_diagnoses(root)
+    if len(diagnoses) < 2:
+        return
+
+    transcript_basis: tuple[datetime, Path, dict[str, Any], set[str]] | None = None
+    false_clean_pack: tuple[datetime, Path, dict[str, Any]] | None = None
+
+    for generated_at, diagnosis_path, manifest in diagnoses:
+        logs = manifest_supporting_logs(manifest)
+        repair_codes = repair_routed_codes_from_manifest(manifest)
+        if logs and repair_codes:
+            transcript_basis = (generated_at, diagnosis_path, manifest, repair_codes)
+            false_clean_pack = None
+            continue
+        if transcript_basis is None:
+            continue
+        if generated_at <= transcript_basis[0]:
+            continue
+        if generated_at.date() != transcript_basis[0].date():
+            continue
+        if logs:
+            continue
+        if manifest.get("finding_count") != 0:
+            continue
+        if manifest_diagnosis_kind(manifest) == "initial_diagnosis":
+            continue
+        false_clean_pack = (generated_at, diagnosis_path, manifest)
+
+    if transcript_basis is None or false_clean_pack is None:
+        return
+
+    basis_generated_at, basis_path, _, basis_codes = transcript_basis
+    false_clean_generated_at, false_clean_path, _ = false_clean_pack
+    provenance_path = root / ".opencode" / "meta" / "bootstrap-provenance.json"
+    provenance = read_json(provenance_path)
+    repair_history = provenance.get("repair_history") if isinstance(provenance, dict) and isinstance(provenance.get("repair_history"), list) else []
+    repairs_after_basis = [
+        item
+        for item in repair_history
+        if isinstance(item, dict)
+        and (repaired_at := parse_iso_timestamp(item.get("repaired_at") or item.get("timestamp")))
+        and repaired_at > basis_generated_at
+    ]
+
+    add_finding(
+        findings,
+        Finding(
+            code="CYCLE003",
+            severity="error",
+            problem="A later zero-finding diagnosis pack dropped the earlier transcript evidence basis, so the workflow was recorded as clean without proving the original trap was eliminated.",
+            root_cause="Verification re-ran audit against current repo state only. Because the transcript-backed repair basis was not carried forward automatically, a later diagnosis pack could report zero findings without replaying the causal deadlock conditions that triggered repair.",
+            files=[
+                normalize_path(basis_path / "manifest.json", root),
+                normalize_path(false_clean_path / "manifest.json", root),
+                normalize_path(provenance_path, root),
+            ],
+            safer_pattern="Carry forward supporting logs automatically into repair verification, emit the post-repair diagnosis pack from the repair runner itself, and distinguish current-state cleanliness from causal-regression verification before calling the workflow clean.",
+            evidence=[
+                f"Transcript-backed diagnosis basis: {normalize_path(basis_path, root)}",
+                f"Basis repair-routed findings: {', '.join(sorted(basis_codes))}",
+                f"Later zero-finding pack without supporting logs: {normalize_path(false_clean_path, root)}",
+                f"False-clean pack generated at {false_clean_generated_at.isoformat()} after transcript basis at {basis_generated_at.isoformat()}",
+                f"Repairs recorded after transcript basis: {len(repairs_after_basis)}",
             ],
         ),
     )
@@ -2233,6 +2364,85 @@ def audit_stale_ticket_graph(root: Path, findings: list[Finding]) -> None:
             files=[normalize_path(manifest_path, root)],
             safer_pattern="Use `ticket_reconcile` to atomically repair stale source/follow-up linkage, remove contradictory parent dependencies, and supersede invalidated follow-up tickets from current evidence.",
             evidence=evidence[:12],
+        ),
+    )
+
+
+def audit_historical_reconciliation_deadlock(root: Path, findings: list[Finding]) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    workflow_path = root / ".opencode" / "state" / "workflow-state.json"
+    ticket_reconcile = root / ".opencode" / "tools" / "ticket_reconcile.ts"
+    ticket_create = root / ".opencode" / "tools" / "ticket_create.ts"
+    issue_intake = root / ".opencode" / "tools" / "issue_intake.ts"
+    stage_gate = root / ".opencode" / "plugins" / "stage-gate-enforcer.ts"
+    if not all(path.exists() for path in (manifest_path, workflow_path, ticket_reconcile, ticket_create, issue_intake, stage_gate)):
+        return
+
+    manifest = read_json(manifest_path)
+    workflow = read_json(workflow_path)
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) and isinstance(manifest.get("tickets"), list) else []
+    if not isinstance(workflow, dict) or not tickets:
+        return
+
+    deadlocked = [
+        ticket
+        for ticket in tickets
+        if isinstance(ticket, dict)
+        and ticket.get("status") == "done"
+        and ticket.get("resolution_state") == "superseded"
+        and ticket.get("verification_state") == "invalidated"
+    ]
+    if not deadlocked:
+        return
+
+    reconcile_text = read_text(ticket_reconcile)
+    ticket_create_text = read_text(ticket_create)
+    issue_intake_text = read_text(issue_intake)
+    stage_gate_text = read_text(stage_gate)
+    evidence: list[str] = []
+
+    if "supersededTarget," in reconcile_text and "const supersedeTarget" in reconcile_text:
+        evidence.append(f"{normalize_path(ticket_reconcile, root)} still contains the `supersededTarget`/`supersedeTarget` runtime typo.")
+    if 'targetTicket.verification_state = "invalidated"' in reconcile_text:
+        evidence.append(f"{normalize_path(ticket_reconcile, root)} still re-writes superseded reconciliation targets to `verification_state = invalidated`.")
+    if "currentRegistryArtifact" not in reconcile_text and "Neither ${sourceTicket.id} nor ${targetTicket.id} has a current evidence artifact" in reconcile_text:
+        evidence.append(f"{normalize_path(ticket_reconcile, root)} still accepts evidence only when it remains directly attached to the source or target ticket.")
+    if "does not reference the evidence artifact" in ticket_create_text:
+        evidence.append(f"{normalize_path(ticket_create, root)} still requires historical source tickets to directly reference the evidence artifact path.")
+    if "does not reference the evidence artifact" in issue_intake_text:
+        evidence.append(f"{normalize_path(issue_intake, root)} still requires historical source tickets to directly reference the evidence artifact path.")
+    if 'ticket.status === "done" && ticket.verification_state === "invalidated"' in stage_gate_text:
+        evidence.append(f"{normalize_path(stage_gate, root)} still blocks handoff while any done invalidated ticket remains unresolved.")
+
+    active_ticket_id = str(workflow.get("active_ticket", "")).strip()
+    active_ticket = next((ticket for ticket in deadlocked if str(ticket.get("id", "")).strip() == active_ticket_id), None)
+    if active_ticket:
+        evidence.append(f"workflow-state still foregrounds closed historical ticket {active_ticket_id} while it is `superseded` and `invalidated`.")
+    for ticket in deadlocked[:3]:
+        ticket_id = str(ticket.get("id", "")).strip()
+        artifact_count = len(ticket.get("artifacts", [])) if isinstance(ticket.get("artifacts"), list) else 0
+        evidence.append(f"{ticket_id} is still `done + superseded + invalidated` with {artifact_count} recorded artifacts.")
+
+    if not evidence:
+        return
+
+    add_finding(
+        findings,
+        Finding(
+            code="WFLOW024",
+            severity="error",
+            problem="The current workflow has no legal reconciliation path for a superseded invalidated historical ticket, so closeout publication can deadlock on impossible preconditions.",
+            root_cause="Historical reconciliation still assumes the relevant evidence remains directly attached to the old source/target ticket, and the supersede path leaves the target publish-blocking invalidated. That traps the repo between stale historical state and closeout publication.",
+            files=[
+                normalize_path(manifest_path, root),
+                normalize_path(workflow_path, root),
+                normalize_path(ticket_reconcile, root),
+                normalize_path(ticket_create, root),
+                normalize_path(issue_intake, root),
+                normalize_path(stage_gate, root),
+            ],
+            safer_pattern="Give `ticket_reconcile`, `ticket_create(post_completion_issue|process_verification)`, and `issue_intake` one legal path that can use current registered evidence for historical tickets, and make successful supersede-through-reconciliation non-blocking for handoff publication.",
+            evidence=evidence[:10],
         ),
     )
 
@@ -3330,6 +3540,107 @@ def audit_session_smoke_test_acceptance_drift(root: Path, findings: list[Finding
         )
 
 
+def audit_session_handoff_closeout_lease_deadlock(root: Path, findings: list[Finding], logs: list[Path]) -> None:
+    handoff_publish = root / ".opencode" / "tools" / "handoff_publish.ts"
+    for path in logs:
+        text = read_text(path)
+        if not text:
+            continue
+
+        evidence: list[str] = []
+        for event in parse_transcript_tool_events(text):
+            if event.tool != "handoff_publish":
+                continue
+            if not event.error or "missing_ticket_write_lease" not in event.error:
+                continue
+            evidence.append(
+                f"Line {event.line_number}: handoff_publish failed with `{event.error.splitlines()[0].strip()}` after closeout."
+            )
+        evidence.extend(
+            f"Line {line_number}: {line}"
+            for line_number, line in matching_line_numbers(text, TRANSCRIPT_HANDOFF_LEASE_CONTRADICTION_PATTERNS)[:4]
+        )
+        if not evidence:
+            continue
+
+        add_finding(
+            findings,
+            Finding(
+                code="WFLOW022",
+                severity="error",
+                problem="The supplied session transcript shows restart-surface publication blocked by a closed-ticket write-lease requirement.",
+                root_cause="`handoff_publish` still behaved like an ordinary lane mutation and required an active write lease after the ticket had already been closed. That leaves the workflow with no legal way to publish truthful restart surfaces during closeout.",
+                files=[normalize_path(path, root), normalize_path(handoff_publish, root)],
+                safer_pattern="Let `handoff_publish` update derived restart surfaces after closeout without reacquiring a normal write lease on the closed ticket, and audit transcript evidence for this contradiction explicitly.",
+                evidence=evidence[:6],
+            ),
+        )
+
+
+def audit_session_acceptance_scope_contamination(root: Path, findings: list[Finding], logs: list[Path]) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    manifest = read_json(manifest_path)
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) and isinstance(manifest.get("tickets"), list) else []
+    tickets_by_id = {
+        str(ticket.get("id")): ticket
+        for ticket in tickets
+        if isinstance(ticket, dict) and isinstance(ticket.get("id"), str)
+    }
+    for path in logs:
+        text = read_text(path)
+        if not text:
+            continue
+
+        acceptance_hits = matching_line_numbers(text, (r"acceptance criterion.*exits 0", r"acceptance criteria.*exits 0"))
+        scope_hits = matching_line_numbers(
+            text,
+            (
+                r"out of .* scope",
+                r"pre-existing .* scope",
+                r"handled by EXEC-\d+",
+                r"literal acceptance criterion",
+                r"creates a tension",
+                r"Should .* scope items be fixed as part of .* to satisfy the literal acceptance criterion",
+            ),
+        )
+        if not acceptance_hits or not scope_hits:
+            continue
+
+        mentioned_ids = {
+            match
+            for _, line in [*acceptance_hits[:2], *scope_hits[:4]]
+            for match in re.findall(r"\b[A-Z]+-\d+\b", line)
+        }
+        dependency_encoded = False
+        for ticket_id in mentioned_ids:
+            ticket = tickets_by_id.get(ticket_id)
+            if not isinstance(ticket, dict):
+                continue
+            depends_on = {str(item).strip() for item in ticket.get("depends_on", []) if isinstance(item, str) and str(item).strip()}
+            if depends_on & mentioned_ids:
+                dependency_encoded = True
+                break
+        if dependency_encoded:
+            continue
+
+        evidence = [
+            f"Line {line_number}: {line}"
+            for line_number, line in [*acceptance_hits[:2], *scope_hits[:4]]
+        ]
+        add_finding(
+            findings,
+            Finding(
+                code="WFLOW023",
+                severity="error",
+                problem="The supplied session transcript shows a ticket whose literal acceptance command reaches into later-ticket scope, so the ticket cannot close without violating its own scope boundary.",
+                root_cause="Ticket decomposition allowed a closeout command that still depended on work owned by a later ticket. That forced the coordinator to choose between falsifying acceptance, broadening scope, or blocking on work that the ticket explicitly said it did not own.",
+                files=[normalize_path(path, root), normalize_path(manifest_path, root)],
+                safer_pattern="Keep ticket acceptance scope-isolated. If the literal closeout command depends on later-ticket work, split the tickets differently or encode the dependency in the ticket structure instead of shipping a contradictory acceptance command.",
+                evidence=evidence,
+            ),
+        )
+
+
 def audit_session_evidence_free_verification(root: Path, findings: list[Finding], logs: list[Path]) -> None:
     for path in logs:
         text = read_text(path)
@@ -3404,6 +3715,56 @@ def audit_session_coordinator_artifact_authorship(root: Path, findings: list[Fin
                 files=[normalize_path(path, root)],
                 safer_pattern="Keep the coordinator on routing and stage transitions only: specialist lanes own planning, implementation, review, and QA artifacts, while `smoke_test` alone owns smoke-test proof.",
                 evidence=evidence[:6],
+            ),
+        )
+
+
+def audit_session_operator_trap(root: Path, findings: list[Finding], logs: list[Path]) -> None:
+    for path in logs:
+        text = read_text(path)
+        if not text:
+            continue
+
+        categories: list[tuple[str, str]] = []
+        repeated = matching_line_numbers(text, TRANSCRIPT_LIFECYCLE_ERROR_PATTERNS)
+        if repeated:
+            categories.append(("workflow thrash", f"Line {repeated[0][0]}: {repeated[0][1]}"))
+
+        reasoning_hits = matching_assistant_reasoning_line_numbers(
+            text,
+            (r"\bworkaround\b", r"\bbypass\b", *TRANSCRIPT_SOFT_BYPASS_PATTERNS),
+        )
+        if not reasoning_hits:
+            reasoning_hits = matching_non_tool_line_numbers(text, (r"\bworkaround\b", r"\bbypass\b", *TRANSCRIPT_SOFT_BYPASS_PATTERNS))
+        if reasoning_hits:
+            categories.append(("bypass search", f"Line {reasoning_hits[0][0]}: {reasoning_hits[0][1]}"))
+
+        handoff_hits = matching_line_numbers(text, TRANSCRIPT_HANDOFF_LEASE_CONTRADICTION_PATTERNS)
+        if handoff_hits:
+            categories.append(("closeout lease contradiction", f"Line {handoff_hits[0][0]}: {handoff_hits[0][1]}"))
+
+        acceptance_hits = matching_line_numbers(text, TRANSCRIPT_ACCEPTANCE_SCOPE_TENSION_PATTERNS)
+        if acceptance_hits:
+            categories.append(("acceptance scope tension", f"Line {acceptance_hits[0][0]}: {acceptance_hits[0][1]}"))
+
+        override_hits = matching_line_numbers(text, TRANSCRIPT_SMOKE_OVERRIDE_FAILURE_PATTERNS)
+        if override_hits:
+            categories.append(("tool execution contradiction", f"Line {override_hits[0][0]}: {override_hits[0][1]}"))
+
+        if len(categories) < 2:
+            continue
+
+        evidence = [f"{label}: {detail}" for label, detail in categories[:5]]
+        add_finding(
+            findings,
+            Finding(
+                code="SESSION006",
+                severity="error",
+                problem="The supplied session transcript shows the operator trapped between contradictory workflow rules instead of having one clear legal next move.",
+                root_cause="Multiple workflow surfaces failed at once: lifecycle gates, closeout publication, acceptance scope, or deterministic tool execution disagreed about what could legally happen next. The coordinator then had to infer workarounds instead of following one competent contract path.",
+                files=[normalize_path(path, root)],
+                safer_pattern="Design every workflow state so it exposes one legal next action, one named owner, and one blocker return path. When transcript evidence shows a trap, audit adjacent surfaces together instead of treating each symptom as isolated noise.",
+                evidence=evidence,
             ),
         )
 
@@ -3744,6 +4105,7 @@ def audit_repo(root: Path, logs: list[Path] | None = None) -> list[Finding]:
     audit_model_profile_drift(root, findings)
     audit_failed_repair_cycle(root, findings)
     audit_repeated_diagnosis_churn(root, findings)
+    audit_verification_basis_regression(root, findings)
     audit_bootstrap_deadlock(root, findings)
     audit_bootstrap_command_layout_mismatch(root, findings)
     audit_smoke_test_contract(root, findings)
@@ -3754,6 +4116,7 @@ def audit_repo(root: Path, logs: list[Path] | None = None) -> list[Finding]:
     audit_reverification_deadlock(root, findings)
     audit_closed_ticket_follow_up_deadlock(root, findings)
     audit_stale_ticket_graph(root, findings)
+    audit_historical_reconciliation_deadlock(root, findings)
     audit_open_ticket_split_routing(root, findings)
     audit_smoke_test_artifact_bypass(root, findings)
     audit_handoff_artifact_ownership_conflict(root, findings)
@@ -3774,8 +4137,11 @@ def audit_repo(root: Path, logs: list[Path] | None = None) -> list[Finding]:
     audit_session_broken_tooling(root, findings, logs or [])
     audit_session_smoke_test_override_failure(root, findings, logs or [])
     audit_session_smoke_test_acceptance_drift(root, findings, logs or [])
+    audit_session_handoff_closeout_lease_deadlock(root, findings, logs or [])
+    audit_session_acceptance_scope_contamination(root, findings, logs or [])
     audit_session_evidence_free_verification(root, findings, logs or [])
     audit_session_coordinator_artifact_authorship(root, findings, logs or [])
+    audit_session_operator_trap(root, findings, logs or [])
     return findings
 
 
@@ -3894,6 +4260,12 @@ def prevention_action(finding: Finding) -> str:
         return "Add first-class `split_scope` routing for child tickets created from open parents so decomposition does not drift into non-canonical source modes and split parents do not revert to blocked status."
     if finding.code == "WFLOW021":
         return "Keep legacy `handoff_allowed` parsing internal only, and regenerate prompts plus restart surfaces so weaker models route from `repair_follow_on.outcome` instead of stale boolean handoff gates."
+    if finding.code == "WFLOW022":
+        return "Keep closeout publication outside the ordinary open-ticket lease contract so `handoff_publish` can update derived restart surfaces after a ticket closes."
+    if finding.code == "WFLOW023":
+        return "Make ticket acceptance criteria scope-isolated: if the literal closeout command depends on later-ticket work, split the backlog differently or encode the dependency explicitly instead of shipping contradictory acceptance."
+    if finding.code == "WFLOW024":
+        return "Give historical reconciliation one legal evidence-backed path so superseded invalidated tickets can be repaired without depending on impossible direct-artifact or closeout assumptions."
     if finding.code == "SESSION001":
         return "Teach scafforge-audit to treat supplied session logs as first-class temporal evidence and explain final reasoning failures before reconciling current repo state."
     if finding.code == "SESSION002":
@@ -3904,6 +4276,8 @@ def prevention_action(finding: Finding) -> str:
         return "Detect and block evidence-free PASS artifacts when verification could not run, and keep smoke-test proof tool-owned."
     if finding.code == "SESSION005":
         return "Teach audit and generated coordinator prompts to treat coordinator-authored specialist artifacts as a workflow defect that requires prompt plus local-skill regeneration."
+    if finding.code == "SESSION006":
+        return "Treat operator confusion itself as workflow evidence when the transcript shows no single legal next move, and audit adjacent surfaces together until one competent route exists."
     if finding.code == "BOOT001":
         return "Make generated Python bootstrap manager-aware (`uv` or repo-local `.venv`), classify missing prerequisites accurately, and audit bootstrap deadlocks before routing source remediation."
     if finding.code == "BOOT002":
@@ -3918,6 +4292,8 @@ def prevention_action(finding: Finding) -> str:
         return "Teach audit to inspect the previous diagnosis and repair history, then force repair to explain why the prior cycle failed before another managed-repair run proceeds."
     if finding.code == "CYCLE002":
         return "Teach audit to stop repeated diagnosis-pack churn when the repo has no newer package or process-version change; require Scafforge package work before the next subject-repo audit."
+    if finding.code == "CYCLE003":
+        return "Make repair verification inherit the transcript-backed diagnosis basis automatically, emit the post-repair diagnosis pack from the repair runner, and refuse to call the repo clean on current-state evidence alone."
     if finding.code.startswith("EXEC"):
         return "Tighten generated review and QA guidance so runtime validation and test collection proof exist before closure."
     if "ticket" in finding.code or "status" in finding.code:
@@ -3933,6 +4309,9 @@ def build_ticket_recommendations(findings: list[Finding]) -> list[dict[str, Any]
         if finding.code.startswith("EXEC"):
             route = "ticket-pack-builder"
             repair_class = "generated-repo remediation ticket"
+        elif finding.code == "WFLOW024":
+            route = "manual-prerequisite"
+            repair_class = "Scafforge package work required before the next subject-repo repair run"
         elif finding.code.startswith("CYCLE"):
             route = "manual-prerequisite"
             repair_class = "Scafforge package work required before the next subject-repo run"
@@ -3955,6 +4334,25 @@ def build_ticket_recommendations(findings: list[Finding]) -> list[dict[str, Any]
             }
         )
     return recommendations
+
+
+def package_work_required_first(recommendations: list[dict[str, Any]]) -> bool:
+    return any(
+        isinstance(item, dict)
+        and str(item.get("route", "")).strip() == "manual-prerequisite"
+        and "Scafforge package work required" in str(item.get("repair_class", ""))
+        for item in recommendations
+    )
+
+
+def recommended_next_step(findings: list[Finding], recommendations: list[dict[str, Any]]) -> str:
+    if package_work_required_first(recommendations):
+        return "scafforge_package_work"
+    if any(not finding.code.startswith("EXEC") and not finding.code.startswith("ENV") for finding in findings):
+        return "subject_repo_repair"
+    if findings:
+        return "subject_repo_source_follow_up"
+    return "done"
 
 
 def render_report_one(root: Path, findings: list[Finding], generated_at: str, logs: list[Path]) -> str:
@@ -4063,7 +4461,7 @@ def render_report_four(root: Path, findings: list[Finding], recommendations: lis
         finding.code in {"SKILL001", "SKILL002", "MODEL001"} or any(token in " ".join(finding.files) for token in (".opencode/agents/", ".opencode/skills/"))
         for finding in findings
     )
-    repeated_cycle = next((finding for finding in findings if finding.code in {"CYCLE001", "CYCLE002"}), None)
+    repeated_cycle = next((finding for finding in findings if finding.code in {"CYCLE001", "CYCLE002", "CYCLE003"}), None)
     lines = [
         "# Report 4: Live Repo Repair Plan",
         "",
@@ -4104,7 +4502,7 @@ def render_report_four(root: Path, findings: list[Finding], recommendations: lis
                     "",
                 ]
             )
-        if any(finding.code in {"SKILL002", "SESSION002", "SESSION003", "SESSION004", "SESSION005", "WFLOW007", "WFLOW012", "WFLOW013", "WFLOW014", "WFLOW015", "WFLOW016", "WFLOW017"} for finding in findings):
+        if any(finding.code in {"SKILL002", "SESSION002", "SESSION003", "SESSION004", "SESSION005", "SESSION006", "WFLOW007", "WFLOW012", "WFLOW013", "WFLOW014", "WFLOW015", "WFLOW016", "WFLOW017", "WFLOW022", "WFLOW023"} for finding in findings):
             lines.extend(
                 [
                     "- Rerun project-local skill regeneration and prompt hardening after the deterministic refresh so the repo-local `ticket-execution` skill and team-leader prompt explain the same state machine the tools enforce.",
@@ -4196,10 +4594,17 @@ def select_diagnosis_destination(root: Path, explicit_destination: str | None, f
     return fallback
 
 
-def emit_diagnosis_pack(root: Path, findings: list[Finding], destination: Path, logs: list[Path]) -> dict[str, Any]:
+def emit_diagnosis_pack(
+    root: Path,
+    findings: list[Finding],
+    destination: Path,
+    logs: list[Path],
+    manifest_overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     destination.mkdir(parents=True, exist_ok=True)
     recommendations = build_ticket_recommendations(findings)
+    next_step = recommended_next_step(findings, recommendations)
     reports = {
         DIAGNOSIS_REPORTS["report_1"]: render_report_one(root, findings, generated_at, logs),
         DIAGNOSIS_REPORTS["report_2"]: render_report_two(findings),
@@ -4213,11 +4618,19 @@ def emit_diagnosis_pack(root: Path, findings: list[Finding], destination: Path, 
         "generated_at": generated_at,
         "repo_root": str(root),
         "finding_count": len(findings),
+        "result_state": "validated failures found" if findings else "clean",
+        "diagnosis_kind": "initial_diagnosis",
+        "evidence_mode": "transcript_backed" if logs else "current_state_only",
+        "audit_package_commit": current_package_commit(),
         "report_files": {key: value for key, value in DIAGNOSIS_REPORTS.items()},
         "ticket_recommendations": recommendations,
+        "package_work_required_first": package_work_required_first(recommendations),
+        "recommended_next_step": next_step,
     }
     if logs:
         manifest["supporting_logs"] = [normalize_path(path, root) for path in logs]
+    if manifest_overrides:
+        manifest.update(manifest_overrides)
     if recommendations:
         payload_name = "recommended-ticket-payload.json"
         manifest["recommended_ticket_payload"] = payload_name
@@ -4241,6 +4654,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--emit-diagnosis-pack", dest="emit_diagnosis_pack", action="store_true", help="Write the four-report diagnosis pack into <repo>/diagnosis/<timestamp>/. Enabled by default.")
     parser.add_argument("--no-diagnosis-pack", dest="emit_diagnosis_pack", action="store_false", help="Skip writing the diagnosis pack.")
     parser.add_argument("--diagnosis-output-dir", help="Optional diagnosis-pack directory. Defaults to <repo>/diagnosis/<YYYYMMDD-HHMMSS> when emission is enabled.")
+    parser.add_argument(
+        "--diagnosis-kind",
+        choices=("initial_diagnosis", "post_package_revalidation", "post_repair_verification"),
+        default="initial_diagnosis",
+        help="Label the emitted diagnosis pack with its workflow position.",
+    )
     parser.add_argument("--fail-on", choices=("never", "warning", "error"), default="never")
     parser.set_defaults(emit_diagnosis_pack=True)
     return parser.parse_args()
@@ -4254,7 +4673,7 @@ def main() -> int:
 
     if args.emit_diagnosis_pack or args.diagnosis_output_dir:
         diagnosis_dir = select_diagnosis_destination(root, args.diagnosis_output_dir, findings)
-        diagnosis_pack = emit_diagnosis_pack(root, findings, diagnosis_dir, logs)
+        diagnosis_pack = emit_diagnosis_pack(root, findings, diagnosis_dir, logs, manifest_overrides={"diagnosis_kind": args.diagnosis_kind})
     else:
         diagnosis_pack = None
 
