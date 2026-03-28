@@ -11,10 +11,12 @@ from apply_repo_process_repair import (
     apply_repair,
     load_metadata,
     load_pending_process_verification,
+    repair_basis_requires_causal_replay,
+    resolve_repair_basis,
     run_bootstrap_render,
     verification_logs,
 )
-from audit_repo_process import audit_repo
+from audit_repo_process import audit_repo, current_package_commit, emit_diagnosis_pack, select_diagnosis_destination
 from regenerate_restart_surfaces import regenerate_restart_surfaces
 
 
@@ -40,6 +42,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-deterministic-refresh", action="store_true", help="Do not rerun the deterministic replacement pass.")
     parser.add_argument("--skip-verify", action="store_true", help="Skip post-repair verification.")
     parser.add_argument("--supporting-log", action="append", default=[], help="Optional supporting transcript path. May be provided multiple times.")
+    parser.add_argument(
+        "--repair-basis-diagnosis",
+        help="Optional diagnosis pack directory or manifest path that this repair run is based on. Defaults to the latest diagnosis pack in the repo.",
+    )
+    parser.add_argument("--diagnosis-output-dir", help="Optional writable path for the post-repair diagnosis pack.")
     parser.add_argument("--stage-complete", action="append", default=[], help="Mark a required follow-on stage as completed by the host skill.")
     parser.add_argument("--fail-on", choices=("never", "warning", "error"), default="never")
     return parser.parse_args()
@@ -164,8 +171,19 @@ def summarize_verification(
     performed: bool,
     supporting_logs: list[Path],
     classes: dict[str, list[Any]],
+    *,
+    basis_requires_causal_replay: bool,
+    repair_basis_path: Path | None,
 ) -> dict[str, Any]:
     blocking_findings = [*classes["managed_blockers"], *classes["manual_prerequisites"]]
+    managed_repair_verified = performed and not blocking_findings and (not basis_requires_causal_replay or bool(supporting_logs))
+    current_state_clean = (
+        managed_repair_verified
+        and not classes["source_follow_up"]
+        and not classes["process_state_only"]
+        and not pending_process_verification
+    )
+    causal_regression_verified = managed_repair_verified
     return {
         "performed": performed,
         "finding_count": len(findings),
@@ -176,7 +194,12 @@ def summarize_verification(
         "source_follow_up_codes": [getattr(finding, "code", "") for finding in classes["source_follow_up"]],
         "process_state_codes": [getattr(finding, "code", "") for finding in classes["process_state_only"]],
         "pending_process_verification": pending_process_verification,
-        "verification_passed": performed and not blocking_findings,
+        "verification_basis": "transcript_backed" if basis_requires_causal_replay else "current_state_only",
+        "basis_requires_causal_replay": basis_requires_causal_replay,
+        "repair_basis_path": str(repair_basis_path) if repair_basis_path else None,
+        "current_state_clean": current_state_clean,
+        "causal_regression_verified": causal_regression_verified,
+        "verification_passed": causal_regression_verified,
         "supporting_logs": [str(path) for path in supporting_logs],
     }
 
@@ -190,6 +213,8 @@ def update_repair_follow_on_state(
     blocking_reasons: list[str],
     verification_passed: bool,
     handoff_allowed: bool,
+    current_state_clean: bool,
+    causal_regression_verified: bool,
 ) -> dict[str, Any]:
     workflow_path = repo_root / ".opencode" / "state" / "workflow-state.json"
     workflow = read_json(workflow_path)
@@ -203,6 +228,8 @@ def update_repair_follow_on_state(
         "blocking_reasons": blocking_reasons,
         "verification_passed": verification_passed,
         "handoff_allowed": handoff_allowed,
+        "current_state_clean": current_state_clean,
+        "causal_regression_verified": causal_regression_verified,
         "last_updated_at": current_iso_timestamp(),
         "process_version": process_version,
     }
@@ -223,11 +250,32 @@ def main() -> int:
             run_bootstrap_render(rendered_root, metadata, args.stack_label)
             replaced_surfaces = apply_repair(repo_root, rendered_root, args.change_summary)
 
-    logs = verification_logs(repo_root, args.supporting_log)
+    repair_basis = resolve_repair_basis(repo_root, args.repair_basis_diagnosis)
+    repair_basis_path = repair_basis[0] if repair_basis else None
+    repair_basis_manifest = repair_basis[1] if repair_basis else {}
+    if isinstance(repair_basis_manifest, dict) and repair_basis_manifest.get("package_work_required_first") is True:
+        raise SystemExit(
+            "The selected repair basis still requires Scafforge package work first. "
+            "Run one fresh post-package revalidation audit after the package changes land, then repair from that diagnosis pack."
+        )
+    basis_requires_causal_replay = repair_basis_requires_causal_replay(repo_root, args.supporting_log, repair_basis)
+    logs = verification_logs(repo_root, args.supporting_log, repair_basis)
     findings = [] if args.skip_verify else audit_repo(repo_root, logs=logs)
     pending_process_verification = load_pending_process_verification(repo_root)
     finding_classes = classify_verification_findings(findings)
-    verification_status = summarize_verification(findings, pending_process_verification, not args.skip_verify, logs, finding_classes)
+    verification_status = summarize_verification(
+        findings,
+        pending_process_verification,
+        not args.skip_verify,
+        logs,
+        finding_classes,
+        basis_requires_causal_replay=basis_requires_causal_replay,
+        repair_basis_path=repair_basis_path,
+    )
+
+    if not args.skip_verify and basis_requires_causal_replay and not logs:
+        verification_status["verification_passed"] = False
+        verification_status["causal_regression_verified"] = False
 
     required_follow_on = derive_required_follow_on_stages(repo_root, findings, replaced_surfaces, pending_process_verification)
     required_stage_names = [item["stage"] for item in required_follow_on]
@@ -257,6 +305,8 @@ def main() -> int:
     blocking_reasons = [f"{item['stage']} must still run: {item['reason']}" for item in skipped_stages]
     if args.skip_verify:
         blocking_reasons.append("Post-repair verification was skipped; rerun scafforge-audit before handoff.")
+    elif basis_requires_causal_replay and not logs:
+        blocking_reasons.append("Post-repair verification did not inherit the transcript-backed repair basis; rerun the public repair runner with the causal transcript evidence before handoff.")
     elif finding_classes["managed_blockers"] or finding_classes["manual_prerequisites"]:
         blocking_reasons.append("Post-repair verification still reports managed workflow or environment findings; handoff must remain blocked until they are resolved.")
 
@@ -265,7 +315,7 @@ def main() -> int:
         "managed_blocked"
         if blocking_reasons or not verification_status["verification_passed"]
         else "source_follow_up"
-        if verification_status["source_follow_up_codes"]
+        if verification_status["source_follow_up_codes"] or verification_status["process_state_codes"] or pending_process_verification
         else "clean"
     )
     handoff_allowed = verification_status["verification_passed"] and not blocking_reasons
@@ -277,7 +327,28 @@ def main() -> int:
         blocking_reasons=blocking_reasons,
         verification_passed=verification_status["verification_passed"],
         handoff_allowed=handoff_allowed,
+        current_state_clean=verification_status["current_state_clean"],
+        causal_regression_verified=verification_status["causal_regression_verified"],
     )
+
+    diagnosis_pack = None
+    if not args.skip_verify:
+        diagnosis_dir = select_diagnosis_destination(repo_root, args.diagnosis_output_dir, findings)
+        diagnosis_pack = emit_diagnosis_pack(
+            repo_root,
+            findings,
+            diagnosis_dir,
+            logs,
+            manifest_overrides={
+                "verification_kind": "post_repair",
+                "diagnosis_kind": "post_repair_verification",
+                "repair_package_commit": current_package_commit(),
+                "repair_basis_path": str(repair_basis_path) if repair_basis_path else None,
+                "current_state_clean": verification_status["current_state_clean"],
+                "causal_regression_verified": verification_status["causal_regression_verified"],
+                "verification_basis": verification_status["verification_basis"],
+            },
+        )
 
     payload = {
         "repair_plan": {
@@ -288,6 +359,8 @@ def main() -> int:
         "stage_results": executed_stages + deferred_stages + skipped_stages,
         "execution_record": {
             "repo_root": str(repo_root),
+            "repair_package_commit": current_package_commit(),
+            "repair_basis_path": str(repair_basis_path) if repair_basis_path else None,
             "required_follow_on_stages": required_stage_names,
             "executed_stages": executed_stages,
             "deferred_stages": deferred_stages,
@@ -299,6 +372,8 @@ def main() -> int:
         },
         "repair_follow_on_state": repair_follow_on_state,
     }
+    if diagnosis_pack:
+        payload["diagnosis_pack"] = diagnosis_pack
 
     write_json(repo_root / EXECUTION_RECORD_PATH, payload)
     regenerate_restart_surfaces(

@@ -18,6 +18,13 @@ PUBLIC_REPAIR = ROOT / "skills" / "scafforge-repair" / "scripts" / "run_managed_
 REGENERATE = ROOT / "skills" / "scafforge-repair" / "scripts" / "regenerate_restart_surfaces.py"
 
 
+def package_commit() -> str:
+    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Unable to resolve package commit for smoke tests:\nSTDERR:\n{result.stderr}")
+    return result.stdout.strip()
+
+
 def run(command: list[str], cwd: Path, *, env: dict[str, str] | None = None) -> None:
     result = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True, env=env)
     if result.returncode != 0:
@@ -803,6 +810,277 @@ def seed_smoke_acceptance_scope_log(dest: Path) -> Path:
     return log_path
 
 
+def write_diagnosis_manifest(
+    diagnosis_dir: Path,
+    *,
+    generated_at: str,
+    finding_count: int,
+    recommendations: list[dict[str, object]] | None = None,
+    supporting_logs: list[str] | None = None,
+    diagnosis_kind: str = "initial_diagnosis",
+    audit_package_commit: str | None = None,
+) -> None:
+    diagnosis_dir.mkdir(parents=True, exist_ok=True)
+    manifest: dict[str, object] = {
+        "generated_at": generated_at,
+        "repo_root": str(diagnosis_dir.parents[1]),
+        "finding_count": finding_count,
+        "diagnosis_kind": diagnosis_kind,
+        "audit_package_commit": audit_package_commit or package_commit(),
+        "ticket_recommendations": recommendations or [],
+    }
+    if supporting_logs:
+        manifest["supporting_logs"] = supporting_logs
+    (diagnosis_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def seed_false_clean_verification_history(dest: Path) -> Path:
+    diagnosis_root = dest / "diagnosis"
+    diagnosis_root.mkdir(parents=True, exist_ok=True)
+    transcript_log = dest / "causal-session-log.md"
+    transcript_log.write_text(
+        "\n".join(
+            [
+                "## Assistant (Smoke-Team-Leader · MiniMax-M2.7 · 2.1s)",
+                "",
+                "**Tool: smoke_test**",
+                "",
+                "**Input:**",
+                "```json",
+                '{"ticket_id":"EXEC-008","scope":"ticket","command_override":["UV_CACHE_DIR=/tmp/uv-cache","uv","run","pytest","tests/hub/test_security.py","-q","--tb=no"]}',
+                "```",
+                "",
+                "**Output:**",
+                "```json",
+                '{"ticket_id":"EXEC-008","passed":false,"failure_classification":"environment","blocker":"Error: ENOENT: no such file or directory, posix_spawn \\"UV_CACHE_DIR=/tmp/uv-cache\\""}',
+                "```",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_diagnosis_manifest(
+        diagnosis_root / "20260327-143940",
+        generated_at="2026-03-27T14:39:40Z",
+        finding_count=4,
+        recommendations=[
+            {"source_finding_code": "SESSION003", "route": "scafforge-repair", "title": "workflow bypass search"},
+            {"source_finding_code": "SESSION005", "route": "scafforge-repair", "title": "coordinator artifact authorship"},
+            {"source_finding_code": "WFLOW016", "route": "scafforge-repair", "title": "smoke override defect"},
+            {"source_finding_code": "WFLOW017", "route": "scafforge-repair", "title": "smoke acceptance drift"},
+        ],
+        supporting_logs=[transcript_log.name],
+    )
+    write_diagnosis_manifest(
+        diagnosis_root / "20260327-155950",
+        generated_at="2026-03-27T15:59:50Z",
+        finding_count=0,
+        diagnosis_kind="post_repair_verification",
+    )
+    return transcript_log
+
+
+def seed_false_clean_preceded_by_later_transcript_basis(dest: Path) -> None:
+    diagnosis_root = dest / "diagnosis"
+    diagnosis_root.mkdir(parents=True, exist_ok=True)
+    write_diagnosis_manifest(
+        diagnosis_root / "20260327-143940",
+        generated_at="2026-03-27T14:39:40Z",
+        finding_count=4,
+        recommendations=[
+            {"source_finding_code": "SESSION003", "route": "scafforge-repair", "title": "workflow bypass search"},
+        ],
+        supporting_logs=["causal-session-log.md"],
+    )
+    write_diagnosis_manifest(
+        diagnosis_root / "20260327-155950",
+        generated_at="2026-03-27T15:59:50Z",
+        finding_count=0,
+        diagnosis_kind="post_repair_verification",
+    )
+    write_diagnosis_manifest(
+        diagnosis_root / "20260327-171300",
+        generated_at="2026-03-27T17:13:00Z",
+        finding_count=2,
+        recommendations=[
+            {"source_finding_code": "SESSION005", "route": "scafforge-repair", "title": "coordinator artifact authorship"},
+        ],
+        supporting_logs=["later-transcript.md"],
+    )
+
+
+def seed_historical_reconciliation_deadlock(dest: Path) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    manifest["tickets"].append(
+        {
+            "id": "EXEC-099",
+            "title": "Synthetic historical deadlock ticket",
+            "wave": 99,
+            "lane": "workflow",
+            "parallel_safe": False,
+            "overlap_risk": "low",
+            "stage": "closeout",
+            "status": "done",
+            "depends_on": [],
+            "summary": "Synthetic superseded invalidated historical ticket.",
+            "acceptance": ["Historical reconciliation is possible."],
+            "decision_blockers": [],
+            "artifacts": [],
+            "resolution_state": "superseded",
+            "verification_state": "invalidated",
+            "follow_up_ticket_ids": [],
+        }
+    )
+    manifest["active_ticket"] = "EXEC-099"
+    workflow["active_ticket"] = "EXEC-099"
+    workflow["stage"] = "closeout"
+    workflow["status"] = "done"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+
+    ticket_reconcile_path = dest / ".opencode" / "tools" / "ticket_reconcile.ts"
+    ticket_reconcile_text = ticket_reconcile_path.read_text(encoding="utf-8")
+    ticket_reconcile_text = ticket_reconcile_text.replace("currentRegistryArtifact,\n", "")
+    ticket_reconcile_text = ticket_reconcile_text.replace(
+        "function findEvidenceArtifact(sourceTicket: Ticket, targetTicket: Ticket, registry: Awaited<ReturnType<typeof loadArtifactRegistry>>, artifactPath: string): Artifact | undefined {\n"
+        "  const normalized = normalizeRepoPath(artifactPath)\n"
+        "  return [...sourceTicket.artifacts, ...targetTicket.artifacts].find(\n"
+        "    (artifact) => artifact.path === normalized && artifact.trust_state === \"current\",\n"
+        "  ) ?? currentRegistryArtifact(registry, normalized)\n"
+        "}\n",
+        "function findEvidenceArtifact(sourceTicket: Ticket, targetTicket: Ticket, artifactPath: string): Artifact | undefined {\n"
+        "  const normalized = normalizeRepoPath(artifactPath)\n"
+        "  return [...sourceTicket.artifacts, ...targetTicket.artifacts].find(\n"
+        "    (artifact) => artifact.path === normalized && artifact.trust_state === \"current\",\n"
+        "  )\n"
+        "}\n",
+    )
+    ticket_reconcile_text = ticket_reconcile_text.replace(
+        "    const registry = await loadArtifactRegistry()\n    const evidenceArtifact = findEvidenceArtifact(sourceTicket, targetTicket, registry, evidenceArtifactPath)\n",
+        "    const registry = await loadArtifactRegistry()\n    const evidenceArtifact = findEvidenceArtifact(sourceTicket, targetTicket, evidenceArtifactPath)\n",
+    )
+    ticket_reconcile_text = ticket_reconcile_text.replace(
+        '      throw new Error(`No current registered evidence artifact exists at ${evidenceArtifactPath} for this reconciliation.`)\n',
+        '      throw new Error(`Neither ${sourceTicket.id} nor ${targetTicket.id} has a current evidence artifact at ${evidenceArtifactPath}.`)\n',
+    )
+    ticket_reconcile_text = ticket_reconcile_text.replace('      targetTicket.verification_state = "reverified"\n', '      targetTicket.verification_state = "invalidated"\n')
+    ticket_reconcile_text = ticket_reconcile_text.replace("        supersededTarget: supersedeTarget,\n", "        supersededTarget,\n")
+    ticket_reconcile_path.write_text(ticket_reconcile_text, encoding="utf-8")
+
+    ticket_create_path = dest / ".opencode" / "tools" / "ticket_create.ts"
+    ticket_create_text = ticket_create_path.read_text(encoding="utf-8")
+    ticket_create_text = ticket_create_text.replace("  currentRegistryArtifact,\n", "")
+    ticket_create_text = ticket_create_text.replace("  loadArtifactRegistry,\n", "")
+    ticket_create_text = ticket_create_text.replace("  normalizeRepoPath,\n", "")
+    ticket_create_text = ticket_create_text.replace("    const registry = await loadArtifactRegistry()\n", "")
+    ticket_create_text = ticket_create_text.replace(
+        "        const registryArtifact = evidenceArtifactPath ? currentRegistryArtifact(registry, normalizeRepoPath(evidenceArtifactPath)) : undefined\n"
+        "        if (\n"
+        "          !verificationArtifact &&\n"
+        "          !(registryArtifact && registryArtifact.stage === \"review\" && registryArtifact.kind === \"backlog-verification\")\n"
+        "        ) {\n",
+        "        if (!verificationArtifact) {\n",
+    )
+    ticket_create_text = ticket_create_text.replace(
+        "            `No current registered review/backlog-verification artifact exists at ${evidenceArtifactPath} for ${sourceTicket.id}.`,\n",
+        "            `Source ticket ${sourceTicket.id} does not have a current review/backlog-verification artifact at ${evidenceArtifactPath}.`,\n",
+    )
+    ticket_create_text = ticket_create_text.replace(
+        "        const registryArtifact = currentRegistryArtifact(registry, normalizeRepoPath(evidenceArtifactPath))\n"
+        "        if (!evidenceArtifact && !registryArtifact) {\n"
+        "          throw new Error(`No current registered evidence artifact exists at ${evidenceArtifactPath} for ${sourceTicket.id}.`)\n",
+        "        if (!evidenceArtifact) {\n"
+        "          throw new Error(`Source ticket ${sourceTicket.id} does not reference the evidence artifact ${evidenceArtifactPath}.`)\n",
+    )
+    ticket_create_path.write_text(ticket_create_text, encoding="utf-8")
+
+    issue_intake_path = dest / ".opencode" / "tools" / "issue_intake.ts"
+    issue_intake_text = issue_intake_path.read_text(encoding="utf-8")
+    issue_intake_text = issue_intake_text.replace("  currentRegistryArtifact,\n", "")
+    issue_intake_text = issue_intake_text.replace(
+        "    const registry = await loadArtifactRegistry()\n"
+        "    const evidenceArtifact = sourceTicket.artifacts.find((artifact) => artifact.path === evidenceArtifactPath)\n"
+        "    const registryArtifact = currentRegistryArtifact(registry, normalizeRepoPath(evidenceArtifactPath))\n"
+        "    if (!evidenceArtifact && !registryArtifact) {\n"
+        "      throw new Error(`No current registered evidence artifact exists at ${evidenceArtifactPath} for ${sourceTicket.id}.`)\n"
+        "    }\n",
+        "    const evidenceArtifact = sourceTicket.artifacts.find((artifact) => artifact.path === evidenceArtifactPath)\n"
+        "    if (!evidenceArtifact) {\n"
+        "      throw new Error(`Source ticket ${sourceTicket.id} does not reference the evidence artifact ${evidenceArtifactPath}.`)\n"
+        "    }\n"
+        "    const registry = await loadArtifactRegistry()\n",
+    )
+    issue_intake_path.write_text(issue_intake_text, encoding="utf-8")
+
+
+def seed_handoff_lease_contradiction_log(dest: Path) -> Path:
+    log_path = dest / "handoff-lease-contradiction-log.md"
+    log_path.write_text(
+        "\n".join(
+            [
+                "## Assistant (Smoke-Team-Leader · MiniMax-M2.7 · 2.0s)",
+                "",
+                "**Tool: handoff_publish**",
+                "",
+                "**Input:**",
+                "```json",
+                '{"ticket_id":"EXEC-013"}',
+                "```",
+                "",
+                "**Error:**",
+                "```text",
+                "missing_ticket_write_lease: closed ticket cannot hold a lease",
+                "```",
+                "",
+                "The handoff_publish tool blocked with missing_ticket_write_lease because EXEC-013 was already closed.",
+                "A closed ticket cannot hold a lease and the tool still requires active lease on closed ticket surfaces.",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
+def seed_acceptance_scope_tension_log(dest: Path) -> Path:
+    log_path = dest / "acceptance-scope-tension-log.md"
+    log_path.write_text(
+        "\n".join(
+            [
+                "The acceptance criterion says `UV_CACHE_DIR=/tmp/uv-cache uv run ruff check src/hub/services/node_health.py tests/conftest.py src/hub/services/tunnel_manager.py` exits 0.",
+                "But the implementation notes the command exits 1 due to pre-existing I001 and F401 that are handled by EXEC-014.",
+                "Those violations are out of EXEC-013 scope and the literal acceptance criterion creates a tension the reviewer must resolve.",
+                "Should EXEC-014 scope items be fixed as part of EXEC-013 to satisfy the literal acceptance criterion?",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
+def seed_operator_trap_log(dest: Path) -> Path:
+    log_path = dest / "operator-trap-log.md"
+    log_path.write_text(
+        "\n".join(
+            [
+                "Cannot move to review before an implementation artifact exists.",
+                "Cannot move to review before an implementation artifact exists.",
+                "Trying a workaround because the workflow is blocked.",
+                "The acceptance criterion says `UV_CACHE_DIR=/tmp/uv-cache uv run ruff check src/hub/services/node_health.py tests/conftest.py src/hub/services/tunnel_manager.py` exits 0.",
+                "Those failures are handled by EXEC-014 and are out of EXEC-013 scope, so the literal acceptance criterion creates a tension.",
+                "The handoff_publish tool blocked with missing_ticket_write_lease because EXEC-013 was already closed.",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
 def seed_hidden_process_verification(dest: Path) -> None:
     manifest_path = dest / "tickets" / "manifest.json"
     workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
@@ -1580,6 +1858,13 @@ def main() -> int:
             raise RuntimeError("Generated ticket_create.ts should not mark split-scope parents blocked")
         if "Keep the parent open and non-foreground until the child work lands." not in generated_ticket_create:
             raise RuntimeError("Generated ticket_create.ts should leave split-scope parents open and linked to their children")
+        generated_ticket_reconcile = (full_dest / ".opencode" / "tools" / "ticket_reconcile.ts").read_text(encoding="utf-8")
+        if "currentRegistryArtifact" not in generated_ticket_reconcile:
+            raise RuntimeError("Generated ticket_reconcile.ts should allow current registered evidence to justify historical reconciliation")
+        if 'targetTicket.verification_state = "reverified"' not in generated_ticket_reconcile:
+            raise RuntimeError("Generated ticket_reconcile.ts should leave successfully superseded historical targets non-blocking for handoff publication")
+        if "supersededTarget,\n" in generated_ticket_reconcile:
+            raise RuntimeError("Generated ticket_reconcile.ts should not contain the legacy supersededTarget runtime typo")
         generated_team_leader = next((full_dest / ".opencode" / "agents").glob("*team-leader*.md")).read_text(encoding="utf-8")
         if "do not create planning, implementation, review, QA, or smoke-test artifacts yourself" not in generated_team_leader:
             raise RuntimeError("Generated team leader prompt should forbid coordinator-authored specialist artifacts")
@@ -1666,6 +1951,12 @@ def main() -> int:
             raise RuntimeError("Diagnosis pack manifest should include ticket_recommendations")
         if diagnosis_manifest.get("report_files", {}).get("report_4") != "04-live-repo-repair-plan.md":
             raise RuntimeError("Diagnosis pack manifest should map report_4 to 04-live-repo-repair-plan.md")
+        if diagnosis_manifest.get("diagnosis_kind") != "initial_diagnosis":
+            raise RuntimeError("Initial audit diagnosis packs should be labeled initial_diagnosis")
+        if not isinstance(diagnosis_manifest.get("audit_package_commit"), str) or not diagnosis_manifest.get("audit_package_commit"):
+            raise RuntimeError("Diagnosis pack manifest should record the Scafforge audit package commit")
+        if "package_work_required_first" not in diagnosis_manifest or "recommended_next_step" not in diagnosis_manifest:
+            raise RuntimeError("Diagnosis pack manifest should record package-work gating and the recommended next step")
 
         restart_surface_dest = workspace / "restart-surface-drift"
         shutil.copytree(full_dest, restart_surface_dest)
@@ -1795,6 +2086,88 @@ def main() -> int:
         if "CYCLE002" not in repeated_diagnosis_codes:
             raise RuntimeError("A repo with repeated same-day diagnosis packs and no later package-side change should emit CYCLE002")
 
+        repeated_diagnosis_new_package_dest = workspace / "repeated-diagnosis-new-package"
+        shutil.copytree(repeated_diagnosis_dest, repeated_diagnosis_new_package_dest)
+        for manifest_path in (repeated_diagnosis_new_package_dest / "diagnosis").glob("*/manifest.json"):
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["audit_package_commit"] = "older-package-commit"
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        repeated_diagnosis_new_package_audit = run_json([sys.executable, str(AUDIT), str(repeated_diagnosis_new_package_dest), "--format", "json", "--no-diagnosis-pack"], ROOT)
+        repeated_diagnosis_new_package_codes = {finding["code"] for finding in repeated_diagnosis_new_package_audit.get("findings", [])}
+        if "CYCLE002" in repeated_diagnosis_new_package_codes:
+            raise RuntimeError("A repo whose repeated diagnosis packs were generated under an older package commit should not emit CYCLE002 on a fresh post-package revalidation audit")
+
+        verification_basis_regression_dest = workspace / "verification-basis-regression"
+        shutil.copytree(full_dest, verification_basis_regression_dest)
+        transcript_basis_log = seed_false_clean_verification_history(verification_basis_regression_dest)
+        verification_basis_regression_audit = run_json(
+            [sys.executable, str(AUDIT), str(verification_basis_regression_dest), "--format", "json", "--no-diagnosis-pack"],
+            ROOT,
+        )
+        verification_basis_regression_codes = {finding["code"] for finding in verification_basis_regression_audit.get("findings", [])}
+        if "CYCLE003" not in verification_basis_regression_codes:
+            raise RuntimeError("A repo with a later zero-finding verification pack that dropped the earlier transcript basis should emit CYCLE003")
+
+        verification_basis_false_positive_dest = workspace / "verification-basis-false-positive"
+        shutil.copytree(full_dest, verification_basis_false_positive_dest)
+        seed_false_clean_preceded_by_later_transcript_basis(verification_basis_false_positive_dest)
+        verification_basis_false_positive_audit = run_json(
+            [sys.executable, str(AUDIT), str(verification_basis_false_positive_dest), "--format", "json", "--no-diagnosis-pack"],
+            ROOT,
+        )
+        verification_basis_false_positive_codes = {finding["code"] for finding in verification_basis_false_positive_audit.get("findings", [])}
+        if "CYCLE003" in verification_basis_false_positive_codes:
+            raise RuntimeError("A zero-finding pack that predates the later transcript-backed basis should not emit CYCLE003")
+        inherited_basis_repair = subprocess.run(
+            [
+                sys.executable,
+                str(PUBLIC_REPAIR),
+                str(verification_basis_regression_dest),
+                "--skip-deterministic-refresh",
+                "--stage-complete",
+                "ticket-pack-builder",
+                "--stage-complete",
+                "handoff-brief",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        inherited_basis_payload = json.loads(inherited_basis_repair.stdout)
+        inherited_basis_logs = inherited_basis_payload["execution_record"]["verification_status"]["supporting_logs"]
+        if any(str(transcript_basis_log) == item for item in inherited_basis_logs):
+            raise RuntimeError("Public managed repair runner should not inherit transcript logs from an older diagnosis when the selected repair basis is the newer log-less pack")
+        if inherited_basis_payload["execution_record"]["verification_status"]["verification_basis"] != "current_state_only":
+            raise RuntimeError("Public managed repair runner should classify verification against the latest log-less diagnosis basis as current_state_only")
+
+        explicit_basis_repair = subprocess.run(
+            [
+                sys.executable,
+                str(PUBLIC_REPAIR),
+                str(verification_basis_regression_dest),
+                "--skip-deterministic-refresh",
+                "--repair-basis-diagnosis",
+                str(verification_basis_regression_dest / "diagnosis" / "20260327-143940"),
+                "--stage-complete",
+                "ticket-pack-builder",
+                "--stage-complete",
+                "handoff-brief",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        explicit_basis_payload = json.loads(explicit_basis_repair.stdout)
+        explicit_basis_logs = explicit_basis_payload["execution_record"]["verification_status"]["supporting_logs"]
+        if not any(str(transcript_basis_log) == item for item in explicit_basis_logs):
+            raise RuntimeError("Public managed repair runner should inherit transcript logs from the selected repair basis diagnosis")
+        if explicit_basis_payload["execution_record"]["verification_status"]["verification_basis"] != "transcript_backed":
+            raise RuntimeError("Public managed repair runner should classify an explicitly transcript-backed repair basis as transcript_backed")
+        if explicit_basis_payload["execution_record"]["verification_status"]["repair_basis_path"] != str(verification_basis_regression_dest / "diagnosis" / "20260327-143940"):
+            raise RuntimeError("Public managed repair runner should record the selected repair basis diagnosis path")
+
         chronology_dest = workspace / "chronology"
         shutil.copytree(full_dest, chronology_dest)
         transcript_log = seed_workflow_overclaim(chronology_dest)
@@ -1895,6 +2268,14 @@ def main() -> int:
         if "WFLOW018" not in closed_follow_up_deadlock_codes:
             raise RuntimeError("A repo whose completed-ticket follow-up routing still requires normal write leases should emit WFLOW018")
 
+        historical_reconciliation_deadlock_dest = workspace / "historical-reconciliation-deadlock"
+        shutil.copytree(full_dest, historical_reconciliation_deadlock_dest)
+        seed_historical_reconciliation_deadlock(historical_reconciliation_deadlock_dest)
+        historical_reconciliation_deadlock_audit = run_json([sys.executable, str(AUDIT), str(historical_reconciliation_deadlock_dest), "--format", "json", "--no-diagnosis-pack"], ROOT)
+        historical_reconciliation_deadlock_codes = {finding["code"] for finding in historical_reconciliation_deadlock_audit.get("findings", [])}
+        if "WFLOW024" not in historical_reconciliation_deadlock_codes:
+            raise RuntimeError("A repo with no legal reconciliation path for a superseded invalidated historical ticket should emit WFLOW024")
+
         contradictory_graph_dest = workspace / "contradictory-ticket-graph"
         shutil.copytree(full_dest, contradictory_graph_dest)
         seed_contradictory_follow_up_graph(contradictory_graph_dest)
@@ -1939,6 +2320,52 @@ def main() -> int:
         diagnosis_pack_path = redirected_output_audit.get("diagnosis_pack", {}).get("path", "")
         if not diagnosis_pack_path.startswith("/tmp/scafforge-diagnosis/"):
             raise RuntimeError("Audit should redirect unwritable diagnosis-pack output to /tmp/scafforge-diagnosis")
+
+        repair_redirected_output_dest = workspace / "repair-redirected-output"
+        shutil.copytree(full_dest, repair_redirected_output_dest)
+        make_stack_skill_non_placeholder(repair_redirected_output_dest)
+        repair_redirected_output_dir = workspace / "repair-diagnosis-output"
+        repair_redirected_payload = run_json(
+            [
+                sys.executable,
+                str(PUBLIC_REPAIR),
+                str(repair_redirected_output_dest),
+                "--skip-deterministic-refresh",
+                "--diagnosis-output-dir",
+                str(repair_redirected_output_dir),
+            ],
+            ROOT,
+        )
+        repair_diagnosis_pack_path = repair_redirected_payload.get("diagnosis_pack", {}).get("path", "")
+        if repair_diagnosis_pack_path != str(repair_redirected_output_dir):
+            raise RuntimeError("Public managed repair runner should honor --diagnosis-output-dir for the post-repair diagnosis pack")
+
+        package_work_first_repair_dest = workspace / "package-work-first-repair"
+        shutil.copytree(full_dest, package_work_first_repair_dest)
+        package_work_diagnosis_root = package_work_first_repair_dest / "diagnosis"
+        package_work_diagnosis_root.mkdir(parents=True, exist_ok=True)
+        write_diagnosis_manifest(
+            package_work_diagnosis_root / "20260328-120000",
+            generated_at="2026-03-28T12:00:00Z",
+            finding_count=1,
+            recommendations=[{"source_finding_code": "WFLOW024", "route": "manual-prerequisite", "title": "historical reconciliation deadlock"}],
+        )
+        package_work_manifest_path = package_work_diagnosis_root / "20260328-120000" / "manifest.json"
+        package_work_manifest = json.loads(package_work_manifest_path.read_text(encoding="utf-8"))
+        package_work_manifest["package_work_required_first"] = True
+        package_work_manifest["recommended_next_step"] = "scafforge_package_work"
+        package_work_manifest_path.write_text(json.dumps(package_work_manifest, indent=2) + "\n", encoding="utf-8")
+        package_work_first_repair = subprocess.run(
+            [sys.executable, str(PUBLIC_REPAIR), str(package_work_first_repair_dest), "--skip-deterministic-refresh"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if package_work_first_repair.returncode == 0:
+            raise RuntimeError("Public managed repair runner should refuse a repair basis that still requires package work first")
+        if "package work first" not in package_work_first_repair.stderr and "package work first" not in package_work_first_repair.stdout:
+            raise RuntimeError("Public managed repair runner should explain that package work must be cleared before subject-repo repair")
 
         python_dest = workspace / "python-uv"
         shutil.copytree(full_dest, python_dest)
@@ -2047,6 +2474,39 @@ def main() -> int:
         smoke_acceptance_codes = {finding["code"] for finding in smoke_acceptance_audit.get("findings", [])}
         if "WFLOW017" not in smoke_acceptance_codes:
             raise RuntimeError("A transcript where smoke_test ignores a ticket-defined smoke command should emit WFLOW017")
+
+        handoff_lease_dest = workspace / "handoff-lease-contradiction"
+        shutil.copytree(full_dest, handoff_lease_dest)
+        handoff_lease_log = seed_handoff_lease_contradiction_log(handoff_lease_dest)
+        handoff_lease_audit = run_json(
+            [sys.executable, str(AUDIT), str(handoff_lease_dest), "--format", "json", "--supporting-log", str(handoff_lease_log)],
+            ROOT,
+        )
+        handoff_lease_codes = {finding["code"] for finding in handoff_lease_audit.get("findings", [])}
+        if "WFLOW022" not in handoff_lease_codes:
+            raise RuntimeError("A transcript where handoff_publish still needs a closed ticket lease should emit WFLOW022")
+
+        acceptance_tension_dest = workspace / "acceptance-scope-tension"
+        shutil.copytree(full_dest, acceptance_tension_dest)
+        acceptance_tension_log = seed_acceptance_scope_tension_log(acceptance_tension_dest)
+        acceptance_tension_audit = run_json(
+            [sys.executable, str(AUDIT), str(acceptance_tension_dest), "--format", "json", "--supporting-log", str(acceptance_tension_log)],
+            ROOT,
+        )
+        acceptance_tension_codes = {finding["code"] for finding in acceptance_tension_audit.get("findings", [])}
+        if "WFLOW023" not in acceptance_tension_codes:
+            raise RuntimeError("A transcript where a ticket's literal acceptance command depends on later-ticket scope should emit WFLOW023")
+
+        operator_trap_dest = workspace / "operator-trap"
+        shutil.copytree(full_dest, operator_trap_dest)
+        operator_trap_log = seed_operator_trap_log(operator_trap_dest)
+        operator_trap_audit = run_json(
+            [sys.executable, str(AUDIT), str(operator_trap_dest), "--format", "json", "--supporting-log", str(operator_trap_log)],
+            ROOT,
+        )
+        operator_trap_codes = {finding["code"] for finding in operator_trap_audit.get("findings", [])}
+        if "SESSION006" not in operator_trap_codes:
+            raise RuntimeError("A transcript with multiple contradictory blockers and workaround pressure should emit SESSION006")
 
         coordinator_artifact_dest = workspace / "coordinator-artifacts"
         shutil.copytree(full_dest, coordinator_artifact_dest)
@@ -2175,6 +2635,10 @@ def main() -> int:
             raise RuntimeError("Source-layer EXEC follow-up alone should not keep managed repair follow-on blocked once the required follow-on stages are complete")
         if source_follow_up_repair["execution_record"]["verification_status"]["source_follow_up_codes"] != ["EXEC003"]:
             raise RuntimeError("Public managed repair runner should classify EXEC findings as source follow-up instead of managed repair blockers")
+        if source_follow_up_repair["execution_record"]["verification_status"]["current_state_clean"]:
+            raise RuntimeError("Public managed repair runner should not call EXEC-only residual work current_state_clean")
+        if not source_follow_up_repair["execution_record"]["verification_status"]["causal_regression_verified"]:
+            raise RuntimeError("Public managed repair runner should still mark managed repair verification as satisfied when only source follow-up remains")
         if source_follow_up_repair["execution_record"]["repair_follow_on_outcome"] != "source_follow_up":
             raise RuntimeError("Public managed repair runner should classify EXEC-only residual work as source_follow_up")
         if not source_follow_up_repair["execution_record"]["handoff_allowed"]:
@@ -2184,6 +2648,8 @@ def main() -> int:
             raise RuntimeError("Managed repair should write a cleared repair_follow_on state when only source-layer follow-up remains")
         if source_follow_up_workflow["repair_follow_on"]["outcome"] != "source_follow_up":
             raise RuntimeError("Managed repair should record source_follow_up when only source-layer remediation remains")
+        if source_follow_up_workflow["repair_follow_on"]["current_state_clean"] is not False:
+            raise RuntimeError("Managed repair should not record current_state_clean when source-layer remediation remains")
 
         print("Scafforge smoke test passed.")
         return 0

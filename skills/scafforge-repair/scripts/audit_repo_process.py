@@ -15,13 +15,23 @@ sys.modules[MODULE_SPEC.name] = AUDIT_MODULE
 MODULE_SPEC.loader.exec_module(AUDIT_MODULE)
 
 audit_repo = AUDIT_MODULE.audit_repo
+current_package_commit = AUDIT_MODULE.current_package_commit
+emit_diagnosis_pack = AUDIT_MODULE.emit_diagnosis_pack
 load_latest_previous_diagnosis = AUDIT_MODULE.load_latest_previous_diagnosis
+load_latest_previous_diagnosis_with_supporting_logs = AUDIT_MODULE.load_latest_previous_diagnosis_with_supporting_logs
+manifest_supporting_logs = AUDIT_MODULE.manifest_supporting_logs
+select_diagnosis_destination = AUDIT_MODULE.select_diagnosis_destination
 supporting_log_paths = AUDIT_MODULE.supporting_log_paths
 main = AUDIT_MODULE.main
 
 __all__ = [
     "audit_repo",
+    "current_package_commit",
+    "emit_diagnosis_pack",
     "load_latest_previous_diagnosis",
+    "load_latest_previous_diagnosis_with_supporting_logs",
+    "manifest_supporting_logs",
+    "select_diagnosis_destination",
     "supporting_log_paths",
     "main",
 ]

@@ -11,7 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from audit_repo_process import audit_repo, load_latest_previous_diagnosis, supporting_log_paths
+from audit_repo_process import (
+    audit_repo,
+    load_latest_previous_diagnosis,
+    manifest_supporting_logs,
+    supporting_log_paths,
+)
 from regenerate_restart_surfaces import regenerate_restart_surfaces
 
 
@@ -43,6 +48,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--skip-verify", action="store_true", help="Skip the post-repair audit.")
     parser.add_argument("--supporting-log", action="append", default=[], help="Optional supporting session log or transcript path for post-repair verification. May be provided multiple times.")
+    parser.add_argument(
+        "--repair-basis-diagnosis",
+        help="Optional diagnosis pack directory or manifest path that this repair run is based on. Defaults to the latest diagnosis pack in the repo.",
+    )
     parser.add_argument("--fail-on", choices=("never", "warning", "error"), default="never")
     return parser.parse_args()
 
@@ -93,6 +102,21 @@ def merge_start_here(existing: str, rendered: str) -> str:
 
 def package_root() -> Path:
     return Path(__file__).resolve().parents[3]
+
+
+def current_package_commit() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=package_root(),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        return "unknown"
+    return result.stdout.strip() or "unknown"
 
 
 def bootstrap_script_path() -> Path:
@@ -215,20 +239,51 @@ def current_iso_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def verification_logs(repo_root: Path, explicit_logs: list[str] | None) -> list[Path]:
+def resolve_repair_basis(repo_root: Path, explicit_basis: str | None) -> tuple[Path, dict[str, Any]] | None:
+    if not explicit_basis:
+        return load_latest_previous_diagnosis(repo_root)
+
+    candidate = Path(explicit_basis).expanduser()
+    candidate = candidate if candidate.is_absolute() else (repo_root / candidate)
+    candidate = candidate.resolve()
+    manifest_path = candidate / "manifest.json" if candidate.is_dir() else candidate
+    if manifest_path.name != "manifest.json":
+        raise SystemExit("Repair basis path must be a diagnosis directory or a manifest.json file.")
+    if not manifest_path.exists():
+        raise SystemExit(f"Repair basis manifest not found: {manifest_path}")
+    manifest = read_json(manifest_path)
+    if not isinstance(manifest, dict):
+        raise SystemExit(f"Repair basis manifest is not valid JSON: {manifest_path}")
+    return manifest_path.parent, manifest
+
+
+def verification_logs(
+    repo_root: Path,
+    explicit_logs: list[str] | None,
+    repair_basis: tuple[Path, dict[str, Any]] | None,
+) -> list[Path]:
     logs = supporting_log_paths(repo_root, explicit_logs)
-    latest_previous = load_latest_previous_diagnosis(repo_root)
-    if latest_previous is None:
+    if repair_basis is None:
         return logs
 
-    _, manifest = latest_previous
-    inherited = manifest.get("supporting_logs")
-    if isinstance(inherited, list):
-        inherited_paths = [str(item) for item in inherited if isinstance(item, str)]
-        for path in supporting_log_paths(repo_root, inherited_paths):
-            if path not in logs:
-                logs.append(path)
+    _, manifest = repair_basis
+    for path in supporting_log_paths(repo_root, manifest_supporting_logs(manifest)):
+        if path not in logs:
+            logs.append(path)
     return logs
+
+
+def repair_basis_requires_causal_replay(
+    repo_root: Path,
+    explicit_logs: list[str] | None,
+    repair_basis: tuple[Path, dict[str, Any]] | None,
+) -> bool:
+    if supporting_log_paths(repo_root, explicit_logs):
+        return True
+    if repair_basis is None:
+        return False
+    _, manifest = repair_basis
+    return bool(manifest_supporting_logs(manifest))
 
 
 def load_pending_process_verification(repo_root: Path) -> bool:
@@ -536,6 +591,7 @@ def update_provenance(
         {
             "repaired_at": current_iso_timestamp(),
             "repair_kind": "deterministic-workflow-engine-replacement",
+            "repair_package_commit": current_package_commit(),
             "summary": change_summary,
             "replaced_surfaces": replaced_surfaces,
             "project_specific_follow_up": (
@@ -602,7 +658,8 @@ def main() -> int:
         run_bootstrap_render(rendered_root, metadata, args.stack_label)
         replaced_surfaces = apply_repair(repo_root, rendered_root, args.change_summary)
 
-    logs = verification_logs(repo_root, args.supporting_log)
+    repair_basis = resolve_repair_basis(repo_root, args.repair_basis_diagnosis)
+    logs = verification_logs(repo_root, args.supporting_log, repair_basis)
     findings = [] if args.skip_verify else audit_repo(repo_root, logs=logs)
     verification_passed = False if args.skip_verify else not findings
     verification_next_action = None

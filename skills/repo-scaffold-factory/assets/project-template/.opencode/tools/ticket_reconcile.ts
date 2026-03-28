@@ -1,5 +1,6 @@
 import { tool } from "@opencode-ai/plugin"
 import {
+  currentRegistryArtifact,
   defaultArtifactPath,
   getTicket,
   getTicketWorkflowState,
@@ -28,11 +29,11 @@ function isCompletedHistoricalTicket(ticket: Ticket): boolean {
   return ticket.status === "done" || ticket.resolution_state === "done" || ticket.resolution_state === "superseded"
 }
 
-function findEvidenceArtifact(sourceTicket: Ticket, targetTicket: Ticket, artifactPath: string): Artifact | undefined {
+function findEvidenceArtifact(sourceTicket: Ticket, targetTicket: Ticket, registry: Awaited<ReturnType<typeof loadArtifactRegistry>>, artifactPath: string): Artifact | undefined {
   const normalized = normalizeRepoPath(artifactPath)
   return [...sourceTicket.artifacts, ...targetTicket.artifacts].find(
     (artifact) => artifact.path === normalized && artifact.trust_state === "current",
-  )
+  ) ?? currentRegistryArtifact(registry, normalized)
 }
 
 function renderArtifact(args: {
@@ -99,9 +100,10 @@ export default tool({
       throw new Error("reason must not be empty.")
     }
 
-    const evidenceArtifact = findEvidenceArtifact(sourceTicket, targetTicket, evidenceArtifactPath)
+    const registry = await loadArtifactRegistry()
+    const evidenceArtifact = findEvidenceArtifact(sourceTicket, targetTicket, registry, evidenceArtifactPath)
     if (!evidenceArtifact) {
-      throw new Error(`Neither ${sourceTicket.id} nor ${targetTicket.id} has a current evidence artifact at ${evidenceArtifactPath}.`)
+      throw new Error(`No current registered evidence artifact exists at ${evidenceArtifactPath} for this reconciliation.`)
     }
 
     if (replacementSourceMode === "split_scope" && (!["open", "reopened"].includes(replacementSourceTicket.resolution_state) || replacementSourceTicket.status === "done")) {
@@ -138,7 +140,7 @@ export default tool({
       targetTicket.stage = "closeout"
       targetTicket.status = "done"
       targetTicket.resolution_state = "superseded"
-      targetTicket.verification_state = "invalidated"
+      targetTicket.verification_state = "reverified"
       getTicketWorkflowState(workflow, targetTicket.id).needs_reverification = false
       releaseLaneLease(workflow, targetTicket.id)
       setPlanApprovedForTicket(workflow, targetTicket.id, false)
@@ -152,7 +154,6 @@ export default tool({
     }
     syncWorkflowSelection(workflow, manifest)
 
-    const registry = await loadArtifactRegistry()
     const canonicalPath = normalizeRepoPath(defaultArtifactPath(sourceTicket.id, "review", "ticket-reconciliation"))
     await writeText(
       canonicalPath,
@@ -164,7 +165,7 @@ export default tool({
         replacementSourceTicketId: replacementSourceTicket.id,
         replacementSourceMode,
         removedDependencyOnSource: removeDependencyOnSource,
-        supersededTarget,
+        supersededTarget: supersedeTarget,
       }),
     )
     const reconciliationArtifact = await registerArtifactSnapshot({

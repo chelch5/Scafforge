@@ -1,6 +1,7 @@
 import { tool } from "@opencode-ai/plugin"
 import {
   createTicketRecord,
+  currentRegistryArtifact,
   defaultArtifactPath,
   getTicket,
   getTicketWorkflowState,
@@ -86,9 +87,11 @@ export default tool({
       throw new Error(`Source ticket ${sourceTicket.id} must already be complete before issue intake can route post-completion work.`)
     }
 
+    const registry = await loadArtifactRegistry()
     const evidenceArtifact = sourceTicket.artifacts.find((artifact) => artifact.path === evidenceArtifactPath)
-    if (!evidenceArtifact) {
-      throw new Error(`Source ticket ${sourceTicket.id} does not reference the evidence artifact ${evidenceArtifactPath}.`)
+    const registryArtifact = currentRegistryArtifact(registry, normalizeRepoPath(evidenceArtifactPath))
+    if (!evidenceArtifact && !registryArtifact) {
+      throw new Error(`No current registered evidence artifact exists at ${evidenceArtifactPath} for ${sourceTicket.id}.`)
     }
 
     const outcome = resolveDefectOutcome(sourceTicket, {
@@ -159,7 +162,6 @@ export default tool({
     const canonicalPath = normalizeRepoPath(defaultArtifactPath(sourceTicket.id, "review", "issue-discovery"))
     await writeText(canonicalPath, artifactBody)
 
-    const registry = await loadArtifactRegistry()
     const issueArtifact = await registerArtifactSnapshot({
       ticket: sourceTicket,
       registry,

@@ -6,6 +6,7 @@ description: Create a repo-local ticket system with an index, machine-readable m
 # Ticket Pack Builder
 
 Use this skill to create or refine the repo-local work queue.
+Use [../../references/competence-contract.md](../../references/competence-contract.md) as the backlog-quality bar: a ticket is not good enough if its acceptance leaves the operator trapped between scope boundaries and a literal failing closeout command.
 
 ## Modes
 
@@ -66,9 +67,9 @@ For each piece of work, create a ticket with these fields:
 - `depends_on` — list of ticket IDs this depends on
 - `source_ticket_id` — source ticket when this is a follow-up or remediation ticket, otherwise `null`
 - `follow_up_ticket_ids` — linked downstream remediation or expansion tickets, initially empty
-- `source_mode` — `process_verification`, `post_completion_issue`, or `net_new_scope` when the ticket was created from later diagnosis or reverification work; omit for greenfield bootstrap tickets
+- `source_mode` — `process_verification`, `post_completion_issue`, `net_new_scope`, or `split_scope` when the ticket was created from later diagnosis, reverification work, or open-parent decomposition; omit for greenfield bootstrap tickets
 - `summary` — one-paragraph description of what needs to be done
-- `acceptance` — list of specific acceptance criteria tied to finalized repo-local commands, checks, or observable workflow surfaces
+- `acceptance` — list of specific acceptance criteria tied to finalized repo-local commands, checks, or observable workflow surfaces; these must be scope-isolated to the ticket's own work
 - `artifacts` — empty list (populated during execution)
 - `decision_blockers` — list of unresolved decisions that block this ticket (empty if none)
 
@@ -140,7 +141,7 @@ Ensure `.opencode/state/workflow-state.json` reflects the first active ticket:
       "needs_reverification": false
     }
   },
-  "process_version": 6,
+  "process_version": 7,
   "process_last_changed_at": null,
   "process_last_change_summary": null,
   "pending_process_verification": false,
@@ -230,10 +231,12 @@ Continue to `../handoff-brief/SKILL.md` as directed by scaffold-kickoff.
 - Treat `plan_review` and `smoke_test` as workflow-tool-owned queue values, not as free-form authoring choices
 - Keep closeout acceptance criteria aligned with the deterministic `smoke_test` tool rather than generic PASS prose
 - When a ticket needs a smoke gate, prefer one explicit backticked repo-local smoke command so `smoke_test` can treat that command as the canonical smoke scope instead of improvising a heuristic subset or full-suite fallback
+- Keep acceptance criteria scope-isolated. If a literal closeout command would still fail on later-ticket work, split the backlog differently or encode the dependency explicitly instead of shipping contradictory acceptance
 - Keep `wave`, `lane`, `parallel_safe`, and `overlap_risk` aligned with real execution boundaries
 - Record dependencies explicitly
 - Put acceptance criteria on every ticket
 - Prefer executable acceptance criteria where possible so downstream agents have concrete repo-local commands or observable pass/fail checks to run
+- Do not generate a ticket whose literal acceptance command knowingly reaches into sibling-ticket or later-ticket scope
 - Keep historical completion separate from current trust: `status` stays queue-oriented, while `resolution_state` and `verification_state` represent historical closure and present trust
 - Treat post-audit and post-repair ticket creation as a first-class workflow path, not an ad hoc backlog note
 - Keep ticket docs, workflow docs, and ticket tools aligned on the same lifecycle semantics before handoff

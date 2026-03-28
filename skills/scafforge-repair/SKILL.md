@@ -8,6 +8,7 @@ description: Apply Scafforge's host-side managed repair flow for an existing rep
 Use this skill to apply safe workflow-contract repairs to an existing repository.
 
 This is the host-side repair surface. It consumes diagnosis outputs, especially Report 4 from `scafforge-audit`, applies deterministic managed-surface repairs, continues into any required project-specific regeneration passes, records provenance, and routes follow-up ticketing when workflow repair reveals additional work or current-machine prerequisites still block trusted verification.
+Use [../../references/competence-contract.md](../../references/competence-contract.md) as the bar for whether the repaired workflow is actually competent.
 
 ## When to use this skill
 
@@ -40,6 +41,7 @@ Before editing, gather the current repair basis.
 - Confirm which repairs are safe and which need escalation
 - Confirm whether Report 4 depends on Scafforge package changes that have already landed
 - Do not run repair from a stale package version against a repo whose diagnosis identified package defects first
+- Use the fresh post-package revalidation diagnosis pack as the repair basis when the earlier diagnosis required package work first
 
 Do not improvise intent-changing fixes under the label of repair.
 If the required package changes are not available yet, stop and route back to Scafforge package work instead of repairing prematurely.
@@ -62,6 +64,7 @@ python3 scripts/run_managed_repair.py <repo-root>
 ```
 
 Use this as the default repair entrypoint. It runs the deterministic managed-surface refresh, emits the machine-readable repair plan and execution record, reruns verification, and fails closed when required follow-on stages still have not been executed.
+If the selected diagnosis basis still records `package_work_required_first: true`, repair must stop and send the user back to one fresh post-package revalidation audit instead of mutating the subject repo.
 
 ### 4. Use the deterministic engine as the internal refresh phase
 
@@ -154,19 +157,22 @@ When repair reveals unfinished or source-layer follow-up work:
 
 ### 9. Re-run verification
 
-After repairs, run:
+After repairs, the public repair runner must own the verification pass and its diagnosis pack:
 
 ```sh
-python3 scripts/audit_repo_process.py <repo-root> --format both --emit-diagnosis-pack --fail-on warning
+python3 scripts/run_managed_repair.py <repo-root>
 ```
 
-Pass `--supporting-log <path>` when the repair basis depended on transcript evidence, and pass `--diagnosis-output-dir <writable-path>` when the subject repo is outside the current host's writable roots.
+`run_managed_repair.py` must automatically carry forward transcript-backed diagnosis evidence and emit the post-repair diagnosis pack itself. Only pass `--supporting-log <path>` manually when repairing from ad hoc transcript evidence that never existed in diagnosis history. Pass `--diagnosis-output-dir <writable-path>` only when the subject repo is outside the current host's writable roots.
+When the repair is based on a specific older diagnosis pack rather than the repo's latest diagnosis, pass `--repair-basis-diagnosis <diagnosis-dir-or-manifest>` so verification inherits transcript evidence from the selected basis instead of from unrelated repo history.
+Do not schedule another manual audit as the normal next step after repair. The public repair runner owns post-repair verification and emits the `post_repair_verification` diagnosis pack itself.
 
 If the repair changed the managed workflow layer materially, note that verification was re-run and whether ticket re-verification remains pending.
 If `BOOT001` or `BOOT002` was part of the repair basis, rerun the subject repo's `environment_bootstrap` flow before the final audit so bootstrap evidence is refreshed against the repaired tool surface.
 If repeated bootstrap failures keep reproducing the same incompatible command trace after managed refresh, treat that as non-converged managed repair instead of downgrading it to operator-only rerun guidance.
 If verification still reports `ENV*`, `EXEC*`, or `WFLOW008` findings, do not call the repo clean. Report that managed-surface repair completed but host prerequisites, runtime failures, or backlog process verification still remain.
 If verification reports only source-layer `EXEC*` work or correctly surfaced backlog reverification state, do not leave `repair_follow_on` as the blocker for ordinary ticket lifecycle execution. Route that follow-up through the active ticket or guarded ticketing instead.
+If the repair basis was transcript-backed, do not call the repo clean on current-state evidence alone. The verification result must distinguish current-state cleanliness from causal-regression verification and fail closed when the causal transcript basis was not replayed.
 Use explicit `repair_follow_on.outcome` semantics:
 - `managed_blocked` only when managed repair follow-on still blocks lifecycle execution
 - `source_follow_up` when managed repair converged but source-layer ticket work still remains

@@ -96,6 +96,22 @@ Safer pattern:
 - load `ticket-execution` if process ambiguity remains
 - if the same blocker repeats, stop and return the contradiction instead of probing
 
+## No-legal-next-move prompts
+
+Bad:
+
+- prompts leave several plausible next steps open and force the model to infer which one is legal
+
+Why it fails:
+
+- operator confusion becomes inevitable
+- weaker models start exploring adjacent surfaces, probing alternate stages, or manufacturing summaries just to keep moving
+
+Safer pattern:
+
+- expose one legal next action, one named owner, and one blocker return path
+- if the workflow is contradictory, instruct the agent to stop and report the contradiction instead of improvising
+
 ## Unsupported stage probing
 
 Bad:

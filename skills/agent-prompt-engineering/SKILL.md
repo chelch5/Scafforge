@@ -6,6 +6,7 @@ description: Design and harden agent, command, workflow, and tool prompts for re
 # Agent Prompt Engineering
 
 Use this skill when prompt wording controls how agents coordinate, route work, and use tools.
+Use [../../references/competence-contract.md](../../references/competence-contract.md) as the package-level target: prompts should leave weaker models with one clear legal next move, not a maze of plausible interpretations.
 
 During standard greenfield scaffolding, this is a required same-session pass after `opencode-team-bootstrap` and before `ticket-pack-builder`. The pass may be light or heavy depending on the chosen models and project-specific coordination risk, but it should not be skipped.
 
@@ -90,6 +91,7 @@ Re-read the final prompt and ask:
 - Are all tool permissions explicit?
 - Are all delegation boundaries named?
 - Is there a clear stop condition?
+- Does the prompt leave exactly one legal next move when the workflow is healthy, and one explicit blocker path when it is not?
 
 ## Output contract
 
