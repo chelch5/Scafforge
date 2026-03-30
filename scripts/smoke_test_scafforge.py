@@ -22,6 +22,8 @@ PUBLIC_REPAIR = ROOT / "skills" / "scafforge-repair" / "scripts" / "run_managed_
 REGENERATE = ROOT / "skills" / "scafforge-repair" / "scripts" / "regenerate_restart_surfaces.py"
 PIVOT = ROOT / "skills" / "scafforge-pivot" / "scripts" / "plan_pivot.py"
 PIVOT_RECORD = ROOT / "skills" / "scafforge-pivot" / "scripts" / "record_pivot_stage_completion.py"
+PIVOT_PUBLISH = ROOT / "skills" / "scafforge-pivot" / "scripts" / "publish_pivot_surfaces.py"
+PIVOT_APPLY = ROOT / "skills" / "scafforge-pivot" / "scripts" / "apply_pivot_lineage.py"
 RECORD_REPAIR_STAGE = ROOT / "skills" / "scafforge-repair" / "scripts" / "record_repair_stage_completion.py"
 BOOTSTRAP_INPUT_FILES = (
     "package.json",
@@ -2498,6 +2500,20 @@ def main() -> int:
             raise RuntimeError("Pivot orchestration should convert unresolved follow-up into explicit follow-up ticket lineage actions")
         if "reconcile:SETUP-001" not in pivot_state["restart_surface_inputs"]["pending_ticket_lineage_actions"]:
             raise RuntimeError("Pivot restart inputs should expose pending explicit ticket lineage actions")
+        pivot_start_here = (pivot_dest / "START-HERE.md").read_text(encoding="utf-8")
+        pivot_latest_handoff = (pivot_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        pivot_context_snapshot = (pivot_dest / ".opencode" / "state" / "context-snapshot.md").read_text(encoding="utf-8")
+        if "- pivot_in_progress: true" not in pivot_start_here or "- pivot_class: architecture-change" not in pivot_start_here:
+            raise RuntimeError("Pivot planning should republish START-HERE immediately with truthful pivot state")
+        if "- pivot_pending_ticket_lineage_actions: reconcile:SETUP-001, create_follow_up:Reconcile historical tickets that still assume the old monolith execution path." not in pivot_start_here:
+            raise RuntimeError("Pivot planning should republish START-HERE with pending pivot ticket lineage actions")
+        if "- pivot_in_progress: true" not in pivot_latest_handoff:
+            raise RuntimeError("Pivot planning should republish latest-handoff immediately with truthful pivot state")
+        if "- pending_ticket_lineage_actions: reconcile:SETUP-001, create_follow_up:Reconcile historical tickets that still assume the old monolith execution path." not in pivot_context_snapshot:
+            raise RuntimeError("Pivot planning should republish context snapshot immediately with pending pivot ticket lineage actions")
+        restart_surface_publication = pivot_state.get("restart_surface_publication", {})
+        if restart_surface_publication.get("status") != "published":
+            raise RuntimeError("Pivot planning should record restart-surface publication state")
         pivot_evidence = pivot_dest / ".opencode" / "state" / "artifacts" / "history" / "pivot-stage-completion.md"
         pivot_evidence.parent.mkdir(parents=True, exist_ok=True)
         pivot_evidence.write_text("# Pivot stage completion\n", encoding="utf-8")
@@ -2529,16 +2545,9 @@ def main() -> int:
             raise RuntimeError("Pivot stage recording should persist recorded execution for completed stages")
         if repair_stage_record["completed_by"] != "scafforge-pivot-smoke":
             raise RuntimeError("Pivot stage recording should persist completed_by provenance")
-        pivot_handoff_result = run_generated_tool(
-            pivot_dest,
-            ".opencode/tools/handoff_publish.ts",
-            {},
-        )
         pivot_start_here = (pivot_dest / "START-HERE.md").read_text(encoding="utf-8")
         pivot_latest_handoff = (pivot_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
         pivot_context_snapshot = (pivot_dest / ".opencode" / "state" / "context-snapshot.md").read_text(encoding="utf-8")
-        if str(pivot_handoff_result["start_here"]) != str(pivot_dest / "START-HERE.md"):
-            raise RuntimeError("Pivot handoff publication should still report the canonical START-HERE path")
         if "- handoff_status: pivot follow-up required" not in pivot_start_here:
             raise RuntimeError("Post-pivot handoff should publish pivot follow-up required while downstream pivot work remains")
         if "- pivot_in_progress: true" not in pivot_start_here or "- pivot_class: architecture-change" not in pivot_start_here:
@@ -2557,6 +2566,190 @@ def main() -> int:
         pivot_history = pivot_provenance.get("pivot_history")
         if not isinstance(pivot_history, list) or not pivot_history or pivot_history[-1]["pivot_class"] != "architecture-change":
             raise RuntimeError("Pivot orchestration should append pivot history to bootstrap provenance")
+
+        pivot_lineage_dest = workspace / "pivot-lineage-execution"
+        shutil.copytree(full_dest, pivot_lineage_dest)
+        make_stack_skill_non_placeholder(pivot_lineage_dest)
+        seed_closed_ticket_needing_reconciliation(pivot_lineage_dest)
+        lineage_manifest_path = pivot_lineage_dest / "tickets" / "manifest.json"
+        lineage_workflow_path = pivot_lineage_dest / ".opencode" / "state" / "workflow-state.json"
+        lineage_registry_path = pivot_lineage_dest / ".opencode" / "state" / "artifacts" / "registry.json"
+        lineage_manifest = json.loads(lineage_manifest_path.read_text(encoding="utf-8"))
+        lineage_workflow = json.loads(lineage_workflow_path.read_text(encoding="utf-8"))
+        lineage_registry = json.loads(lineage_registry_path.read_text(encoding="utf-8"))
+        lineage_manifest["tickets"].append(
+            {
+                "id": "EXEC-RECON-SRC",
+                "title": "Synthetic replacement source ticket",
+                "wave": 2,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "implementation",
+                "status": "in_progress",
+                "depends_on": [],
+                "summary": "Replacement source ticket for pivot lineage execution smoke coverage.",
+                "acceptance": ["Replacement source remains active."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "trusted",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        lineage_manifest["tickets"].append(
+            {
+                "id": "EXEC-RECON-TGT",
+                "title": "Synthetic stale follow-up ticket",
+                "wave": 3,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "ready",
+                "depends_on": ["SETUP-001"],
+                "summary": "Follow-up ticket with stale lineage for pivot execution smoke coverage.",
+                "acceptance": ["Reconciliation succeeds."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "post_completion_issue",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        lineage_manifest["tickets"].append(
+            {
+                "id": "EXEC-REOPEN",
+                "title": "Synthetic completed ticket to reopen",
+                "wave": 4,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "closeout",
+                "status": "done",
+                "depends_on": [],
+                "summary": "Completed ticket that the pivot should reopen through the generated tool.",
+                "acceptance": ["Can be reopened through pivot lineage execution."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "done",
+                "verification_state": "trusted",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        setup_ticket = next(ticket for ticket in lineage_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        setup_ticket["follow_up_ticket_ids"] = ["EXEC-RECON-TGT"]
+        reconcile_evidence_rel = ".opencode/state/reviews/setup-001-review-backlog-verification.md"
+        reconcile_evidence_path = pivot_lineage_dest / reconcile_evidence_rel
+        reconcile_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        reconcile_evidence_path.write_text("# Historical Evidence\n\nCurrent evidence is registered.\n", encoding="utf-8")
+        reconcile_evidence_artifact = {
+            "kind": "backlog-verification",
+            "path": reconcile_evidence_rel,
+            "stage": "review",
+            "summary": "Synthetic reconciliation evidence for pivot execution.",
+            "created_at": "2026-03-30T00:00:00Z",
+            "trust_state": "current",
+        }
+        setup_ticket.setdefault("artifacts", []).append(reconcile_evidence_artifact)
+        lineage_registry.setdefault("artifacts", []).append({"ticket_id": "SETUP-001", **reconcile_evidence_artifact})
+        reopen_ticket = next(ticket for ticket in lineage_manifest["tickets"] if ticket["id"] == "EXEC-REOPEN")
+        reopen_evidence_rel = ".opencode/state/reviews/exec-reopen-review.md"
+        reopen_evidence_path = pivot_lineage_dest / reopen_evidence_rel
+        reopen_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        reopen_evidence_path.write_text("# Reopen Evidence\n\nPivot invalidated the prior completion boundary.\n", encoding="utf-8")
+        reopen_ticket.setdefault("artifacts", []).append(
+            {
+                "kind": "review-note",
+                "path": reopen_evidence_rel,
+                "stage": "review",
+                "summary": "Synthetic reopen evidence for pivot execution.",
+                "created_at": "2026-03-30T00:00:00Z",
+                "trust_state": "current",
+            }
+        )
+        lineage_registry.setdefault("artifacts", []).append({"ticket_id": "EXEC-REOPEN", **reopen_ticket["artifacts"][0]})
+        lineage_workflow["ticket_state"]["EXEC-RECON-SRC"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        lineage_workflow["ticket_state"]["EXEC-RECON-TGT"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        lineage_workflow["ticket_state"]["EXEC-REOPEN"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        lineage_manifest_path.write_text(json.dumps(lineage_manifest, indent=2) + "\n", encoding="utf-8")
+        lineage_workflow_path.write_text(json.dumps(lineage_workflow, indent=2) + "\n", encoding="utf-8")
+        lineage_registry_path.write_text(json.dumps(lineage_registry, indent=2) + "\n", encoding="utf-8")
+        pivot_lineage_payload = run_json(
+            [
+                sys.executable,
+                str(PIVOT),
+                str(pivot_lineage_dest),
+                "--pivot-class",
+                "feature-add",
+                "--requested-change",
+                "Rescope follow-up execution around a replacement implementation source and reopen one completed ticket.",
+                "--accepted-decision",
+                "Use a replacement source ticket for the stale follow-up lineage.",
+                "--reconcile-ticket",
+                "EXEC-RECON-TGT",
+                "--reopen-ticket",
+                "EXEC-REOPEN",
+                "--lineage-evidence",
+                f"EXEC-RECON-TGT={reconcile_evidence_rel}",
+                "--replacement-source",
+                "EXEC-RECON-TGT=EXEC-RECON-SRC",
+                "--replacement-source-mode",
+                "EXEC-RECON-TGT=split_scope",
+                "--lineage-evidence",
+                f"EXEC-REOPEN={reopen_evidence_rel}",
+                "--skip-verify",
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        if pivot_lineage_payload["verification_status"]["performed"] is not False:
+            raise RuntimeError("Execution-backed pivot fixtures should be able to defer post-pivot verification until explicit lineage actions run")
+        if pivot_lineage_payload["restart_surface_publication"]["status"] != "published":
+            raise RuntimeError("Pivot planning should publish restart surfaces for execution-backed lineage pivots")
+        pivot_lineage_apply = run_json(
+            [
+                sys.executable,
+                str(PIVOT_APPLY),
+                str(pivot_lineage_dest),
+            ],
+            ROOT,
+        )
+        if {item["label"] for item in pivot_lineage_apply["applied_actions"]} != {"reconcile:EXEC-RECON-TGT", "reopen:EXEC-REOPEN"}:
+            raise RuntimeError("Pivot lineage execution should apply the explicit runtime-ready reconcile and reopen actions")
+        if pivot_lineage_apply["pending_actions"]:
+            raise RuntimeError("Pivot lineage execution should clear pending explicit actions once all runtime-ready actions complete")
+        ticket_pack_builder_stage = pivot_lineage_apply["ticket_pack_builder_stage"]
+        if ticket_pack_builder_stage["status"] != "completed" or ticket_pack_builder_stage["completion_mode"] != "pivot_lineage_execution":
+            raise RuntimeError("Pivot lineage execution should auto-complete ticket-pack-builder when explicit actions satisfy the whole ticket lineage plan")
+        pivot_lineage_state = json.loads((pivot_lineage_dest / ".opencode" / "meta" / "pivot-state.json").read_text(encoding="utf-8"))
+        if set(pivot_lineage_state["ticket_lineage_plan"]["completed_actions"]) != {"reconcile:EXEC-RECON-TGT", "reopen:EXEC-REOPEN"}:
+            raise RuntimeError("Pivot lineage execution should persist completed explicit lineage actions in pivot state")
+        pivot_lineage_start_here = (pivot_lineage_dest / "START-HERE.md").read_text(encoding="utf-8")
+        if "- pivot_pending_ticket_lineage_actions: none" not in pivot_lineage_start_here:
+            raise RuntimeError("Pivot lineage execution should republish START-HERE when no explicit ticket lineage actions remain pending")
+        if (
+            "- pivot_completed_ticket_lineage_actions: reopen:EXEC-REOPEN, reconcile:EXEC-RECON-TGT" not in pivot_lineage_start_here
+            and "- pivot_completed_ticket_lineage_actions: reconcile:EXEC-RECON-TGT, reopen:EXEC-REOPEN" not in pivot_lineage_start_here
+        ):
+            raise RuntimeError("Pivot lineage execution should republish START-HERE with completed explicit ticket lineage actions")
+        updated_lineage_manifest = json.loads(lineage_manifest_path.read_text(encoding="utf-8"))
+        updated_reopen_ticket = next(ticket for ticket in updated_lineage_manifest["tickets"] if ticket["id"] == "EXEC-REOPEN")
+        if updated_reopen_ticket["resolution_state"] != "reopened":
+            raise RuntimeError("Pivot lineage execution should reopen the completed ticket through the generated ticket_reopen tool")
+        updated_reconcile_target = next(ticket for ticket in updated_lineage_manifest["tickets"] if ticket["id"] == "EXEC-RECON-TGT")
+        if updated_reconcile_target["source_ticket_id"] != "EXEC-RECON-SRC" or "SETUP-001" in updated_reconcile_target["depends_on"]:
+            raise RuntimeError("Pivot lineage execution should reconcile stale target lineage through the generated ticket_reconcile tool")
+        post_lineage_audit = run_json(
+            [sys.executable, str(AUDIT), str(pivot_lineage_dest), "--format", "json", "--no-diagnosis-pack"],
+            ROOT,
+        )
+        post_lineage_codes = {finding["code"] for finding in post_lineage_audit.get("findings", [])}
+        if "WFLOW019" in post_lineage_codes:
+            raise RuntimeError("Pivot lineage execution should remove the stale contradictory source/dependency graph for the executed reconciliation target")
         invocation_tracker = (full_dest / ".opencode" / "plugins" / "invocation-tracker.ts").read_text(encoding="utf-8")
         if "agent: input.agent ?? null" not in invocation_tracker:
             raise RuntimeError("Generated invocation-tracker.ts should record agent ownership on command and tool events")

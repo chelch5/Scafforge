@@ -26,11 +26,30 @@ python3 scripts/record_pivot_stage_completion.py <repo-root> --stage <stage> --c
 
 Use this to record evidence-backed completion of a routed pivot downstream stage inside `.opencode/meta/pivot-state.json`.
 
+Pivot lineage execution command:
+
+```sh
+python3 scripts/apply_pivot_lineage.py <repo-root>
+```
+
+Use this when the pivot state already contains explicit runtime-ready reopen, reconcile, or supersede actions backed by canonical evidence. This command must execute the generated repo's own ticket tools; it must not mutate `tickets/manifest.json` directly from package-side Python.
+
+Pivot restart publication command:
+
+```sh
+python3 scripts/publish_pivot_surfaces.py <repo-root>
+```
+
+Use this to republish `START-HERE.md`, `.opencode/state/latest-handoff.md`, and `.opencode/state/context-snapshot.md` directly from pivot state when the pivot planner or later pivot execution changes repo truth.
+
 Explicit lineage-routing flags:
 
 - `--supersede-ticket <id>`
 - `--reopen-ticket <id>`
 - `--reconcile-ticket <id>`
+- `--lineage-evidence <ticket-id>=<repo-relative-artifact-path>`
+- `--replacement-source <ticket-id>=<replacement-source-ticket-id>`
+- `--replacement-source-mode <ticket-id>=<mode>`
 
 Use these when the pivot already proves specific ticket lineage actions that must be routed explicitly into the downstream ticket follow-up stage.
 
@@ -109,6 +128,8 @@ If workflow surfaces drifted, route the managed refresh through `../scafforge-re
 
 The pivot state should also carry a machine-readable `ticket_lineage_plan` whenever the pivot already proves specific ticket supersede, reopen, reconcile, or follow-up actions.
 
+When the pivot already includes runtime-ready lineage metadata, the plan should capture that too so `apply_pivot_lineage.py` can execute those actions through the generated repo's own `ticket_reopen`, `ticket_reconcile`, or `ticket_create` tools instead of leaving them as prose.
+
 The pivot state must also expose machine-readable restart-surface inputs:
 
 - `pivot_in_progress`
@@ -117,6 +138,13 @@ The pivot state must also expose machine-readable restart-surface inputs:
 - `pending_downstream_stages`
 - `completed_downstream_stages`
 - `post_pivot_verification_passed`
+
+The pivot state must also record restart-surface publication truthfully:
+
+- whether restart surfaces have been republished
+- when they were republished
+- which publisher performed the refresh
+- the canonical published surface paths
 
 ### 4. Refresh only the affected downstream surfaces
 
@@ -158,6 +186,7 @@ If the pivot included transcript-backed workflow defects, reuse the normal verif
 After pivot work and verification are complete, continue to `../handoff-brief/SKILL.md`.
 
 The handoff must state that a pivot occurred, which surfaces changed, and what follow-up still remains.
+Do not depend on a later generic handoff step to make pivot state visible; the pivot lifecycle must be able to republish restart surfaces immediately after planning or explicit lineage execution changes the repo truth.
 
 ## Required outputs
 
@@ -171,6 +200,7 @@ The handoff must state that a pivot occurred, which surfaces changed, and what f
 - ticket lineage updates or follow-up routing
 - post-pivot verification result
 - truthful restart surface inputs for handoff
+- restart-surface publication record when pivot planning or execution republishes the derived restart surfaces
 
 ## Output contract
 
@@ -180,6 +210,7 @@ Before leaving this skill, confirm all of these are true:
 - the stale-surface map exists and matches the requested pivot
 - repair was used only for managed workflow refresh, not for product-truth changes
 - pivot downstream stage progress is recorded with evidence when routed work completes
+- explicit pivot ticket lineage actions are execution-backed through generated repo ticket tools when the pivot already carries enough runtime metadata to run them safely
 - ticket lineage and restart surfaces no longer present stale pre-pivot assumptions
 - post-pivot verification ran before handoff
 

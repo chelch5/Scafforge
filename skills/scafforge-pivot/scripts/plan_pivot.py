@@ -16,6 +16,7 @@ from pivot_tracking import (
     persist_pivot_state,
     pivot_stage_metadata,
 )
+from publish_pivot_surfaces import publish_pivot_surfaces
 
 
 SHARED_VERIFIER_PATH = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts" / "shared_verifier.py"
@@ -67,6 +68,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reopen-ticket", action="append", default=[], help="Existing ticket id that should be reopened by this pivot. May be provided multiple times.")
     parser.add_argument("--reconcile-ticket", action="append", default=[], help="Existing ticket id whose lineage should be reconciled by this pivot. May be provided multiple times.")
     parser.add_argument(
+        "--lineage-evidence",
+        action="append",
+        default=[],
+        help="Attach runtime evidence for a pivot lineage action using <ticket-id>=<repo-relative-artifact-path>. May be provided multiple times.",
+    )
+    parser.add_argument(
+        "--replacement-source",
+        action="append",
+        default=[],
+        help="Attach a replacement canonical source using <ticket-id>=<replacement-source-ticket-id>. May be provided multiple times.",
+    )
+    parser.add_argument(
+        "--replacement-source-mode",
+        action="append",
+        default=[],
+        help="Attach a replacement source_mode using <ticket-id>=<mode>. May be provided multiple times.",
+    )
+    parser.add_argument(
         "--affect",
         action="append",
         choices=FAMILIES,
@@ -75,6 +94,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--supporting-log", action="append", default=[], help="Optional transcript or session log to include in post-pivot verification.")
     parser.add_argument("--skip-verify", action="store_true", help="Skip the post-pivot verification pass.")
+    parser.add_argument("--skip-publish", action="store_true", help="Skip immediate pivot restart-surface publication.")
     parser.add_argument("--format", choices=("text", "json", "both"), default="text")
     return parser.parse_args()
 
@@ -112,6 +132,20 @@ def load_manifest(repo_root: Path) -> dict[str, Any]:
     return read_json(path) if path.exists() else {}
 
 
+def parse_assignment_map(values: list[str], *, flag: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for raw in values:
+        if not isinstance(raw, str) or "=" not in raw:
+            raise SystemExit(f"{flag} entries must use <ticket-id>=<value>: {raw}")
+        key, value = raw.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not value:
+            raise SystemExit(f"{flag} entries must use <ticket-id>=<value>: {raw}")
+        parsed[key] = value
+    return parsed
+
+
 def validate_manifest_ticket_ids(manifest: dict[str, Any], ticket_ids: list[str], *, flag: str) -> list[str]:
     tickets = manifest.get("tickets") if isinstance(manifest.get("tickets"), list) else []
     known_ids = {
@@ -130,6 +164,11 @@ def validate_manifest_ticket_ids(manifest: dict[str, Any], ticket_ids: list[str]
     return sorted(set(normalized))
 
 
+def validate_assignment_ticket_keys(manifest: dict[str, Any], mapping: dict[str, str], *, flag: str) -> dict[str, str]:
+    validate_manifest_ticket_ids(manifest, list(mapping.keys()), flag=flag)
+    return mapping
+
+
 def build_ticket_lineage_plan(
     repo_root: Path,
     *,
@@ -137,6 +176,9 @@ def build_ticket_lineage_plan(
     reopen_tickets: list[str],
     reconcile_tickets: list[str],
     unresolved_follow_up: list[str],
+    evidence_by_ticket: dict[str, str],
+    replacement_source_by_ticket: dict[str, str],
+    replacement_source_mode_by_ticket: dict[str, str],
 ) -> dict[str, Any]:
     manifest = load_manifest(repo_root)
     actions: list[dict[str, str | None]] = []
@@ -147,6 +189,9 @@ def build_ticket_lineage_plan(
                 "target_ticket_id": ticket_id,
                 "summary": f"Supersede {ticket_id} because its acceptance no longer matches the pivoted brief.",
                 "reason": "Pivot invalidated the prior acceptance or completion claim for this ticket.",
+                "evidence_artifact_path": evidence_by_ticket.get(ticket_id),
+                "replacement_source_ticket_id": replacement_source_by_ticket.get(ticket_id),
+                "replacement_source_mode": replacement_source_mode_by_ticket.get(ticket_id),
             }
         )
     for ticket_id in validate_manifest_ticket_ids(manifest, reopen_tickets, flag="--reopen-ticket"):
@@ -156,6 +201,7 @@ def build_ticket_lineage_plan(
                 "target_ticket_id": ticket_id,
                 "summary": f"Reopen {ticket_id} because it remains relevant but is no longer complete under the pivot.",
                 "reason": "Pivot kept the underlying work valid but changed the completion boundary.",
+                "evidence_artifact_path": evidence_by_ticket.get(ticket_id),
             }
         )
     for ticket_id in validate_manifest_ticket_ids(manifest, reconcile_tickets, flag="--reconcile-ticket"):
@@ -165,6 +211,9 @@ def build_ticket_lineage_plan(
                 "target_ticket_id": ticket_id,
                 "summary": f"Reconcile stale lineage for {ticket_id} under the pivoted design.",
                 "reason": "Pivot changed ticket lineage or source/follow-up relationships that no longer reflect the current design.",
+                "evidence_artifact_path": evidence_by_ticket.get(ticket_id),
+                "replacement_source_ticket_id": replacement_source_by_ticket.get(ticket_id),
+                "replacement_source_mode": replacement_source_mode_by_ticket.get(ticket_id),
             }
         )
     for follow_up in [item.strip() for item in unresolved_follow_up if item.strip()]:
@@ -377,12 +426,32 @@ def main() -> int:
 
     stale_surface_map = build_pivot_stale_surface_map(affected_families)
     downstream_refresh = build_downstream_refresh(affected_families)
+    manifest = load_manifest(repo_root)
+    evidence_by_ticket = validate_assignment_ticket_keys(
+        manifest,
+        parse_assignment_map(args.lineage_evidence, flag="--lineage-evidence"),
+        flag="--lineage-evidence",
+    )
+    replacement_source_by_ticket = validate_assignment_ticket_keys(
+        manifest,
+        parse_assignment_map(args.replacement_source, flag="--replacement-source"),
+        flag="--replacement-source",
+    )
+    replacement_source_mode_by_ticket = validate_assignment_ticket_keys(
+        manifest,
+        parse_assignment_map(args.replacement_source_mode, flag="--replacement-source-mode"),
+        flag="--replacement-source-mode",
+    )
+    validate_manifest_ticket_ids(manifest, list(replacement_source_by_ticket.values()), flag="--replacement-source")
     ticket_lineage_plan = build_ticket_lineage_plan(
         repo_root,
         supersede_tickets=args.supersede_ticket,
         reopen_tickets=args.reopen_ticket,
         reconcile_tickets=args.reconcile_ticket,
         unresolved_follow_up=args.unresolved_follow_up,
+        evidence_by_ticket=evidence_by_ticket,
+        replacement_source_by_ticket=replacement_source_by_ticket,
+        replacement_source_mode_by_ticket=replacement_source_mode_by_ticket,
     )
     pivot_entry = {
         "recorded_at": timestamp,
@@ -422,6 +491,11 @@ def main() -> int:
     )
     payload["restart_surface_inputs"] = build_restart_surface_inputs(payload)
     persist_pivot_state(repo_root, payload)
+    if not args.skip_publish:
+        publication = publish_pivot_surfaces(repo_root, published_by="scafforge-pivot")
+        payload["restart_surface_publication"] = publication.get("restart_surface_publication", {})
+        payload["restart_surface_inputs"] = publication.get("restart_surface_inputs", payload["restart_surface_inputs"])
+        payload = read_json(repo_root / PIVOT_STATE_PATH)
 
     if args.format in {"text", "both"}:
         print(render_text(payload))
