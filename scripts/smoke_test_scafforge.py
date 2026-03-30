@@ -21,6 +21,7 @@ REPAIR = ROOT / "skills" / "scafforge-repair" / "scripts" / "apply_repo_process_
 PUBLIC_REPAIR = ROOT / "skills" / "scafforge-repair" / "scripts" / "run_managed_repair.py"
 REGENERATE = ROOT / "skills" / "scafforge-repair" / "scripts" / "regenerate_restart_surfaces.py"
 PIVOT = ROOT / "skills" / "scafforge-pivot" / "scripts" / "plan_pivot.py"
+PIVOT_RECORD = ROOT / "skills" / "scafforge-pivot" / "scripts" / "record_pivot_stage_completion.py"
 RECORD_REPAIR_STAGE = ROOT / "skills" / "scafforge-repair" / "scripts" / "record_repair_stage_completion.py"
 BOOTSTRAP_INPUT_FILES = (
     "package.json",
@@ -2468,6 +2469,51 @@ def main() -> int:
         pivot_state = json.loads(pivot_state_path.read_text(encoding="utf-8"))
         if pivot_state["pivot_state_path"] != ".opencode/meta/pivot-state.json":
             raise RuntimeError("Pivot orchestration should record the canonical pivot state path")
+        if pivot_state["restart_surface_inputs"]["pivot_in_progress"] is not True:
+            raise RuntimeError("Pivot orchestration should mark pivot_in_progress while routed downstream work remains")
+        expected_changed_surfaces = {
+            "canonical_brief_and_truth_docs",
+            "repo_local_skills",
+            "agent_team_and_prompts",
+            "managed_workflow_tools_and_prompts",
+            "ticket_graph_and_lineage",
+            "restart_surfaces",
+        }
+        if set(pivot_state["restart_surface_inputs"]["pivot_changed_surfaces"]) != expected_changed_surfaces:
+            raise RuntimeError("Pivot orchestration should expose truthful changed surfaces for restart publication")
+        if set(pivot_state["downstream_refresh_state"]["pending_stages"]) != set(pivot_stages):
+            raise RuntimeError("Pivot orchestration should initialize downstream refresh state with all routed stages pending")
+        pivot_evidence = pivot_dest / ".opencode" / "state" / "artifacts" / "history" / "pivot-stage-completion.md"
+        pivot_evidence.parent.mkdir(parents=True, exist_ok=True)
+        pivot_evidence.write_text("# Pivot stage completion\n", encoding="utf-8")
+        record_payload = run_json(
+            [
+                sys.executable,
+                str(PIVOT_RECORD),
+                str(pivot_dest),
+                "--stage",
+                "scafforge-repair",
+                "--completed-by",
+                "scafforge-pivot-smoke",
+                "--summary",
+                "Managed workflow refresh completed for the pivot smoke fixture.",
+                "--evidence",
+                ".opencode/state/artifacts/history/pivot-stage-completion.md",
+            ],
+            ROOT,
+        )
+        if "scafforge-repair" not in record_payload["completed_stage_names"]:
+            raise RuntimeError("Pivot stage recording should mark the completed downstream stage")
+        if "scafforge-repair" in record_payload["pending_stage_names"]:
+            raise RuntimeError("Pivot stage recording should remove the completed stage from pending downstream work")
+        if record_payload["restart_surface_inputs"]["pivot_in_progress"] is not True:
+            raise RuntimeError("Pivot stage recording should keep pivot_in_progress true while other downstream stages remain pending")
+        refreshed_pivot_state = json.loads(pivot_state_path.read_text(encoding="utf-8"))
+        repair_stage_record = refreshed_pivot_state["downstream_refresh_state"]["stage_records"]["scafforge-repair"]
+        if repair_stage_record["status"] != "completed" or repair_stage_record["completion_mode"] != "recorded_execution":
+            raise RuntimeError("Pivot stage recording should persist recorded execution for completed stages")
+        if repair_stage_record["completed_by"] != "scafforge-pivot-smoke":
+            raise RuntimeError("Pivot stage recording should persist completed_by provenance")
         pivot_provenance = json.loads((pivot_dest / ".opencode" / "meta" / "bootstrap-provenance.json").read_text(encoding="utf-8"))
         pivot_history = pivot_provenance.get("pivot_history")
         if not isinstance(pivot_history, list) or not pivot_history or pivot_history[-1]["pivot_class"] != "architecture-change":
