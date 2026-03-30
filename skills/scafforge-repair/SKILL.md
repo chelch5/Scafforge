@@ -73,6 +73,15 @@ python3 scripts/record_repair_stage_completion.py <repo-root> --stage <stage> --
 ```
 
 Use that command to record real follow-on execution with evidence paths. Leave `--stage-complete` as a transitional input for hosts that still cannot write a richer execution record directly.
+Both `--stage-complete` and `record_repair_stage_completion.py` must stay inside the canonical repair follow-on stage catalog. The current allowed stage names are:
+
+- `project-skill-bootstrap`
+- `opencode-team-bootstrap`
+- `agent-prompt-engineering`
+- `ticket-pack-builder`
+- `handoff-brief`
+
+Reject unknown stage names instead of silently recording arbitrary labels into repair state.
 When a downstream stage emits a canonical repair completion artifact for the current repair cycle, the public repair runner may auto-recognize that stage on the next run instead of requiring a separate recording command. The current bounded auto-recognition path is:
 
 - `ticket-pack-builder` via `.opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md`

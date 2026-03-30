@@ -7,7 +7,12 @@ from typing import Any
 
 from audit_repo_process import current_package_commit
 from apply_repo_process_repair import FOLLOW_ON_TRACKING_PATH
-from follow_on_tracking import completed_stage_names, load_follow_on_tracking_state, record_follow_on_stage_completion
+from follow_on_tracking import (
+    completed_stage_names,
+    load_follow_on_tracking_state,
+    record_follow_on_stage_completion,
+    validate_follow_on_stage_name,
+)
 from regenerate_restart_surfaces import regenerate_restart_surfaces
 
 
@@ -47,10 +52,14 @@ def write_json(path: Path, payload: Any) -> None:
 def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).expanduser().resolve()
+    try:
+        stage = validate_follow_on_stage_name(args.stage)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     evidence_paths = normalize_evidence_paths(repo_root, args.evidence)
     tracking_state = record_follow_on_stage_completion(
         repo_root,
-        stage=args.stage,
+        stage=stage,
         completed_by=args.completed_by.strip(),
         summary=args.summary.strip(),
         evidence_paths=evidence_paths,
@@ -59,12 +68,12 @@ def main() -> int:
     payload = {
         "repo_root": str(repo_root),
         "follow_on_state_path": str(FOLLOW_ON_TRACKING_PATH).replace("\\", "/"),
-        "stage": args.stage,
+        "stage": stage,
         "completed_by": args.completed_by.strip(),
         "summary": args.summary.strip(),
         "evidence_paths": evidence_paths,
         "completed_stage_names": completed_stage_names(tracking_state),
-        "recorded_stage": tracking_state["stage_records"][args.stage],
+        "recorded_stage": tracking_state["stage_records"][stage],
     }
 
     workflow_path = repo_root / ".opencode" / "state" / "workflow-state.json"
