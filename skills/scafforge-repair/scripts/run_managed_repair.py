@@ -239,6 +239,7 @@ def update_repair_follow_on_state(
         "tracking_mode": "persistent_recorded_state",
         "follow_on_state_path": str(FOLLOW_ON_TRACKING_PATH).replace("\\", "/"),
         "recorded_stage_state": tracking_state.get("stage_records", {}),
+        "pruned_unknown_stages": tracking_state.get("pruned_unknown_stages", []),
         "invalidated_recorded_stages": invalidated_recorded_stage_names(tracking_state),
         "blocking_reasons": blocking_reasons,
         "verification_passed": verification_passed,
@@ -325,6 +326,7 @@ def main() -> int:
     )
     tracking_state, auto_detected_recorded_stage_names = auto_record_stage_completion_from_canonical_evidence(
         repo_root,
+        tracking_state,
         required_stage_names=required_stage_names,
         repair_package_commit=current_package_commit(),
     )
@@ -441,6 +443,7 @@ def main() -> int:
             "recorded_completed_stages": persisted_completed_stage_names,
             "recorded_execution_completed_stages": recorded_execution_stage_list,
             "auto_detected_recorded_stages": auto_detected_recorded_stage_names,
+            "pruned_unknown_stages": tracking_state.get("pruned_unknown_stages", []),
             "invalidated_recorded_stages": invalidated_recorded_stage_list,
             "asserted_completed_stages": asserted_stage_names,
             "stage_completion_mode": "transitional_manual_assertion",

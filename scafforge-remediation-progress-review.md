@@ -189,6 +189,7 @@ Implemented:
   - `ticket-pack-builder` via `.opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md` with matching `cycle_id`
 - repair follow-on stage recording is now locked to a canonical stage catalog, so unknown `--stage-complete` or recorded-completion labels fail closed instead of silently polluting repair state
 - polluted legacy follow-on tracking entries with unknown stage names are now pruned on load instead of being trusted as completed work
+- that polluted-state cleanup is now surfaced explicitly in repair state and execution output instead of happening silently
 - repair verification now fails contract checks for:
   - non-clean zero-finding states
   - restart-surface drift after repair
