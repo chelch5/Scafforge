@@ -54,6 +54,16 @@ def known_follow_on_stage_names() -> list[str]:
     return sorted(FOLLOW_ON_STAGE_CATALOG)
 
 
+def follow_on_stage_metadata(stage: str) -> dict[str, str]:
+    normalized = validate_follow_on_stage_name(stage)
+    metadata = FOLLOW_ON_STAGE_CATALOG[normalized]
+    return {
+        "stage": normalized,
+        "owner": str(metadata["owner"]),
+        "category": str(metadata["category"]),
+    }
+
+
 def validate_follow_on_stage_name(stage: str) -> str:
     normalized = stage.strip()
     if normalized in FOLLOW_ON_STAGE_CATALOG:
@@ -111,7 +121,10 @@ def normalize_follow_on_tracking_state(payload: Any, *, process_version: int) ->
             }
         ),
         "stage_records": {
-            validate_follow_on_stage_name(stage): value
+            validate_follow_on_stage_name(stage): {
+                **value,
+                **follow_on_stage_metadata(stage),
+            }
             for stage, value in stage_records.items()
             if isinstance(stage, str) and isinstance(value, dict) and stage.strip() in FOLLOW_ON_STAGE_CATALOG
         },
@@ -243,13 +256,17 @@ def update_follow_on_tracking_state(
         next_record["currently_required"] = stage in required_reason_map
         if stage in required_reason_map:
             next_record["reason"] = required_reason_map[stage]
-        stage_records[stage] = next_record
+        stage_records[stage] = {
+            **next_record,
+            **follow_on_stage_metadata(stage),
+        }
 
     for stage, reason in required_reason_map.items():
         existing = stage_records.get(stage, {})
         if existing.get("status") in {"asserted_completed", "completed"}:
             stage_records[stage] = {
                 **existing,
+                **follow_on_stage_metadata(stage),
                 "stage": stage,
                 "reason": reason,
                 "currently_required": True,
@@ -259,6 +276,7 @@ def update_follow_on_tracking_state(
         if existing.get("status") == "evidence_missing":
             stage_records[stage] = {
                 **existing,
+                **follow_on_stage_metadata(stage),
                 "stage": stage,
                 "reason": reason,
                 "currently_required": True,
@@ -266,6 +284,7 @@ def update_follow_on_tracking_state(
             }
             continue
         stage_records[stage] = {
+            **follow_on_stage_metadata(stage),
             "stage": stage,
             "status": "required_not_run",
             "reason": reason,
@@ -279,6 +298,7 @@ def update_follow_on_tracking_state(
         if existing.get("status") == "completed":
             stage_records[stage] = {
                 **existing,
+                **follow_on_stage_metadata(stage),
                 "stage": stage,
                 "currently_required": stage in required_reason_map,
                 "last_checked_at": now,
@@ -289,6 +309,7 @@ def update_follow_on_tracking_state(
         reason = required_reason_map.get(stage)
         stage_records[stage] = {
             **existing,
+            **follow_on_stage_metadata(stage),
             "stage": stage,
             "status": "asserted_completed",
             "reason": reason,
@@ -404,6 +425,7 @@ def record_follow_on_stage_completion(
     reason = existing.get("reason")
     records[stage] = {
         **existing,
+        **follow_on_stage_metadata(stage),
         "stage": stage,
         "status": "completed",
         "currently_required": existing.get("currently_required", False),
