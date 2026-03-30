@@ -69,6 +69,28 @@ Before leaving this skill, confirm all of these are true:
 - the next action is actionable and does not overclaim readiness beyond current evidence
 - the handoff proves immediate continuation rather than only surface agreement
 
+## Repair follow-on artifact
+
+When this skill runs as a `scafforge-repair` follow-on closeout, read `.opencode/meta/repair-follow-on-state.json` and, after the restart surfaces are actually refreshed for the current repair cycle, write:
+
+- `.opencode/state/artifacts/history/repair/handoff-brief-completion.md`
+
+Use this minimal shape so the public repair runner can auto-recognize `handoff-brief` completion for the current repair cycle on the next run:
+
+```md
+# Repair Follow-On Completion
+
+- completed_stage: handoff-brief
+- cycle_id: <cycle_id from .opencode/meta/repair-follow-on-state.json>
+- completed_by: handoff-brief
+
+## Summary
+
+- Refreshed START-HERE.md, context-snapshot.md, and latest-handoff.md for the current repair cycle.
+```
+
+Do not emit this artifact speculatively. Only write it once the handoff refresh work is actually complete for the current repair cycle.
+
 ## After this step
 
 The scaffold flow is complete. Return to `../scaffold-kickoff/SKILL.md` step 10 for the done checklist.
