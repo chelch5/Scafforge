@@ -2060,11 +2060,28 @@ def main() -> int:
             raise RuntimeError("Generated ticket_create.ts should not mark split-scope parents blocked")
         if "Keep the parent open and non-foreground until the child work lands." not in generated_ticket_create:
             raise RuntimeError("Generated ticket_create.ts should leave split-scope parents open and linked to their children")
+        generated_ticket_reverify = (full_dest / ".opencode" / "tools" / "ticket_reverify.ts").read_text(encoding="utf-8")
+        if 'if (sourceTicket.status !== "done")' not in generated_ticket_reverify:
+            raise RuntimeError("Generated ticket_reverify.ts should reject attempts to restore trust on non-done tickets")
+        if "ticket_reverify requires evidence_artifact_path or verification_content." not in generated_ticket_reverify:
+            raise RuntimeError("Generated ticket_reverify.ts should require concrete reverification evidence")
+        if 'sourceTicket.verification_state = "reverified"' not in generated_ticket_reverify:
+            raise RuntimeError("Generated ticket_reverify.ts should restore the source ticket verification state to reverified")
+        if "getTicketWorkflowState(workflow, sourceTicket.id).needs_reverification = false" not in generated_ticket_reverify:
+            raise RuntimeError("Generated ticket_reverify.ts should clear the explicit needs_reverification flag after trust restoration")
+        if 'kind: "backlog-verification"' not in generated_ticket_reverify or 'kind: "reverification"' not in generated_ticket_reverify:
+            raise RuntimeError("Generated ticket_reverify.ts should register both inline backlog-verification evidence and the final reverification artifact")
         generated_ticket_reconcile = (full_dest / ".opencode" / "tools" / "ticket_reconcile.ts").read_text(encoding="utf-8")
         if "currentRegistryArtifact" not in generated_ticket_reconcile:
             raise RuntimeError("Generated ticket_reconcile.ts should allow current registered evidence to justify historical reconciliation")
+        if "targetTicket.depends_on = targetTicket.depends_on.filter" not in generated_ticket_reconcile:
+            raise RuntimeError("Generated ticket_reconcile.ts should remove contradictory dependencies when reconciliation repairs lineage")
         if 'targetTicket.verification_state = "reverified"' not in generated_ticket_reconcile:
             raise RuntimeError("Generated ticket_reconcile.ts should leave successfully superseded historical targets non-blocking for handoff publication")
+        if 'targetTicket.resolution_state = "superseded"' not in generated_ticket_reconcile:
+            raise RuntimeError("Generated ticket_reconcile.ts should explicitly mark superseded historical targets closed when requested")
+        if "syncWorkflowSelection(workflow, manifest)" not in generated_ticket_reconcile:
+            raise RuntimeError("Generated ticket_reconcile.ts should resync active workflow selection after lineage changes")
         if "supersededTarget,\n" in generated_ticket_reconcile:
             raise RuntimeError("Generated ticket_reconcile.ts should not contain the legacy supersededTarget runtime typo")
         generated_team_leader = next((full_dest / ".opencode" / "agents").glob("*team-leader*.md")).read_text(encoding="utf-8")

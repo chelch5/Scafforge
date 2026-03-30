@@ -176,6 +176,7 @@ Implemented:
 - restart-surface next-action logic was unified with `ticket_lookup` for dependent continuation
 - explicit closed-ticket reverification now surfaces as the next legal move even when `pending_process_verification` is false but workflow state still requires reverification
 - explicit historical reconciliation now surfaces as the next legal move for `done + superseded + invalidated` tickets
+- direct mutation-surface coverage for `ticket_reverify` and `ticket_reconcile` is stronger at the package-validation and smoke level, so trust-restoration and lineage-repair state changes are guarded more directly than before
 - restart-surface fixtures now cover:
   - closed ticket with blocked dependents
   - closed ticket needing explicit reverification
@@ -193,8 +194,8 @@ Important detail:
 
 Not yet done:
 
-- direct end-to-end execution coverage of `ticket_reverify` and `ticket_reconcile` themselves is still lighter than ideal
-- there is still room to test the mutation tools more directly, not only the surrounding routing and restart-surface state
+- true end-to-end execution of the generated TypeScript mutation tools still is not covered by a package-local runtime harness
+- there is still room to exercise `ticket_reverify` and `ticket_reconcile` through an actual generated-tool execution environment instead of validator/smoke structural checks alone
 
 ### Phase 6: Add A First-Class Pivot Skill
 
