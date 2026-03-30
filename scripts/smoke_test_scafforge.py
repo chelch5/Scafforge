@@ -4546,6 +4546,56 @@ def main() -> int:
                 raise RuntimeError("record_repair_stage_completion should reject explicit recorded execution that provides zero evidence paths")
             if "requires at least one repo-relative evidence path" not in no_evidence_record_stage.stderr and "requires at least one repo-relative evidence path" not in no_evidence_record_stage.stdout:
                 raise RuntimeError("record_repair_stage_completion should explain zero-evidence recorded execution rejection")
+            manual_recorded_evidence_rel = ".opencode/state/artifacts/history/repair/manual-recorded-evidence.md"
+            manual_recorded_evidence_path = recorded_follow_on_dest / manual_recorded_evidence_rel
+            manual_recorded_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            manual_recorded_evidence_path.write_text("# Manual recorded evidence\n", encoding="utf-8")
+            blank_completed_by_record_stage = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "   ",
+                    "--summary",
+                    "Blank completed_by should fail.",
+                    "--evidence",
+                    manual_recorded_evidence_rel,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if blank_completed_by_record_stage.returncode == 0:
+                raise RuntimeError("record_repair_stage_completion should reject explicit recorded execution with a blank completed_by value")
+            if "requires a non-empty completed_by value" not in blank_completed_by_record_stage.stderr and "requires a non-empty completed_by value" not in blank_completed_by_record_stage.stdout:
+                raise RuntimeError("record_repair_stage_completion should explain blank completed_by rejection")
+            blank_summary_record_stage = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "ticket-pack-builder",
+                    "--summary",
+                    "   ",
+                    "--evidence",
+                    manual_recorded_evidence_rel,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if blank_summary_record_stage.returncode == 0:
+                raise RuntimeError("record_repair_stage_completion should reject explicit recorded execution with a blank summary")
+            if "requires a non-empty summary" not in blank_summary_record_stage.stderr and "requires a non-empty summary" not in blank_summary_record_stage.stdout:
+                raise RuntimeError("record_repair_stage_completion should explain blank summary rejection")
             recorded_evidence_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
             recorded_evidence_path = recorded_follow_on_dest / recorded_evidence_rel
             recorded_evidence_path.parent.mkdir(parents=True, exist_ok=True)
