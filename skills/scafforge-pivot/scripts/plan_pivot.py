@@ -63,6 +63,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--requested-change", required=True, help="Human-readable summary of the requested pivot.")
     parser.add_argument("--accepted-decision", action="append", default=[], help="Accepted decision captured by this pivot. May be provided multiple times.")
     parser.add_argument("--unresolved-follow-up", action="append", default=[], help="Unresolved follow-up introduced by this pivot. May be provided multiple times.")
+    parser.add_argument("--supersede-ticket", action="append", default=[], help="Existing ticket id that should be superseded by this pivot. May be provided multiple times.")
+    parser.add_argument("--reopen-ticket", action="append", default=[], help="Existing ticket id that should be reopened by this pivot. May be provided multiple times.")
+    parser.add_argument("--reconcile-ticket", action="append", default=[], help="Existing ticket id whose lineage should be reconciled by this pivot. May be provided multiple times.")
     parser.add_argument(
         "--affect",
         action="append",
@@ -101,7 +104,79 @@ def default_affected_families(pivot_class: str) -> list[str]:
 
 
 def normalize_families(pivot_class: str, explicit: list[str]) -> list[str]:
-    return sorted(set(explicit or default_affected_families(pivot_class)))
+    return sorted(set(default_affected_families(pivot_class)) | set(explicit))
+
+
+def load_manifest(repo_root: Path) -> dict[str, Any]:
+    path = repo_root / "tickets" / "manifest.json"
+    return read_json(path) if path.exists() else {}
+
+
+def validate_manifest_ticket_ids(manifest: dict[str, Any], ticket_ids: list[str], *, flag: str) -> list[str]:
+    tickets = manifest.get("tickets") if isinstance(manifest.get("tickets"), list) else []
+    known_ids = {
+        str(ticket.get("id", "")).strip()
+        for ticket in tickets
+        if isinstance(ticket, dict) and str(ticket.get("id", "")).strip()
+    }
+    normalized: list[str] = []
+    for raw in ticket_ids:
+        ticket_id = raw.strip()
+        if not ticket_id:
+            continue
+        if ticket_id not in known_ids:
+            raise SystemExit(f"{flag} references unknown ticket id: {ticket_id}")
+        normalized.append(ticket_id)
+    return sorted(set(normalized))
+
+
+def build_ticket_lineage_plan(
+    repo_root: Path,
+    *,
+    supersede_tickets: list[str],
+    reopen_tickets: list[str],
+    reconcile_tickets: list[str],
+    unresolved_follow_up: list[str],
+) -> dict[str, Any]:
+    manifest = load_manifest(repo_root)
+    actions: list[dict[str, str | None]] = []
+    for ticket_id in validate_manifest_ticket_ids(manifest, supersede_tickets, flag="--supersede-ticket"):
+        actions.append(
+            {
+                "action": "supersede",
+                "target_ticket_id": ticket_id,
+                "summary": f"Supersede {ticket_id} because its acceptance no longer matches the pivoted brief.",
+                "reason": "Pivot invalidated the prior acceptance or completion claim for this ticket.",
+            }
+        )
+    for ticket_id in validate_manifest_ticket_ids(manifest, reopen_tickets, flag="--reopen-ticket"):
+        actions.append(
+            {
+                "action": "reopen",
+                "target_ticket_id": ticket_id,
+                "summary": f"Reopen {ticket_id} because it remains relevant but is no longer complete under the pivot.",
+                "reason": "Pivot kept the underlying work valid but changed the completion boundary.",
+            }
+        )
+    for ticket_id in validate_manifest_ticket_ids(manifest, reconcile_tickets, flag="--reconcile-ticket"):
+        actions.append(
+            {
+                "action": "reconcile",
+                "target_ticket_id": ticket_id,
+                "summary": f"Reconcile stale lineage for {ticket_id} under the pivoted design.",
+                "reason": "Pivot changed ticket lineage or source/follow-up relationships that no longer reflect the current design.",
+            }
+        )
+    for follow_up in [item.strip() for item in unresolved_follow_up if item.strip()]:
+        actions.append(
+            {
+                "action": "create_follow_up",
+                "target_ticket_id": None,
+                "summary": follow_up,
+                "reason": "Pivot introduced explicit follow-up work that should become a new ticket instead of staying implicit.",
+            }
+        )
+    return {"actions": actions}
 
 
 def render_list(items: list[str], *, empty_label: str) -> str:
@@ -259,13 +334,34 @@ def render_text(payload: dict[str, Any]) -> str:
         lines.extend(f"- {item['stage']}: {item['reason']}" for item in payload["downstream_refresh"])
     else:
         lines.append("- None beyond handoff-brief.")
+    ticket_lineage_plan = payload.get("ticket_lineage_plan")
+    if isinstance(ticket_lineage_plan, dict) and isinstance(ticket_lineage_plan.get("actions"), list):
+        lines.append("Ticket lineage plan:")
+        actions = ticket_lineage_plan["actions"]
+        if actions:
+            lines.extend(
+                f"- {item['action']}: {item.get('target_ticket_id') or item.get('summary')}"
+                for item in actions
+                if isinstance(item, dict)
+            )
+        else:
+            lines.append("- None.")
     return "\n".join(lines)
 
 
 def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).expanduser().resolve()
-    affected_families = normalize_families(args.pivot_class, args.affect)
+    lineage_requires_ticket_follow_up = any(
+        item.strip()
+        for group in (args.supersede_ticket, args.reopen_ticket, args.reconcile_ticket, args.unresolved_follow_up)
+        for item in group
+        if isinstance(item, str)
+    )
+    explicit_families = list(args.affect)
+    if lineage_requires_ticket_follow_up and "ticket_graph_and_lineage" not in explicit_families:
+        explicit_families.append("ticket_graph_and_lineage")
+    affected_families = normalize_families(args.pivot_class, explicit_families)
     timestamp = current_iso_timestamp()
     canonical_brief_path = repo_root / CANONICAL_BRIEF_PATH
     canonical_brief_path.parent.mkdir(parents=True, exist_ok=True)
@@ -281,6 +377,13 @@ def main() -> int:
 
     stale_surface_map = build_pivot_stale_surface_map(affected_families)
     downstream_refresh = build_downstream_refresh(affected_families)
+    ticket_lineage_plan = build_ticket_lineage_plan(
+        repo_root,
+        supersede_tickets=args.supersede_ticket,
+        reopen_tickets=args.reopen_ticket,
+        reconcile_tickets=args.reconcile_ticket,
+        unresolved_follow_up=args.unresolved_follow_up,
+    )
     pivot_entry = {
         "recorded_at": timestamp,
         "pivot_id": timestamp,
@@ -306,6 +409,7 @@ def main() -> int:
         "affected_contract_families": affected_families,
         "stale_surface_map": stale_surface_map,
         "downstream_refresh": downstream_refresh,
+        "ticket_lineage_plan": ticket_lineage_plan,
         "verification_status": verification_status,
         "pivot_history_entry": pivot_entry,
         "canonical_brief_path": str(CANONICAL_BRIEF_PATH).replace("\\", "/"),

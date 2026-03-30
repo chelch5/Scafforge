@@ -31,6 +31,13 @@ PIVOT_STAGE_CATALOG = {
     },
 }
 
+TICKET_LINEAGE_ACTION_TYPES = {
+    "supersede",
+    "reopen",
+    "reconcile",
+    "create_follow_up",
+}
+
 
 def current_iso_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -65,6 +72,60 @@ def pivot_stage_metadata(stage: str) -> dict[str, str]:
 
 def normalize_pivot_stage_names(stages: list[str]) -> list[str]:
     return sorted({validate_pivot_stage_name(stage) for stage in stages if isinstance(stage, str) and stage.strip()})
+
+
+def validate_ticket_lineage_action_type(action_type: str) -> str:
+    normalized = action_type.strip()
+    if normalized in TICKET_LINEAGE_ACTION_TYPES:
+        return normalized
+    known = ", ".join(sorted(TICKET_LINEAGE_ACTION_TYPES))
+    raise ValueError(f"Unknown pivot ticket lineage action: {action_type}. Known actions: {known}")
+
+
+def summarize_ticket_lineage_action(action: dict[str, Any]) -> str:
+    action_type = validate_ticket_lineage_action_type(str(action.get("action", "")))
+    raw_target_ticket_id = action.get("target_ticket_id")
+    target_ticket_id = raw_target_ticket_id.strip() if isinstance(raw_target_ticket_id, str) and raw_target_ticket_id.strip() else ""
+    summary = str(action.get("summary", "")).strip()
+    if target_ticket_id:
+        return f"{action_type}:{target_ticket_id}"
+    if summary:
+        return f"{action_type}:{summary}"
+    return action_type
+
+
+def normalize_ticket_lineage_plan(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        value = {}
+    actions_raw = value.get("actions") if isinstance(value.get("actions"), list) else []
+    normalized_actions: list[dict[str, Any]] = []
+    for item in actions_raw:
+        if not isinstance(item, dict):
+            continue
+        action_type = validate_ticket_lineage_action_type(str(item.get("action", "")))
+        raw_target_ticket_id = item.get("target_ticket_id")
+        target_ticket_id = raw_target_ticket_id.strip() if isinstance(raw_target_ticket_id, str) and raw_target_ticket_id.strip() else None
+        summary = str(item.get("summary", "")).strip()
+        reason = str(item.get("reason", "")).strip()
+        normalized_actions.append(
+            {
+                "action": action_type,
+                "target_ticket_id": target_ticket_id,
+                "summary": summary,
+                "reason": reason,
+                "label": summarize_ticket_lineage_action(
+                    {
+                        "action": action_type,
+                        "target_ticket_id": target_ticket_id,
+                        "summary": summary,
+                    }
+                ),
+            }
+        )
+    return {
+        "actions": normalized_actions,
+        "pending_actions": [item["label"] for item in normalized_actions],
+    }
 
 
 def build_downstream_refresh_state(
@@ -151,6 +212,10 @@ def build_restart_surface_inputs(payload: dict[str, Any]) -> dict[str, Any]:
     verification_status = payload.get("verification_status") if isinstance(payload.get("verification_status"), dict) else {}
     pending = pending_pivot_stage_names(payload)
     completed = completed_pivot_stage_names(payload)
+    ticket_lineage_plan = normalize_ticket_lineage_plan(payload.get("ticket_lineage_plan"))
+    ticket_pack_builder_completed = "ticket-pack-builder" in completed
+    pending_ticket_lineage_actions = [] if ticket_pack_builder_completed else list(ticket_lineage_plan["pending_actions"])
+    completed_ticket_lineage_actions = list(ticket_lineage_plan["pending_actions"]) if ticket_pack_builder_completed else []
     return {
         "pivot_in_progress": bool(pending) or verification_status.get("verification_passed") is not True,
         "pivot_class": payload.get("pivot_class"),
@@ -163,6 +228,8 @@ def build_restart_surface_inputs(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "pending_downstream_stages": pending,
         "completed_downstream_stages": completed,
+        "pending_ticket_lineage_actions": pending_ticket_lineage_actions,
+        "completed_ticket_lineage_actions": completed_ticket_lineage_actions,
         "post_pivot_verification_passed": verification_status.get("verification_passed") is True,
     }
 
@@ -214,6 +281,7 @@ def normalize_pivot_payload(payload: Any) -> dict[str, Any]:
     downstream_state["pending_stages"] = pending_pivot_stage_names({"downstream_refresh_state": downstream_state})
     downstream_state["history"] = downstream_state.get("history") if isinstance(downstream_state.get("history"), list) else []
     payload["downstream_refresh_state"] = downstream_state
+    payload["ticket_lineage_plan"] = normalize_ticket_lineage_plan(payload.get("ticket_lineage_plan"))
     payload["restart_surface_inputs"] = build_restart_surface_inputs(payload)
     return payload
 
