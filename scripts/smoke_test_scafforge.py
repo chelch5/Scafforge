@@ -72,6 +72,7 @@ def prepare_generated_tool_runtime(dest: Path) -> None:
                 "  return {",
                 "    describe() { return this },",
                 "    optional() { return this },",
+                "    int() { return this },",
                 "  }",
                 "}",
                 "const schema = {",
@@ -79,6 +80,7 @@ def prepare_generated_tool_runtime(dest: Path) -> None:
                 "  boolean: () => chain(),",
                 "  enum: () => chain(),",
                 "  array: () => chain(),",
+                "  number: () => chain(),",
                 "}",
                 "export function tool(definition) {",
                 "  return definition",
@@ -123,6 +125,39 @@ def run_generated_tool(dest: Path, relative_tool_path: str, args: dict[str, obje
         dest,
         env=env,
     )
+
+
+def register_current_ticket_artifact(
+    dest: Path,
+    *,
+    ticket_id: str,
+    kind: str,
+    stage: str,
+    relative_path: str,
+    summary: str,
+    content: str,
+    created_at: str = "2026-03-30T00:00:00Z",
+) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    registry_path = dest / ".opencode" / "state" / "artifacts" / "registry.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    artifact_path = dest / relative_path
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(content, encoding="utf-8")
+    artifact = {
+        "kind": kind,
+        "path": relative_path,
+        "stage": stage,
+        "summary": summary,
+        "created_at": created_at,
+        "trust_state": "current",
+    }
+    ticket = next(item for item in manifest["tickets"] if item["id"] == ticket_id)
+    ticket.setdefault("artifacts", []).append(artifact)
+    registry.setdefault("artifacts", []).append({"ticket_id": ticket_id, **artifact})
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    registry_path.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
 
 
 def seed_uv_python_fixture(
@@ -2833,6 +2868,131 @@ def main() -> int:
         reconciliation_artifact = executed_reconciliation_dest / str(reconciliation_result["reconciliation_artifact"])
         if not reconciliation_artifact.exists():
             raise RuntimeError("ticket_reconcile should write the canonical reconciliation artifact")
+
+        executed_split_scope_dest = workspace / "executed-ticket-create-split-scope"
+        shutil.copytree(full_dest, executed_split_scope_dest)
+        split_scope_result = run_generated_tool(
+            executed_split_scope_dest,
+            ".opencode/tools/ticket_create.ts",
+            {
+                "id": "EXEC-SPLIT",
+                "title": "Synthetic split-scope child",
+                "lane": "implementation",
+                "wave": 2,
+                "summary": "Split child created through the generated ticket_create tool.",
+                "acceptance": ["Child scope is tracked independently."],
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "split_scope",
+                "activate": True,
+            },
+        )
+        if split_scope_result["created_ticket"] != "EXEC-SPLIT" or split_scope_result["source_mode"] != "split_scope":
+            raise RuntimeError("ticket_create should report the created split-scope child and its source_mode")
+        split_scope_manifest = json.loads((executed_split_scope_dest / "tickets" / "manifest.json").read_text(encoding="utf-8"))
+        split_source = next(ticket for ticket in split_scope_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        split_child = next(ticket for ticket in split_scope_manifest["tickets"] if ticket["id"] == "EXEC-SPLIT")
+        if split_scope_manifest["active_ticket"] != "EXEC-SPLIT":
+            raise RuntimeError("ticket_create should activate the split-scope child when requested")
+        if split_child["source_ticket_id"] != "SETUP-001" or split_child["source_mode"] != "split_scope":
+            raise RuntimeError("ticket_create should persist split-scope lineage on the created child")
+        if "EXEC-SPLIT" not in split_source["follow_up_ticket_ids"]:
+            raise RuntimeError("ticket_create should append split-scope children to the source follow_up_ticket_ids")
+        if not any("Keep the parent open and non-foreground until the child work lands." in item for item in split_source["decision_blockers"]):
+            raise RuntimeError("ticket_create should record the split-scope parent guidance on the source ticket")
+
+        executed_process_verification_dest = workspace / "executed-ticket-create-process-verification"
+        shutil.copytree(full_dest, executed_process_verification_dest)
+        seed_closed_ticket_needing_explicit_reverification(executed_process_verification_dest)
+        process_manifest_path = executed_process_verification_dest / "tickets" / "manifest.json"
+        process_workflow_path = executed_process_verification_dest / ".opencode" / "state" / "workflow-state.json"
+        process_manifest = json.loads(process_manifest_path.read_text(encoding="utf-8"))
+        process_workflow = json.loads(process_workflow_path.read_text(encoding="utf-8"))
+        process_workflow["pending_process_verification"] = True
+        process_manifest_path.write_text(json.dumps(process_manifest, indent=2) + "\n", encoding="utf-8")
+        process_workflow_path.write_text(json.dumps(process_workflow, indent=2) + "\n", encoding="utf-8")
+        process_evidence_rel = ".opencode/state/reviews/setup-001-review-backlog-verification.md"
+        register_current_ticket_artifact(
+            executed_process_verification_dest,
+            ticket_id="SETUP-001",
+            kind="backlog-verification",
+            stage="review",
+            relative_path=process_evidence_rel,
+            summary="Synthetic process-verification evidence.",
+            content="# Backlog Verification\n\nProcess verification evidence.\n",
+        )
+        process_verification_result = run_generated_tool(
+            executed_process_verification_dest,
+            ".opencode/tools/ticket_create.ts",
+            {
+                "id": "EXEC-PV",
+                "title": "Synthetic process-verification follow-up",
+                "lane": "workflow",
+                "wave": 3,
+                "summary": "Process verification follow-up created through ticket_create.",
+                "acceptance": ["Process verification follow-up is tracked."],
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "process_verification",
+                "evidence_artifact_path": process_evidence_rel,
+                "activate": True,
+            },
+        )
+        if process_verification_result["created_ticket"] != "EXEC-PV" or process_verification_result["source_mode"] != "process_verification":
+            raise RuntimeError("ticket_create should report process_verification follow-up creation correctly")
+        process_verification_manifest = json.loads(process_manifest_path.read_text(encoding="utf-8"))
+        process_follow_up = next(ticket for ticket in process_verification_manifest["tickets"] if ticket["id"] == "EXEC-PV")
+        if process_follow_up["source_ticket_id"] != "SETUP-001" or process_follow_up["source_mode"] != "process_verification":
+            raise RuntimeError("ticket_create should persist process-verification lineage and mode on the created follow-up")
+        if process_verification_manifest["active_ticket"] != "EXEC-PV":
+            raise RuntimeError("ticket_create should activate the process-verification follow-up when requested")
+
+        executed_issue_intake_dest = workspace / "executed-issue-intake"
+        shutil.copytree(full_dest, executed_issue_intake_dest)
+        seed_closed_ticket_needing_explicit_reverification(executed_issue_intake_dest)
+        rollback_evidence_rel = ".opencode/state/reviews/setup-001-review-existing-evidence.md"
+        register_current_ticket_artifact(
+            executed_issue_intake_dest,
+            ticket_id="SETUP-001",
+            kind="backlog-verification",
+            stage="review",
+            relative_path=rollback_evidence_rel,
+            summary="Synthetic issue-intake evidence.",
+            content="# Existing Evidence\n\nRollback-required defect proof.\n",
+        )
+        issue_intake_result = run_generated_tool(
+            executed_issue_intake_dest,
+            ".opencode/tools/issue_intake.ts",
+            {
+                "source_ticket_id": "SETUP-001",
+                "defect_class": "regression",
+                "acceptance_broken": False,
+                "scope_changed": True,
+                "rollback_required": True,
+                "evidence_artifact_path": rollback_evidence_rel,
+                "follow_up_id": "EXEC-ROLLBACK",
+                "follow_up_title": "Synthetic rollback follow-up",
+                "follow_up_lane": "workflow",
+                "follow_up_wave": 4,
+                "follow_up_summary": "Rollback-required follow-up created through issue_intake.",
+                "follow_up_acceptance": ["Rollback work is queued explicitly."],
+            },
+        )
+        if issue_intake_result["outcome"] != "rollback_required" or issue_intake_result["created_ticket_id"] != "EXEC-ROLLBACK":
+            raise RuntimeError("issue_intake should route rollback-required defects into an explicit follow-up ticket")
+        issue_manifest = json.loads((executed_issue_intake_dest / "tickets" / "manifest.json").read_text(encoding="utf-8"))
+        issue_workflow = json.loads((executed_issue_intake_dest / ".opencode" / "state" / "workflow-state.json").read_text(encoding="utf-8"))
+        issue_source = next(ticket for ticket in issue_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        issue_follow_up = next(ticket for ticket in issue_manifest["tickets"] if ticket["id"] == "EXEC-ROLLBACK")
+        if issue_source["verification_state"] != "invalidated":
+            raise RuntimeError("issue_intake should invalidate the source ticket when rollback is required")
+        if issue_workflow["ticket_state"]["SETUP-001"]["needs_reverification"] is not True:
+            raise RuntimeError("issue_intake should mark the source ticket as needing reverification when rollback is required")
+        if issue_manifest["active_ticket"] != "EXEC-ROLLBACK":
+            raise RuntimeError("issue_intake should foreground the created rollback follow-up ticket")
+        if issue_follow_up["source_ticket_id"] != "SETUP-001" or issue_follow_up["source_mode"] != "post_completion_issue":
+            raise RuntimeError("issue_intake should create rollback follow-up tickets with post_completion_issue lineage")
+        issue_artifact = executed_issue_intake_dest / str(issue_intake_result["issue_artifact"])
+        if not issue_artifact.exists():
+            raise RuntimeError("issue_intake should write the canonical issue-discovery artifact")
 
         hidden_clearable_pending_dest = workspace / "hidden-clearable-pending-process-verification"
         shutil.copytree(full_dest, hidden_clearable_pending_dest)

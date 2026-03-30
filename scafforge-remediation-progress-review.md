@@ -177,6 +177,12 @@ Implemented:
 - explicit closed-ticket reverification now surfaces as the next legal move even when `pending_process_verification` is false but workflow state still requires reverification
 - explicit historical reconciliation now surfaces as the next legal move for `done + superseded + invalidated` tickets
 - direct mutation-surface coverage for `ticket_reverify` and `ticket_reconcile` is stronger at the package-validation and smoke level, so trust-restoration and lineage-repair state changes are guarded more directly than before
+- package-local generated-tool execution coverage now exercises:
+  - `ticket_reverify`
+  - `ticket_reconcile`
+  - `ticket_create` split-scope follow-up creation
+  - `ticket_create` process-verification follow-up creation
+  - `issue_intake` rollback-required follow-up creation
 - restart-surface fixtures now cover:
   - closed ticket with blocked dependents
   - closed ticket needing explicit reverification
@@ -191,11 +197,13 @@ Important detail:
 
 - this phase was not only contract work
 - several of the key improvements were made in the generated repo runtime surfaces themselves, not only in docs or validators
+- the smoke harness now executes a larger slice of the generated TypeScript tools under a stubbed plugin runtime instead of only checking static contract presence
 
 Not yet done:
 
-- `ticket_reverify` and `ticket_reconcile` now have package-local generated-tool execution coverage through a stubbed plugin runtime harness, but broader generated TypeScript execution coverage is still not generalized across the full tool surface
-- there is still room to extend that execution harness beyond these two historical-mutation tools into more of the generated workflow toolchain
+- generated-tool execution coverage is still selective rather than comprehensive
+- the stubbed plugin runtime harness has not yet been generalized across the full generated tool surface
+- more ordinary queue mutation paths such as intake and creation are now covered, but the wider generated workflow toolchain is still not fully execution-proven
 
 ### Phase 6: Add A First-Class Pivot Skill
 
@@ -285,14 +293,18 @@ Why it still matters:
 
 Still needed:
 
-- add stronger direct execution tests around `ticket_reverify`
-- add stronger direct execution tests around `ticket_reconcile`
+- extend generated-tool execution coverage beyond the currently exercised mutation tools:
+  - `ticket_reverify`
+  - `ticket_reconcile`
+  - `ticket_create`
+  - `issue_intake`
+- add direct execution coverage for more of the ordinary generated workflow toolchain and stage-gate paths
 - keep checking that generated mutation tools and routing surfaces stay aligned, not just documented
 
 Why it still matters:
 
 - most of the recent Phase 5 work fixed routing and next-move exposure
-- the underlying mutation tools now need more direct end-to-end protection
+- more of the underlying mutation tools now have direct end-to-end protection, but that protection is still not broad enough across the full generated tool surface
 
 ### 4. Implement Real Pivot Orchestration
 
