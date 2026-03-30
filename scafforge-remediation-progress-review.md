@@ -57,7 +57,7 @@ Important clarification:
 - Phase 3: substantially implemented
 - Phase 4: partially implemented
 - Phase 5: complete for the primary generated tool surfaces in the plan
-- Phase 6: partially implemented at contract level
+- Phase 6: complete
 - Phase 7: partially implemented
 - Phase 8: not started
 
@@ -294,6 +294,10 @@ Implemented:
   - [plan_pivot.py](/home/rowan/Scafforge/skills/scafforge-pivot/scripts/plan_pivot.py)
 - a packaged pivot downstream execution recording entrypoint now exists:
   - [record_pivot_stage_completion.py](/home/rowan/Scafforge/skills/scafforge-pivot/scripts/record_pivot_stage_completion.py)
+- a packaged pivot restart publication entrypoint now exists:
+  - [publish_pivot_surfaces.py](/home/rowan/Scafforge/skills/scafforge-pivot/scripts/publish_pivot_surfaces.py)
+- a packaged pivot ticket-lineage execution entrypoint now exists:
+  - [apply_pivot_lineage.py](/home/rowan/Scafforge/skills/scafforge-pivot/scripts/apply_pivot_lineage.py)
 - pivot orchestration now:
   - appends `Pivot History` entries to `docs/spec/CANONICAL-BRIEF.md`
   - writes `.opencode/meta/pivot-state.json`
@@ -303,9 +307,13 @@ Implemented:
   - initializes machine-readable downstream refresh execution state
   - exposes pivot restart-surface inputs such as `pivot_in_progress` and `pending_downstream_stages`
   - records a post-pivot verification result
+  - republishes restart surfaces immediately after pivot planning by default
 - routed pivot downstream work can now be recorded with evidence-backed completion state inside `.opencode/meta/pivot-state.json`
+- pivot restart publication now has a dedicated host-side surface that drives generated `handoff_publish` directly and records machine-readable publication state in `.opencode/meta/pivot-state.json`
 - generated handoff publication now consumes pivot state so `START-HERE.md`, `.opencode/state/latest-handoff.md`, and `.opencode/state/context-snapshot.md` can publish truthful pivot status after a pivot
 - pivot planning now emits a machine-readable ticket lineage plan for explicit supersede, reopen, reconcile, and follow-up routing when those actions are already known at pivot time
+- pivot lineage execution can now run explicit runtime-ready reopen, reconcile, and supersede actions through the generated repo's own ticket tools instead of leaving them only as routed prose
+- explicit lineage completion can auto-close the pivot's `ticket-pack-builder` follow-on stage when those actions fully satisfy the pivot lineage plan
 - pivot contract requires:
   - canonical truth update first
   - stale-surface mapping
@@ -317,14 +325,14 @@ What this achieved:
 - pivot is now a named lifecycle instead of an implied combination of refine, audit, and repair
 - pivot is no longer only prose and manifest routing; the package now has an executable host-side pivot planner with verifier-backed output and smoke coverage
 - downstream pivot work is no longer only implied by a routing list; the repo now has machine-readable progress state for which routed stages are still pending versus completed
-- restart publication after pivot now uses that machine-readable pivot state instead of dropping back to generic non-pivot handoff narratives
+- restart publication after pivot now uses that machine-readable pivot state instead of dropping back to generic non-pivot handoff narratives, and the pivot lifecycle can republish those surfaces directly without waiting for a later generic handoff
 - explicit pivot ticket actions are no longer buried only in prose or generic ticket-pack-builder routing; they can now be inspected as a first-class lineage plan in pivot state and restart surfaces
+- explicit pivot ticket actions can now be execution-backed directly from the pivot lifecycle when the plan already carries the required runtime evidence and replacement-source metadata
 
 Not yet done:
 
-- the pivot planner still records and routes downstream work rather than executing the full downstream lifecycle itself
-- ticket supersede/reopen/reconcile mutations are still delegated to the downstream ticket machinery instead of being execution-backed directly from the pivot layer
-- restart-surface publication after pivot still depends on later handoff/repair steps rather than a dedicated pivot publisher
+- unresolved follow-up ticket creation still routes through `ticket-pack-builder` unless the pivot plan carries a full runtime-ready ticket spec
+- broader downstream project-refresh stages are still recorded and published rather than auto-executed, which is intentional to keep `scafforge-pivot` from becoming a second scaffold or repair engine
 
 ### Phase 7: Rebuild Verification Around Curated Regression Fixtures
 
@@ -390,21 +398,7 @@ Why it still matters:
 - the core generated tools in the Phase 5 plan are now execution-backed
 - the remaining verification gap is now mainly plugin enforcement breadth and adjacent restart-policy surfaces, not the primary tool lifecycle itself
 
-### 3. Deepen Pivot Orchestration
-
-Still needed:
-
-- extend pivot beyond planning/recording into richer downstream execution support
-- add stronger runtime behavior for:
-  - ticket supersede/reopen/reconcile behavior
-  - downstream refresh execution-state tracking
-  - restart-surface publication after pivot
-
-Why it still matters:
-
-- the package now has an operational pivot planner, but the deeper plan intent is not complete until more of the lifecycle is execution-backed
-
-### 4. Finish Phase 0 And 7 Repo Cleanup
+### 3. Finish Phase 0 And 7 Repo Cleanup
 
 Still needed:
 
@@ -458,4 +452,4 @@ to:
 
 - a repo with stronger shared verification, more bounded repair semantics, better generated next-move routing, and substantially broader regression coverage for GPTTalker-class failures
 
-The largest remaining gap is no longer basic lifecycle direction. It is finishing the architectural cleanup and carrying the same rigor through the remaining audit, repair, pivot, fixture, and migration work.
+The largest remaining gap is no longer basic lifecycle direction. It is finishing the architectural cleanup and carrying the same rigor through the remaining audit, repair, fixture, and migration work.

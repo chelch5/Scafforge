@@ -405,7 +405,10 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     pivot_agent = ROOT / "skills" / "scafforge-pivot" / "agents" / "openai.yaml"
     pivot_script = ROOT / "skills" / "scafforge-pivot" / "scripts" / "plan_pivot.py"
     pivot_record_script = ROOT / "skills" / "scafforge-pivot" / "scripts" / "record_pivot_stage_completion.py"
+    pivot_publish_script = ROOT / "skills" / "scafforge-pivot" / "scripts" / "publish_pivot_surfaces.py"
+    pivot_apply_script = ROOT / "skills" / "scafforge-pivot" / "scripts" / "apply_pivot_lineage.py"
     pivot_tracking = ROOT / "skills" / "scafforge-pivot" / "scripts" / "pivot_tracking.py"
+    pivot_runtime = ROOT / "skills" / "scafforge-pivot" / "scripts" / "generated_tool_runtime.py"
     handoff = ROOT / "skills" / "handoff-brief" / "SKILL.md"
 
     require_paths(
@@ -424,7 +427,10 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
             pivot_agent,
             pivot_script,
             pivot_record_script,
+            pivot_publish_script,
+            pivot_apply_script,
             pivot_tracking,
+            pivot_runtime,
             handoff,
         ],
     )
@@ -512,6 +518,8 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, pivot_skill, "Pivot History")
     require_contains(findings, pivot_skill, "python3 scripts/plan_pivot.py <repo-root>")
     require_contains(findings, pivot_skill, "python3 scripts/record_pivot_stage_completion.py <repo-root>")
+    require_contains(findings, pivot_skill, "python3 scripts/apply_pivot_lineage.py <repo-root>")
+    require_contains(findings, pivot_skill, "python3 scripts/publish_pivot_surfaces.py <repo-root>")
     require_contains(findings, pivot_skill, ".opencode/meta/pivot-state.json")
     require_contains(findings, pivot_skill, "pivot_in_progress")
     require_contains(findings, pivot_skill, "pending_downstream_stages")
@@ -519,7 +527,10 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, pivot_skill, "--supersede-ticket <id>")
     require_contains(findings, pivot_skill, "--reopen-ticket <id>")
     require_contains(findings, pivot_skill, "--reconcile-ticket <id>")
+    require_contains(findings, pivot_skill, "--lineage-evidence <ticket-id>=<repo-relative-artifact-path>")
+    require_contains(findings, pivot_skill, "--replacement-source <ticket-id>=<replacement-source-ticket-id>")
     require_contains(findings, pivot_skill, "ticket_lineage_plan")
+    require_contains(findings, pivot_skill, "restart-surface publication")
     require_contains(findings, pivot_skill, "Do not let `scafforge-pivot` become a second scaffold engine or a second repair engine.")
     require_contains(findings, pivot_skill, "Use repair only for managed workflow refresh, not for product-truth changes")
     require_contains(findings, pivot_agent, 'display_name: "Scafforge Pivot"')
@@ -531,6 +542,9 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, pivot_script, "ticket_lineage_plan")
     require_contains(findings, pivot_script, "--supersede-ticket")
     require_contains(findings, pivot_script, "--reconcile-ticket")
+    require_contains(findings, pivot_script, "--lineage-evidence")
+    require_contains(findings, pivot_script, "--replacement-source")
+    require_contains(findings, pivot_script, "publish_pivot_surfaces")
     require_contains(findings, pivot_script, "docs/spec/CANONICAL-BRIEF.md")
     require_contains(findings, pivot_script, ".opencode/meta/pivot-state.json")
     require_contains(findings, pivot_script, "Pivot History")
@@ -541,9 +555,23 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, pivot_tracking, "pending_ticket_lineage_actions")
     require_contains(findings, pivot_tracking, "create_follow_up")
     require_contains(findings, pivot_tracking, "recorded_execution")
+    require_contains(findings, pivot_tracking, "restart_surface_publication")
+    require_contains(findings, pivot_tracking, "generated_tool_execution")
+    require_contains(findings, pivot_tracking, "pivot_lineage_execution")
     require_contains(findings, pivot_record_script, "Record completion of a Scafforge pivot downstream stage")
     require_contains(findings, pivot_record_script, ".opencode/meta/pivot-state.json")
+    require_contains(findings, pivot_record_script, "publish_pivot_surfaces")
     require_script_help_runs(findings, pivot_record_script)
+    require_contains(findings, pivot_publish_script, "Republish generated restart surfaces")
+    require_contains(findings, pivot_publish_script, ".opencode/tools/handoff_publish.ts")
+    require_script_help_runs(findings, pivot_publish_script)
+    require_contains(findings, pivot_apply_script, "Execute explicit pivot ticket lineage actions")
+    require_contains(findings, pivot_apply_script, "ticket_reopen.ts")
+    require_contains(findings, pivot_apply_script, "ticket_reconcile.ts")
+    require_contains(findings, pivot_apply_script, "publish_pivot_surfaces")
+    require_script_help_runs(findings, pivot_apply_script)
+    require_contains(findings, pivot_runtime, "--experimental-strip-types")
+    require_contains(findings, pivot_runtime, "@opencode-ai/plugin")
 
     require_contains(findings, handoff, "**Generation Status**")
     require_contains(findings, handoff, "**Post-Generation Audit Status**")

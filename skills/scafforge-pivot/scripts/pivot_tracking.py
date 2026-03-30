@@ -38,6 +38,11 @@ TICKET_LINEAGE_ACTION_TYPES = {
     "create_follow_up",
 }
 
+LINEAGE_ACTION_STATUSES = {
+    "planned",
+    "completed",
+}
+
 
 def current_iso_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -82,6 +87,10 @@ def validate_ticket_lineage_action_type(action_type: str) -> str:
     raise ValueError(f"Unknown pivot ticket lineage action: {action_type}. Known actions: {known}")
 
 
+def normalize_ticket_lineage_status(value: Any) -> str:
+    return str(value).strip() if str(value).strip() in LINEAGE_ACTION_STATUSES else "planned"
+
+
 def summarize_ticket_lineage_action(action: dict[str, Any]) -> str:
     action_type = validate_ticket_lineage_action_type(str(action.get("action", "")))
     raw_target_ticket_id = action.get("target_ticket_id")
@@ -98,6 +107,7 @@ def normalize_ticket_lineage_plan(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         value = {}
     actions_raw = value.get("actions") if isinstance(value.get("actions"), list) else []
+    history = value.get("history") if isinstance(value.get("history"), list) else []
     normalized_actions: list[dict[str, Any]] = []
     for item in actions_raw:
         if not isinstance(item, dict):
@@ -107,24 +117,41 @@ def normalize_ticket_lineage_plan(value: Any) -> dict[str, Any]:
         target_ticket_id = raw_target_ticket_id.strip() if isinstance(raw_target_ticket_id, str) and raw_target_ticket_id.strip() else None
         summary = str(item.get("summary", "")).strip()
         reason = str(item.get("reason", "")).strip()
+        evidence_artifact_path = str(item.get("evidence_artifact_path", "")).strip() or None
+        replacement_source_ticket_id = str(item.get("replacement_source_ticket_id", "")).strip() or None
+        replacement_source_mode = str(item.get("replacement_source_mode", "")).strip() or None
+        ticket_spec = item.get("ticket_spec") if isinstance(item.get("ticket_spec"), dict) else None
+        label = summarize_ticket_lineage_action(
+            {
+                "action": action_type,
+                "target_ticket_id": target_ticket_id,
+                "summary": summary,
+            }
+        )
         normalized_actions.append(
             {
                 "action": action_type,
                 "target_ticket_id": target_ticket_id,
                 "summary": summary,
                 "reason": reason,
-                "label": summarize_ticket_lineage_action(
-                    {
-                        "action": action_type,
-                        "target_ticket_id": target_ticket_id,
-                        "summary": summary,
-                    }
-                ),
+                "label": label,
+                "status": normalize_ticket_lineage_status(item.get("status")),
+                "completion_mode": str(item.get("completion_mode", "")).strip() or None,
+                "completed_by": str(item.get("completed_by", "")).strip() or None,
+                "execution_summary": str(item.get("execution_summary", "")).strip() or None,
+                "execution_result": item.get("execution_result") if isinstance(item.get("execution_result"), dict) else None,
+                "last_updated_at": str(item.get("last_updated_at", "")).strip() or None,
+                "evidence_artifact_path": evidence_artifact_path,
+                "replacement_source_ticket_id": replacement_source_ticket_id,
+                "replacement_source_mode": replacement_source_mode,
+                "ticket_spec": ticket_spec,
             }
         )
     return {
         "actions": normalized_actions,
-        "pending_actions": [item["label"] for item in normalized_actions],
+        "history": history,
+        "pending_actions": [item["label"] for item in normalized_actions if item["status"] != "completed"],
+        "completed_actions": [item["label"] for item in normalized_actions if item["status"] == "completed"],
     }
 
 
@@ -207,15 +234,46 @@ def pending_pivot_stage_names(payload: dict[str, Any]) -> list[str]:
     return [stage for stage in required_stages if stage not in completed]
 
 
+def synchronize_lineage_with_ticket_pack_builder(payload: dict[str, Any]) -> None:
+    downstream_state = payload.get("downstream_refresh_state") if isinstance(payload.get("downstream_refresh_state"), dict) else {}
+    lineage_plan = payload.get("ticket_lineage_plan") if isinstance(payload.get("ticket_lineage_plan"), dict) else {}
+    if not isinstance(downstream_state, dict) or not isinstance(lineage_plan, dict):
+        return
+    stage_records = downstream_state.get("stage_records") if isinstance(downstream_state.get("stage_records"), dict) else {}
+    ticket_stage = stage_records.get("ticket-pack-builder") if isinstance(stage_records.get("ticket-pack-builder"), dict) else None
+    actions = lineage_plan.get("actions") if isinstance(lineage_plan.get("actions"), list) else []
+    if not ticket_stage or ticket_stage.get("status") != "completed" or not actions:
+        return
+    if any(isinstance(action, dict) and action.get("status") == "completed" for action in actions):
+        return
+    now = str(ticket_stage.get("last_updated_at") or current_iso_timestamp())
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        action["status"] = "completed"
+        action["completion_mode"] = "downstream_stage_completion"
+        action["completed_by"] = str(ticket_stage.get("completed_by") or "ticket-pack-builder")
+        action["execution_summary"] = str(ticket_stage.get("summary") or "Ticket lineage work completed through ticket-pack-builder.")
+        action["last_updated_at"] = now
+    history = lineage_plan.get("history") if isinstance(lineage_plan.get("history"), list) else []
+    history.append(
+        {
+            "recorded_at": now,
+            "event": "ticket-pack-builder:completed",
+            "summary": "All explicit pivot lineage actions were satisfied by ticket-pack-builder stage completion.",
+        }
+    )
+    lineage_plan["history"] = history
+
+
 def build_restart_surface_inputs(payload: dict[str, Any]) -> dict[str, Any]:
     stale_surface_map = payload.get("stale_surface_map") if isinstance(payload.get("stale_surface_map"), dict) else {}
     verification_status = payload.get("verification_status") if isinstance(payload.get("verification_status"), dict) else {}
     pending = pending_pivot_stage_names(payload)
     completed = completed_pivot_stage_names(payload)
     ticket_lineage_plan = normalize_ticket_lineage_plan(payload.get("ticket_lineage_plan"))
-    ticket_pack_builder_completed = "ticket-pack-builder" in completed
-    pending_ticket_lineage_actions = [] if ticket_pack_builder_completed else list(ticket_lineage_plan["pending_actions"])
-    completed_ticket_lineage_actions = list(ticket_lineage_plan["pending_actions"]) if ticket_pack_builder_completed else []
+    pending_ticket_lineage_actions = list(ticket_lineage_plan["pending_actions"])
+    completed_ticket_lineage_actions = list(ticket_lineage_plan["completed_actions"])
     return {
         "pivot_in_progress": bool(pending) or verification_status.get("verification_passed") is not True,
         "pivot_class": payload.get("pivot_class"),
@@ -231,6 +289,19 @@ def build_restart_surface_inputs(payload: dict[str, Any]) -> dict[str, Any]:
         "pending_ticket_lineage_actions": pending_ticket_lineage_actions,
         "completed_ticket_lineage_actions": completed_ticket_lineage_actions,
         "post_pivot_verification_passed": verification_status.get("verification_passed") is True,
+    }
+
+
+def normalize_restart_surface_publication(value: Any) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    return {
+        "status": str(raw.get("status", "")).strip() or "not_published",
+        "published_at": str(raw.get("published_at", "")).strip() or None,
+        "published_by": str(raw.get("published_by", "")).strip() or None,
+        "next_action": str(raw.get("next_action", "")).strip() or None,
+        "start_here": str(raw.get("start_here", "")).strip() or None,
+        "latest_handoff": str(raw.get("latest_handoff", "")).strip() or None,
+        "context_snapshot": str(raw.get("context_snapshot", "")).strip() or None,
     }
 
 
@@ -282,6 +353,9 @@ def normalize_pivot_payload(payload: Any) -> dict[str, Any]:
     downstream_state["history"] = downstream_state.get("history") if isinstance(downstream_state.get("history"), list) else []
     payload["downstream_refresh_state"] = downstream_state
     payload["ticket_lineage_plan"] = normalize_ticket_lineage_plan(payload.get("ticket_lineage_plan"))
+    synchronize_lineage_with_ticket_pack_builder(payload)
+    payload["ticket_lineage_plan"] = normalize_ticket_lineage_plan(payload.get("ticket_lineage_plan"))
+    payload["restart_surface_publication"] = normalize_restart_surface_publication(payload.get("restart_surface_publication"))
     payload["restart_surface_inputs"] = build_restart_surface_inputs(payload)
     return payload
 
@@ -296,6 +370,97 @@ def load_pivot_state(repo_root: Path) -> dict[str, Any]:
 def persist_pivot_state(repo_root: Path, payload: dict[str, Any]) -> None:
     normalized = normalize_pivot_payload(payload)
     write_json(repo_root / PIVOT_STATE_PATH, normalized)
+
+
+def ensure_ticket_pack_builder_completion(payload: dict[str, Any], *, completed_by: str, summary: str) -> None:
+    downstream_state = payload.get("downstream_refresh_state")
+    if not isinstance(downstream_state, dict):
+        return
+    required_stages = downstream_state.get("required_stages") if isinstance(downstream_state.get("required_stages"), list) else []
+    if "ticket-pack-builder" not in required_stages:
+        return
+    lineage_plan = payload.get("ticket_lineage_plan") if isinstance(payload.get("ticket_lineage_plan"), dict) else {}
+    actions = lineage_plan.get("actions") if isinstance(lineage_plan.get("actions"), list) else []
+    if any(isinstance(action, dict) and action.get("status") != "completed" for action in actions):
+        return
+    now = current_iso_timestamp()
+    existing = downstream_state["stage_records"].get("ticket-pack-builder", {})
+    if existing.get("status") == "completed":
+        return
+    downstream_state["stage_records"]["ticket-pack-builder"] = {
+        **existing,
+        **pivot_stage_metadata("ticket-pack-builder"),
+        "status": "completed",
+        "completion_mode": "pivot_lineage_execution",
+        "completed_by": completed_by.strip(),
+        "summary": summary.strip(),
+        "evidence_paths": sorted(
+            {
+                str(action.get("evidence_artifact_path", "")).strip()
+                for action in actions
+                if isinstance(action, dict) and str(action.get("evidence_artifact_path", "")).strip()
+            }
+        ),
+        "last_updated_at": now,
+    }
+    history = downstream_state.get("history") if isinstance(downstream_state.get("history"), list) else []
+    history.append(
+        {
+            "recorded_at": now,
+            **pivot_stage_metadata("ticket-pack-builder"),
+            "status": "completed",
+            "completion_mode": "pivot_lineage_execution",
+            "completed_by": completed_by.strip(),
+            "summary": summary.strip(),
+            "pivot_id": downstream_state.get("pivot_id"),
+        }
+    )
+    downstream_state["history"] = history
+    downstream_state["last_updated_at"] = now
+    payload["downstream_refresh_state"] = downstream_state
+
+
+def record_ticket_lineage_action_completion(
+    repo_root: Path,
+    *,
+    label: str,
+    completed_by: str,
+    summary: str,
+    execution_result: dict[str, Any],
+) -> dict[str, Any]:
+    payload = load_pivot_state(repo_root)
+    lineage_plan = payload["ticket_lineage_plan"]
+    actions = lineage_plan["actions"]
+    target_action = next((item for item in actions if item.get("label") == label), None)
+    if not isinstance(target_action, dict):
+        raise ValueError(f"Pivot ticket lineage action not found: {label}")
+    now = current_iso_timestamp()
+    target_action["status"] = "completed"
+    target_action["completion_mode"] = "generated_tool_execution"
+    target_action["completed_by"] = completed_by.strip()
+    target_action["execution_summary"] = summary.strip()
+    target_action["execution_result"] = execution_result
+    target_action["last_updated_at"] = now
+    history = lineage_plan.get("history") if isinstance(lineage_plan.get("history"), list) else []
+    history.append(
+        {
+            "recorded_at": now,
+            "event": "ticket_lineage_action:completed",
+            "label": label,
+            "completed_by": completed_by.strip(),
+            "summary": summary.strip(),
+        }
+    )
+    lineage_plan["history"] = history
+    payload["ticket_lineage_plan"] = lineage_plan
+    ensure_ticket_pack_builder_completion(
+        payload,
+        completed_by=completed_by,
+        summary="Explicit pivot lineage actions completed through generated repo ticket tools.",
+    )
+    payload["restart_surface_inputs"] = build_restart_surface_inputs(payload)
+    persist_pivot_state(repo_root, payload)
+    return payload
 
 
 def record_pivot_stage_completion(
