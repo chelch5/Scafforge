@@ -1903,6 +1903,8 @@ def main() -> int:
             raise RuntimeError("Generated workflow.ts should refresh derived restart surfaces after workflow mutations")
         if "latestHandoffPath" not in generated_workflow:
             raise RuntimeError("Generated workflow.ts should own the latest-handoff restart surface")
+        if "export function blockedDependentTickets" not in generated_workflow:
+            raise RuntimeError("Generated workflow.ts should expose blocked dependent routing as a reusable canonical helper")
         if "Historical done-ticket reverification stays secondary until the active open ticket is resolved." not in generated_workflow:
             raise RuntimeError("Generated workflow.ts should keep the active open ticket primary when process verification is pending")
         if "Cannot publish dependency-readiness claims" not in generated_workflow or "Cannot publish causal claims" not in generated_workflow:
@@ -1916,6 +1918,8 @@ def main() -> int:
             raise RuntimeError("Generated ticket_lookup.ts should short-circuit lifecycle guidance to environment_bootstrap when bootstrap is not ready")
         if "Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly." not in generated_ticket_lookup:
             raise RuntimeError("Generated ticket_lookup.ts should foreground split children without marking the parent blocked")
+        if "Current ticket is already closed. Activate dependent ticket ${nextDependent.id} and continue that lane instead of trying to mutate ${ticket.id} again." not in generated_ticket_lookup:
+            raise RuntimeError("Generated ticket_lookup.ts should route closed completed tickets to blocked dependents instead of presenting them as terminal")
         if 'next_action_tool: "smoke_test",\n          delegate_to_agent: null,\n          required_owner: "team-leader",' not in generated_ticket_lookup:
             raise RuntimeError("Generated ticket_lookup.ts should keep smoke_test team-leader-owned instead of delegating it to tester-qa")
         generated_ticket_create = (full_dest / ".opencode" / "tools" / "ticket_create.ts").read_text(encoding="utf-8")

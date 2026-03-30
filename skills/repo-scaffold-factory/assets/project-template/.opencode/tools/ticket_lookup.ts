@@ -1,6 +1,7 @@
 import { tool } from "@opencode-ai/plugin"
 import { readFile } from "node:fs/promises"
 import {
+  blockedDependentTickets,
   currentArtifacts,
   defaultArtifactPath,
   describeAllowedStatusesForStage,
@@ -36,6 +37,7 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
   const repairFollowOnStage = nextRepairFollowOnStage(workflow)
   const repairFollowOnBlocker = repairFollowOnBlockingReason(workflow)
   const splitChildren = openSplitScopeChildren(manifest, ticket.id)
+  const blockedDependents = blockedDependentTickets(manifest, ticket.id)
   const base = {
     current_stage: ticket.stage,
     current_status: ticket.status,
@@ -289,6 +291,20 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           artifact_kind: "backlog-verification",
           recommended_action: "Ticket is already closed, but historical trust still needs restoration. Use the backlog verifier to produce current evidence, then run ticket_reverify on this closed ticket instead of trying to reclaim it.",
           recommended_ticket_update: null,
+        }
+      }
+      if (ticket.status === "done" && blockedDependents.length > 0) {
+        const nextDependent = blockedDependents[0]
+        return {
+          ...base,
+          next_allowed_stages: [nextDependent.stage],
+          required_artifacts: ["smoke-test"],
+          next_action_kind: "ticket_update",
+          next_action_tool: "ticket_update",
+          delegate_to_agent: null,
+          required_owner: "team-leader",
+          recommended_action: `Current ticket is already closed. Activate dependent ticket ${nextDependent.id} and continue that lane instead of trying to mutate ${ticket.id} again.`,
+          recommended_ticket_update: { ticket_id: nextDependent.id, activate: true },
         }
       }
       return {

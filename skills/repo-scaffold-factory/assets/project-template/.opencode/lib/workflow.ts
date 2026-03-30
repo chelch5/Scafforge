@@ -651,7 +651,7 @@ export async function validateSmokeTestArtifactEvidence(ticket: Ticket, root = r
   return /Overall Result:\s*PASS/i.test(content) ? null : "Smoke-test artifact must record an explicit PASS result before closeout."
 }
 
-function blockedDependentTickets(manifest: Manifest, ticketId: string): Ticket[] {
+export function blockedDependentTickets(manifest: Manifest, ticketId: string): Ticket[] {
   return manifest.tickets.filter((item) => item.depends_on.includes(ticketId) && item.status !== "done")
 }
 export function splitScopeChildren(manifest: Manifest, ticketId: string): Ticket[] {
