@@ -114,6 +114,16 @@ def summarize_ticket_ids(items: list[dict[str, Any]]) -> str:
     return ", ".join(values) if values else "none"
 
 
+def dependent_continuation_action(ticket: dict[str, Any], blocked: list[dict[str, Any]]) -> str:
+    next_dependent = next((item for item in blocked if isinstance(item, dict) and str(item.get("id", "")).strip()), None)
+    if not isinstance(next_dependent, dict):
+        return "Continue the required internal lifecycle from the current ticket stage."
+    return (
+        f"Current ticket is already closed. Activate dependent ticket {next_dependent.get('id')} "
+        f"and continue that lane instead of trying to mutate {ticket.get('id')} again."
+    )
+
+
 def normalize_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -319,7 +329,7 @@ def default_next_action(manifest: dict[str, Any], workflow: dict[str, Any], back
             f"process contract: {summarize_ticket_ids(verification_state['affected_done_tickets'])}."
         )
     if blocked:
-        return f"Resume dependent tickets waiting on {ticket.get('id')}: {summarize_ticket_ids(blocked)}."
+        return dependent_continuation_action(ticket, blocked)
     return "Continue the required internal lifecycle from the current ticket stage."
 
 

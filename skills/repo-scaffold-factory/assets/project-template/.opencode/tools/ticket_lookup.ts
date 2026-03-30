@@ -4,6 +4,7 @@ import {
   blockedDependentTickets,
   currentArtifacts,
   defaultArtifactPath,
+  dependentContinuationAction,
   describeAllowedStatusesForStage,
   getTicket,
   getTicketWorkflowState,
@@ -303,7 +304,7 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           next_action_tool: "ticket_update",
           delegate_to_agent: null,
           required_owner: "team-leader",
-          recommended_action: `Current ticket is already closed. Activate dependent ticket ${nextDependent.id} and continue that lane instead of trying to mutate ${ticket.id} again.`,
+          recommended_action: dependentContinuationAction(ticket, blockedDependents),
           recommended_ticket_update: { ticket_id: nextDependent.id, activate: true },
         }
       }
