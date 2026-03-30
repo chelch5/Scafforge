@@ -31,9 +31,11 @@ FOLLOW_ON_STAGE_CATALOG = {
 }
 CANONICAL_STAGE_EVIDENCE = {
     "ticket-pack-builder": ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md",
+    "handoff-brief": ".opencode/state/artifacts/history/repair/handoff-brief-completion.md",
 }
 AUTO_DETECTED_COMPLETERS = {
     "ticket-pack-builder": "ticket-pack-builder:auto-detected",
+    "handoff-brief": "handoff-brief:auto-detected",
 }
 OPTIONAL_RECORDABLE_FOLLOW_ON_STAGES = {"handoff-brief"}
 
@@ -393,7 +395,10 @@ def auto_record_stage_completion_from_canonical_evidence(
     required_stage_names: list[str],
     repair_package_commit: str,
 ) -> tuple[dict[str, Any], list[str]]:
-    required_stage_names = normalize_follow_on_stage_names(required_stage_names)
+    candidate_stage_names = normalize_follow_on_stage_names(
+        required_stage_names
+        + [stage for stage in OPTIONAL_RECORDABLE_FOLLOW_ON_STAGES if canonical_stage_evidence_path(stage)]
+    )
     state = validate_recorded_execution_evidence(repo_root, state)
     persist_follow_on_tracking_state(repo_root, state)
 
@@ -402,7 +407,7 @@ def auto_record_stage_completion_from_canonical_evidence(
     if not cycle_id:
         return state, auto_recorded
 
-    for stage in required_stage_names:
+    for stage in candidate_stage_names:
         evidence_path = canonical_stage_evidence_path(stage)
         if not evidence_path:
             continue

@@ -86,10 +86,11 @@ Known stage names are still not enough by themselves. Outside the special closeo
 When a downstream stage emits a canonical repair completion artifact for the current repair cycle, the public repair runner may auto-recognize that stage on the next run instead of requiring a separate recording command. The current bounded auto-recognition path is:
 
 - `ticket-pack-builder` via `.opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md`
+- `handoff-brief` via `.opencode/state/artifacts/history/repair/handoff-brief-completion.md`
 
 That artifact is only trusted for the current repair cycle when it includes both:
 
-- `- completed_stage: ticket-pack-builder`
+- `- completed_stage: <stage-name>`
 - `- cycle_id: <current .opencode/meta/repair-follow-on-state.json cycle_id>`
 
 If a follow-on stage does not yet emit a canonical completion artifact, use `record_repair_stage_completion.py`.

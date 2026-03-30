@@ -4347,6 +4347,8 @@ def main() -> int:
             auto_cycle_id = auto_follow_on_state["cycle_id"]
             auto_evidence_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
             auto_evidence_path = auto_detected_follow_on_dest / auto_evidence_rel
+            auto_handoff_evidence_rel = ".opencode/state/artifacts/history/repair/handoff-brief-completion.md"
+            auto_handoff_evidence_path = auto_detected_follow_on_dest / auto_handoff_evidence_rel
             auto_evidence_path.parent.mkdir(parents=True, exist_ok=True)
             auto_evidence_path.write_text(
                 "# Repair Follow-On Completion\n\n"
@@ -4355,6 +4357,16 @@ def main() -> int:
                 "- completed_by: ticket-pack-builder\n\n"
                 "## Summary\n\n"
                 "- Created or updated the canonical repair follow-up tickets required by the current repair cycle.\n",
+                encoding="utf-8",
+            )
+            auto_handoff_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            auto_handoff_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: handoff-brief\n"
+                "- cycle_id: stale-cycle\n"
+                "- completed_by: handoff-brief\n\n"
+                "## Summary\n\n"
+                "- Refreshed START-HERE.md, context-snapshot.md, and latest-handoff.md for the current repair cycle.\n",
                 encoding="utf-8",
             )
             wrong_cycle_auto_detect_process = subprocess.run(
@@ -4408,6 +4420,15 @@ def main() -> int:
                 "- Created or updated the canonical repair follow-up tickets required by the current repair cycle.\n",
                 encoding="utf-8",
             )
+            auto_handoff_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: handoff-brief\n"
+                f"- cycle_id: {auto_cycle_id}\n"
+                "- completed_by: handoff-brief\n\n"
+                "## Summary\n\n"
+                "- Refreshed START-HERE.md, context-snapshot.md, and latest-handoff.md for the current repair cycle.\n",
+                encoding="utf-8",
+            )
             auto_detected_reuse = run_json(
                 [
                     sys.executable,
@@ -4419,15 +4440,19 @@ def main() -> int:
             )
             if auto_detected_reuse["execution_record"]["blocking_reasons"]:
                 raise RuntimeError("Managed repair should auto-recognize current-cycle canonical ticket-pack-builder completion evidence without a separate recording command")
-            if auto_detected_reuse["execution_record"]["auto_detected_recorded_stages"] != ["ticket-pack-builder"]:
-                raise RuntimeError("Managed repair should report current-cycle canonical ticket-pack-builder evidence as an auto-detected recorded stage")
-            if auto_detected_reuse["execution_record"]["recorded_execution_completed_stages"] != ["ticket-pack-builder"]:
-                raise RuntimeError("Auto-detected canonical ticket-pack-builder evidence should count as recorded_execution completion")
+            if auto_detected_reuse["execution_record"]["auto_detected_recorded_stages"] != ["handoff-brief", "ticket-pack-builder"]:
+                raise RuntimeError("Managed repair should report both current-cycle canonical repair artifacts as auto-detected recorded stages")
+            if auto_detected_reuse["execution_record"]["recorded_execution_completed_stages"] != ["handoff-brief", "ticket-pack-builder"]:
+                raise RuntimeError("Auto-detected canonical repair artifacts should count as recorded_execution completion for both stages")
             auto_detected_state = json.loads(auto_follow_on_state_path.read_text(encoding="utf-8"))
             if auto_detected_state["stage_records"]["ticket-pack-builder"]["completed_by"] != "ticket-pack-builder:auto-detected":
                 raise RuntimeError("Auto-detected canonical ticket-pack-builder evidence should persist completed_by as ticket-pack-builder:auto-detected")
             if auto_detected_state["stage_records"]["ticket-pack-builder"]["evidence_paths"] != [auto_evidence_rel]:
                 raise RuntimeError("Auto-detected canonical ticket-pack-builder evidence should preserve the canonical repair artifact path")
+            if auto_detected_state["stage_records"]["handoff-brief"]["completed_by"] != "handoff-brief:auto-detected":
+                raise RuntimeError("Auto-detected canonical handoff-brief evidence should persist completed_by as handoff-brief:auto-detected")
+            if auto_detected_state["stage_records"]["handoff-brief"]["evidence_paths"] != [auto_handoff_evidence_rel]:
+                raise RuntimeError("Auto-detected canonical handoff-brief evidence should preserve the canonical repair artifact path")
 
             zero_evidence_follow_on_dest = workspace / "zero-evidence-follow-on-repair"
             shutil.copytree(full_dest, zero_evidence_follow_on_dest)
