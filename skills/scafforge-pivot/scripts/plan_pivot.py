@@ -9,9 +9,17 @@ from pathlib import Path
 from typing import Any
 import sys
 
+from pivot_tracking import (
+    PIVOT_STATE_PATH,
+    build_downstream_refresh_state,
+    build_restart_surface_inputs,
+    persist_pivot_state,
+    pivot_stage_metadata,
+)
+
 
 SHARED_VERIFIER_PATH = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts" / "shared_verifier.py"
-PIVOT_STATE_PATH = Path(".opencode/meta/pivot-state.json")
+# Canonical persisted pivot state path inside the subject repo: .opencode/meta/pivot-state.json
 PROVENANCE_PATH = Path(".opencode/meta/bootstrap-provenance.json")
 CANONICAL_BRIEF_PATH = Path("docs/spec/CANONICAL-BRIEF.md")
 
@@ -173,34 +181,34 @@ def build_downstream_refresh(affected_families: list[str]) -> list[dict[str, str
     if "repo_local_skills" in affected:
         routing.append(
             {
-                "stage": "project-skill-bootstrap",
+                **pivot_stage_metadata("project-skill-bootstrap"),
                 "reason": "Pivot changed repo-local procedure or capability surfaces, so local skills need regeneration.",
             }
         )
     if "agent_team_and_prompts" in affected:
         routing.append(
             {
-                "stage": "opencode-team-bootstrap",
+                **pivot_stage_metadata("opencode-team-bootstrap"),
                 "reason": "Pivot changed team layout, delegation, or agent/tool boundaries.",
             }
         )
         routing.append(
             {
-                "stage": "agent-prompt-engineering",
+                **pivot_stage_metadata("agent-prompt-engineering"),
                 "reason": "Pivot changed prompt behavior or delegation semantics and requires prompt hardening after regeneration.",
             }
         )
     if "ticket_graph_and_lineage" in affected:
         routing.append(
             {
-                "stage": "ticket-pack-builder",
+                **pivot_stage_metadata("ticket-pack-builder"),
                 "reason": "Pivot changed ticket lineage or introduced new work that must be superseded, reopened, reconciled, or refined.",
             }
         )
     if "managed_workflow_tools_and_prompts" in affected:
         routing.append(
             {
-                "stage": "scafforge-repair",
+                **pivot_stage_metadata("scafforge-repair"),
                 "reason": "Pivot changed managed workflow contract surfaces and requires safe managed refresh instead of ad hoc edits.",
             }
         )
@@ -275,6 +283,7 @@ def main() -> int:
     downstream_refresh = build_downstream_refresh(affected_families)
     pivot_entry = {
         "recorded_at": timestamp,
+        "pivot_id": timestamp,
         "pivot_class": args.pivot_class,
         "requested_change": args.requested_change.strip(),
         "accepted_decisions": [item.strip() for item in args.accepted_decision if item.strip()],
@@ -289,6 +298,7 @@ def main() -> int:
 
     payload = {
         "repo_root": str(repo_root),
+        "pivot_id": timestamp,
         "pivot_class": args.pivot_class,
         "requested_change": args.requested_change.strip(),
         "accepted_decisions": pivot_entry["accepted_decisions"],
@@ -301,7 +311,13 @@ def main() -> int:
         "canonical_brief_path": str(CANONICAL_BRIEF_PATH).replace("\\", "/"),
         "pivot_state_path": str(PIVOT_STATE_PATH).replace("\\", "/"),
     }
-    write_json(repo_root / PIVOT_STATE_PATH, payload)
+    payload["downstream_refresh_state"] = build_downstream_refresh_state(
+        downstream_refresh,
+        pivot_id=timestamp,
+        recorded_at=timestamp,
+    )
+    payload["restart_surface_inputs"] = build_restart_surface_inputs(payload)
+    persist_pivot_state(repo_root, payload)
 
     if args.format in {"text", "both"}:
         print(render_text(payload))

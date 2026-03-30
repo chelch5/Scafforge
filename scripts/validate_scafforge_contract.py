@@ -404,6 +404,8 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     pivot_skill = ROOT / "skills" / "scafforge-pivot" / "SKILL.md"
     pivot_agent = ROOT / "skills" / "scafforge-pivot" / "agents" / "openai.yaml"
     pivot_script = ROOT / "skills" / "scafforge-pivot" / "scripts" / "plan_pivot.py"
+    pivot_record_script = ROOT / "skills" / "scafforge-pivot" / "scripts" / "record_pivot_stage_completion.py"
+    pivot_tracking = ROOT / "skills" / "scafforge-pivot" / "scripts" / "pivot_tracking.py"
     handoff = ROOT / "skills" / "handoff-brief" / "SKILL.md"
 
     require_paths(
@@ -421,6 +423,8 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
             pivot_skill,
             pivot_agent,
             pivot_script,
+            pivot_record_script,
+            pivot_tracking,
             handoff,
         ],
     )
@@ -507,17 +511,30 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, pivot_skill, "machine-readable stale-surface map")
     require_contains(findings, pivot_skill, "Pivot History")
     require_contains(findings, pivot_skill, "python3 scripts/plan_pivot.py <repo-root>")
+    require_contains(findings, pivot_skill, "python3 scripts/record_pivot_stage_completion.py <repo-root>")
     require_contains(findings, pivot_skill, ".opencode/meta/pivot-state.json")
+    require_contains(findings, pivot_skill, "pivot_in_progress")
+    require_contains(findings, pivot_skill, "pending_downstream_stages")
+    require_contains(findings, pivot_skill, "downstream execution-state progress")
     require_contains(findings, pivot_skill, "Do not let `scafforge-pivot` become a second scaffold engine or a second repair engine.")
     require_contains(findings, pivot_skill, "Use repair only for managed workflow refresh, not for product-truth changes")
     require_contains(findings, pivot_agent, 'display_name: "Scafforge Pivot"')
     require_contains(findings, pivot_script, '"verification_kind": "post_pivot"')
     require_contains(findings, pivot_script, "build_pivot_stale_surface_map")
     require_contains(findings, pivot_script, "downstream_refresh")
+    require_contains(findings, pivot_script, "downstream_refresh_state")
+    require_contains(findings, pivot_script, "restart_surface_inputs")
     require_contains(findings, pivot_script, "docs/spec/CANONICAL-BRIEF.md")
     require_contains(findings, pivot_script, ".opencode/meta/pivot-state.json")
     require_contains(findings, pivot_script, "Pivot History")
     require_script_help_runs(findings, pivot_script)
+    require_contains(findings, pivot_tracking, "PIVOT_STAGE_CATALOG")
+    require_contains(findings, pivot_tracking, "restart_surface_inputs")
+    require_contains(findings, pivot_tracking, "pending_downstream_stages")
+    require_contains(findings, pivot_tracking, "recorded_execution")
+    require_contains(findings, pivot_record_script, "Record completion of a Scafforge pivot downstream stage")
+    require_contains(findings, pivot_record_script, ".opencode/meta/pivot-state.json")
+    require_script_help_runs(findings, pivot_record_script)
 
     require_contains(findings, handoff, "**Generation Status**")
     require_contains(findings, handoff, "**Post-Generation Audit Status**")

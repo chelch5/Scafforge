@@ -18,6 +18,14 @@ python3 scripts/plan_pivot.py <repo-root> --pivot-class <class> --requested-chan
 
 Use this to write the canonical `Pivot History` entry, emit `.opencode/meta/pivot-state.json`, record bounded downstream refresh routing, and run the post-pivot verification pass. Keep it thin: this command plans and records the pivot, then routes follow-on work to the right downstream skills.
 
+Downstream stage recording command:
+
+```sh
+python3 scripts/record_pivot_stage_completion.py <repo-root> --stage <stage> --completed-by <owner> --summary "<summary>" --evidence <repo-relative-path>
+```
+
+Use this to record evidence-backed completion of a routed pivot downstream stage inside `.opencode/meta/pivot-state.json`.
+
 ## When to use this skill
 
 - `scaffold-kickoff` classifies the request as a pivot
@@ -78,7 +86,7 @@ Produce a machine-readable stale-surface map that classifies affected surfaces a
 - `ticket_follow_up`
 - `human_decision`
 
-Persist the resulting pivot state at `.opencode/meta/pivot-state.json` so later handoff and review work can inspect the exact pivot classification, stale-surface map, downstream refresh routing, and post-pivot verification result.
+Persist the resulting pivot state at `.opencode/meta/pivot-state.json` so later handoff and review work can inspect the exact pivot classification, stale-surface map, downstream refresh routing, downstream execution-state progress, and post-pivot verification result.
 
 At minimum, classify these families:
 
@@ -90,6 +98,15 @@ At minimum, classify these families:
 - restart surfaces
 
 If workflow surfaces drifted, route the managed refresh through `../scafforge-repair/SKILL.md` instead of open-coding the same repair logic here.
+
+The pivot state must also expose machine-readable restart-surface inputs:
+
+- `pivot_in_progress`
+- `pivot_class`
+- `pivot_changed_surfaces`
+- `pending_downstream_stages`
+- `completed_downstream_stages`
+- `post_pivot_verification_passed`
 
 ### 4. Refresh only the affected downstream surfaces
 
@@ -139,6 +156,7 @@ The handoff must state that a pivot occurred, which surfaces changed, and what f
 - machine-readable stale-surface map
 - `.opencode/meta/pivot-state.json`
 - explicit downstream refresh decisions
+- explicit downstream execution-state progress for routed pivot stages
 - ticket lineage updates or follow-up routing
 - post-pivot verification result
 - truthful restart surface inputs for handoff
@@ -150,6 +168,7 @@ Before leaving this skill, confirm all of these are true:
 - canonical brief truth was updated before any derived refresh work
 - the stale-surface map exists and matches the requested pivot
 - repair was used only for managed workflow refresh, not for product-truth changes
+- pivot downstream stage progress is recorded with evidence when routed work completes
 - ticket lineage and restart surfaces no longer present stale pre-pivot assumptions
 - post-pivot verification ran before handoff
 

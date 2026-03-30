@@ -292,13 +292,18 @@ Implemented:
 - pivot is wired into flow manifest and lifecycle docs
 - a packaged pivot orchestration entrypoint now exists:
   - [plan_pivot.py](/home/rowan/Scafforge/skills/scafforge-pivot/scripts/plan_pivot.py)
+- a packaged pivot downstream execution recording entrypoint now exists:
+  - [record_pivot_stage_completion.py](/home/rowan/Scafforge/skills/scafforge-pivot/scripts/record_pivot_stage_completion.py)
 - pivot orchestration now:
   - appends `Pivot History` entries to `docs/spec/CANONICAL-BRIEF.md`
   - writes `.opencode/meta/pivot-state.json`
   - appends pivot history to `.opencode/meta/bootstrap-provenance.json`
   - emits a machine-readable stale-surface map
   - computes bounded downstream refresh routing
+  - initializes machine-readable downstream refresh execution state
+  - exposes pivot restart-surface inputs such as `pivot_in_progress` and `pending_downstream_stages`
   - records a post-pivot verification result
+- routed pivot downstream work can now be recorded with evidence-backed completion state inside `.opencode/meta/pivot-state.json`
 - pivot contract requires:
   - canonical truth update first
   - stale-surface mapping
@@ -309,6 +314,7 @@ What this achieved:
 
 - pivot is now a named lifecycle instead of an implied combination of refine, audit, and repair
 - pivot is no longer only prose and manifest routing; the package now has an executable host-side pivot planner with verifier-backed output and smoke coverage
+- downstream pivot work is no longer only implied by a routing list; the repo now has machine-readable progress state for which routed stages are still pending versus completed
 
 Not yet done:
 
