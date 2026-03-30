@@ -187,6 +187,7 @@ Implemented:
 - recorded execution is now invalidated automatically when its supporting evidence path disappears, so repair stops trusting stale completion records
 - the public repair runner can now auto-recognize one bounded canonical follow-on completion artifact for the current repair cycle:
   - `ticket-pack-builder` via `.opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md` with matching `cycle_id`
+- repair follow-on stage recording is now locked to a canonical stage catalog, so unknown `--stage-complete` or recorded-completion labels fail closed instead of silently polluting repair state
 - repair verification now fails contract checks for:
   - non-clean zero-finding states
   - restart-surface drift after repair

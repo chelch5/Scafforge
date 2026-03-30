@@ -4077,6 +4077,49 @@ def main() -> int:
         if "validateHandoffNextAction" not in repaired_handoff or repaired_handoff.find("const handoffBlocker = await validateHandoffNextAction") >= repaired_handoff.find("await refreshRestartSurfaces"):
             raise RuntimeError("Repair should restore truthful handoff gating before restart-surface publication")
 
+        invalid_follow_on_stage_dest = workspace / "invalid-follow-on-stage"
+        shutil.copytree(full_dest, invalid_follow_on_stage_dest)
+        make_stack_skill_non_placeholder(invalid_follow_on_stage_dest)
+        invalid_public_stage = subprocess.run(
+            [
+                sys.executable,
+                str(PUBLIC_REPAIR),
+                str(invalid_follow_on_stage_dest),
+                "--skip-deterministic-refresh",
+                "--stage-complete",
+                "not-a-real-stage",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if invalid_public_stage.returncode == 0:
+            raise RuntimeError("Public managed repair runner should reject unknown follow-on stage names instead of silently recording them")
+        if "Unknown repair follow-on stage" not in invalid_public_stage.stderr and "Unknown repair follow-on stage" not in invalid_public_stage.stdout:
+            raise RuntimeError("Public managed repair runner should explain unknown follow-on stage rejection")
+        invalid_record_stage = subprocess.run(
+            [
+                sys.executable,
+                str(RECORD_REPAIR_STAGE),
+                str(invalid_follow_on_stage_dest),
+                "--stage",
+                "not-a-real-stage",
+                "--completed-by",
+                "tester",
+                "--summary",
+                "Invalid stage should fail.",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if invalid_record_stage.returncode == 0:
+            raise RuntimeError("record_repair_stage_completion should reject unknown follow-on stage names instead of silently persisting them")
+        if "Unknown repair follow-on stage" not in invalid_record_stage.stderr and "Unknown repair follow-on stage" not in invalid_record_stage.stdout:
+            raise RuntimeError("record_repair_stage_completion should explain unknown follow-on stage rejection")
+
         source_follow_up_repair_dest = workspace / "source-follow-up-repair"
         shutil.copytree(full_dest, source_follow_up_repair_dest)
         make_stack_skill_non_placeholder(source_follow_up_repair_dest)

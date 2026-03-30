@@ -24,6 +24,7 @@ from follow_on_tracking import (
     auto_record_stage_completion_from_canonical_evidence,
     completed_stage_names,
     invalidated_recorded_stage_names,
+    normalize_follow_on_stage_names,
     recorded_execution_stage_names,
     update_follow_on_tracking_state,
 )
@@ -291,7 +292,17 @@ def main() -> int:
         verification_status["verification_passed"] = False
         verification_status["causal_regression_verified"] = False
 
-    required_follow_on = derive_required_follow_on_stages(repo_root, findings, replaced_surfaces, pending_process_verification)
+    try:
+        required_follow_on = derive_required_follow_on_stages(repo_root, findings, replaced_surfaces, pending_process_verification)
+        required_follow_on = [
+            {
+                **item,
+                "stage": normalize_follow_on_stage_names([item["stage"]])[0],
+            }
+            for item in required_follow_on
+        ]
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     required_stage_names = [item["stage"] for item in required_follow_on]
     stale_surface_map = build_stale_surface_map(
         repo_root,
@@ -300,7 +311,10 @@ def main() -> int:
         pending_process_verification,
         required_stage_names=set(required_stage_names),
     )
-    requested_stage_names = sorted(set(args.stage_complete))
+    try:
+        requested_stage_names = normalize_follow_on_stage_names(args.stage_complete)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     asserted_stage_names = sorted(set(requested_stage_names))
     tracking_state = update_follow_on_tracking_state(
         repo_root,

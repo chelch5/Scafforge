@@ -7,6 +7,28 @@ from typing import Any
 
 from apply_repo_process_repair import FOLLOW_ON_TRACKING_PATH
 
+FOLLOW_ON_STAGE_CATALOG = {
+    "project-skill-bootstrap": {
+        "owner": "project-skill-bootstrap",
+        "category": "repo_local_skills",
+    },
+    "opencode-team-bootstrap": {
+        "owner": "opencode-team-bootstrap",
+        "category": "agent_team",
+    },
+    "agent-prompt-engineering": {
+        "owner": "agent-prompt-engineering",
+        "category": "prompt_hardening",
+    },
+    "ticket-pack-builder": {
+        "owner": "ticket-pack-builder",
+        "category": "ticket_follow_up",
+    },
+    "handoff-brief": {
+        "owner": "handoff-brief",
+        "category": "restart_surface",
+    },
+}
 CANONICAL_STAGE_EVIDENCE = {
     "ticket-pack-builder": ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md",
 }
@@ -26,6 +48,22 @@ def write_json(path: Path, payload: Any) -> None:
 
 def current_iso_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def known_follow_on_stage_names() -> list[str]:
+    return sorted(FOLLOW_ON_STAGE_CATALOG)
+
+
+def validate_follow_on_stage_name(stage: str) -> str:
+    normalized = stage.strip()
+    if normalized in FOLLOW_ON_STAGE_CATALOG:
+        return normalized
+    known = ", ".join(known_follow_on_stage_names())
+    raise ValueError(f"Unknown repair follow-on stage: {stage}. Known stages: {known}")
+
+
+def normalize_follow_on_stage_names(stages: list[str]) -> list[str]:
+    return sorted({validate_follow_on_stage_name(stage) for stage in stages if isinstance(stage, str) and stage.strip()})
 
 
 def normalize_follow_on_tracking_state(payload: Any, *, process_version: int) -> dict[str, Any]:
@@ -130,6 +168,14 @@ def update_follow_on_tracking_state(
     repair_basis_path: Path | None,
     repair_package_commit: str,
 ) -> dict[str, Any]:
+    asserted_stage_names = normalize_follow_on_stage_names(asserted_stage_names)
+    required_follow_on = [
+        {
+            **item,
+            "stage": validate_follow_on_stage_name(str(item.get("stage", ""))),
+        }
+        for item in required_follow_on
+    ]
     state = load_follow_on_tracking_state(repo_root)
     state = validate_recorded_execution_evidence(repo_root, state)
     stage_records = state["stage_records"]
@@ -225,6 +271,7 @@ def auto_record_stage_completion_from_canonical_evidence(
     required_stage_names: list[str],
     repair_package_commit: str,
 ) -> tuple[dict[str, Any], list[str]]:
+    required_stage_names = normalize_follow_on_stage_names(required_stage_names)
     state = load_follow_on_tracking_state(repo_root)
     state = validate_recorded_execution_evidence(repo_root, state)
     persist_follow_on_tracking_state(repo_root, state)
@@ -297,6 +344,7 @@ def record_follow_on_stage_completion(
     evidence_paths: list[str],
     repair_package_commit: str,
 ) -> dict[str, Any]:
+    stage = validate_follow_on_stage_name(stage)
     state = load_follow_on_tracking_state(repo_root)
     records = state["stage_records"]
     now = current_iso_timestamp()
