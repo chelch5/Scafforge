@@ -4210,6 +4210,16 @@ def main() -> int:
                 raise RuntimeError("Source-layer EXEC follow-up alone should not keep managed repair follow-on blocked once the required follow-on stages are complete")
             if source_follow_up_repair["execution_record"]["verification_status"]["source_follow_up_codes"] != ["EXEC003"]:
                 raise RuntimeError("Public managed repair runner should classify EXEC findings as source follow-up instead of managed repair blockers")
+            required_stage_details = source_follow_up_repair["execution_record"]["required_follow_on_stage_details"]
+            if required_stage_details != [
+                {
+                    "stage": "ticket-pack-builder",
+                    "owner": "ticket-pack-builder",
+                    "category": "ticket_follow_up",
+                    "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
+                }
+            ]:
+                raise RuntimeError("Public managed repair runner should expose machine-readable owner/category metadata for required follow-on stages")
             if source_follow_up_repair["execution_record"]["verification_status"]["current_state_clean"]:
                 raise RuntimeError("Public managed repair runner should not call EXEC-only residual work current_state_clean")
             if not source_follow_up_repair["execution_record"]["verification_status"]["causal_regression_verified"]:
@@ -4227,6 +4237,8 @@ def main() -> int:
                 raise RuntimeError("Managed repair should not record current_state_clean when source-layer remediation remains")
             if source_follow_up_workflow["repair_follow_on"]["tracking_mode"] != "persistent_recorded_state":
                 raise RuntimeError("Managed repair should record persistent follow-on tracking mode in workflow state")
+            if source_follow_up_workflow["repair_follow_on"]["required_stage_details"] != required_stage_details:
+                raise RuntimeError("Managed repair should persist machine-readable required stage details into workflow-state")
             follow_on_state_path = source_follow_up_repair_dest / ".opencode" / "meta" / "repair-follow-on-state.json"
             if not follow_on_state_path.exists():
                 raise RuntimeError("Managed repair should persist follow-on stage state in repo metadata")
@@ -4235,6 +4247,8 @@ def main() -> int:
                 raise RuntimeError("Persisted follow-on stage state should record persistent tracking mode")
             if follow_on_state["stage_records"]["ticket-pack-builder"]["status"] != "asserted_completed":
                 raise RuntimeError("Persisted follow-on stage state should keep asserted follow-on stage completion")
+            if follow_on_state["stage_records"]["ticket-pack-builder"]["owner"] != "ticket-pack-builder" or follow_on_state["stage_records"]["ticket-pack-builder"]["category"] != "ticket_follow_up":
+                raise RuntimeError("Persisted follow-on stage state should keep machine-readable owner/category metadata for canonical stages")
 
             source_follow_up_repair_reuse = run_json(
                 [

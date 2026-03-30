@@ -23,6 +23,7 @@ from audit_repo_process import current_package_commit, emit_diagnosis_pack, sele
 from follow_on_tracking import (
     auto_record_stage_completion_from_canonical_evidence,
     completed_stage_names,
+    follow_on_stage_metadata,
     invalidated_recorded_stage_names,
     normalize_follow_on_stage_names,
     recorded_execution_stage_names,
@@ -87,6 +88,7 @@ def derive_required_follow_on_stages(
     if placeholder_skills or "scaffold-managed .opencode/skills" in replaced_surfaces or any(code.startswith(("SKILL", "MODEL")) for code in finding_codes):
         required.append(
             {
+                **follow_on_stage_metadata("project-skill-bootstrap"),
                 "stage": "project-skill-bootstrap",
                 "reason": "Repo-local skills were replaced or still contain generic placeholder/model drift that must be regenerated with project-specific content.",
             }
@@ -94,12 +96,14 @@ def derive_required_follow_on_stages(
     if prompt_drift or any(code.startswith("WFLOW") for code in finding_codes):
         required.append(
             {
+                **follow_on_stage_metadata("opencode-team-bootstrap"),
                 "stage": "opencode-team-bootstrap",
                 "reason": "Agent or .opencode prompt surfaces still drift from the current workflow contract and must be regenerated.",
             }
         )
         required.append(
             {
+                **follow_on_stage_metadata("agent-prompt-engineering"),
                 "stage": "agent-prompt-engineering",
                 "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff.",
             }
@@ -107,6 +111,7 @@ def derive_required_follow_on_stages(
     if any(code.startswith("EXEC") for code in finding_codes):
         required.append(
             {
+                **follow_on_stage_metadata("ticket-pack-builder"),
                 "stage": "ticket-pack-builder",
                 "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
             }
@@ -215,6 +220,7 @@ def update_repair_follow_on_state(
     repo_root: Path,
     *,
     outcome: str,
+    required_stage_details: list[dict[str, Any]],
     required_stage_names: list[str],
     completed_stage_names: list[str],
     asserted_stage_names: list[str],
@@ -232,6 +238,7 @@ def update_repair_follow_on_state(
     process_version = workflow.get("process_version") if isinstance(workflow.get("process_version"), int) and workflow.get("process_version") > 0 else 7
     repair_follow_on = {
         "outcome": outcome,
+        "required_stage_details": required_stage_details,
         "required_stages": required_stage_names,
         "completed_stages": completed_stage_names,
         "asserted_completed_stages": asserted_stage_names,
@@ -396,6 +403,7 @@ def main() -> int:
     repair_follow_on_state = update_repair_follow_on_state(
         repo_root,
         outcome=repair_follow_on_outcome,
+        required_stage_details=required_follow_on,
         required_stage_names=required_stage_names,
         completed_stage_names=sorted(completed_stage_name_set),
         asserted_stage_names=asserted_stage_names,
@@ -439,6 +447,7 @@ def main() -> int:
             "repair_package_commit": current_package_commit(),
             "repair_basis_path": str(repair_basis_path) if repair_basis_path else None,
             "required_follow_on_stages": required_stage_names,
+            "required_follow_on_stage_details": required_follow_on,
             "executed_stages": executed_stages,
             "recorded_completed_stages": persisted_completed_stage_names,
             "recorded_execution_completed_stages": recorded_execution_stage_list,

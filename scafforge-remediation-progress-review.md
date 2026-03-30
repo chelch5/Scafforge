@@ -190,6 +190,7 @@ Implemented:
 - repair follow-on stage recording is now locked to a canonical stage catalog, so unknown `--stage-complete` or recorded-completion labels fail closed instead of silently polluting repair state
 - polluted legacy follow-on tracking entries with unknown stage names are now pruned on load instead of being trusted as completed work
 - that polluted-state cleanup is now surfaced explicitly in repair state and execution output instead of happening silently
+- required follow-on stages and persisted stage records now carry canonical `owner` and `category` metadata from the repair stage catalog
 - repair verification now fails contract checks for:
   - non-clean zero-finding states
   - restart-surface drift after repair
