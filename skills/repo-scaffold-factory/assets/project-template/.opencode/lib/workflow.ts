@@ -405,7 +405,6 @@ function expectStringArray(record: Record<string, unknown>, key: string, label: 
     return item.trim()
   })
 }
-function normalizeStringArray(value: unknown): string[] { return Array.isArray(value) ? value.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : []) : [] }
 function normalizeNullableString(value: unknown): string | null { if (typeof value !== "string") return null; return value.trim() || null }
 function normalizeOverlapRisk(value: unknown): OverlapRisk { return value === "low" || value === "medium" || value === "high" ? value : DEFAULT_OVERLAP_RISK }
 function normalizeParallelMode(value: unknown): ParallelMode { return value === "parallel-lanes" || value === "sequential" ? value : DEFAULT_PARALLEL_MODE }

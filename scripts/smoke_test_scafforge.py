@@ -61,6 +61,70 @@ def write_executable(path: Path, content: str) -> None:
     path.chmod(path.stat().st_mode | 0o111)
 
 
+def prepare_generated_tool_runtime(dest: Path) -> None:
+    plugin_dir = dest / "node_modules" / "@opencode-ai" / "plugin"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "package.json").write_text('{"name":"@opencode-ai/plugin","type":"module"}\n', encoding="utf-8")
+    (plugin_dir / "index.js").write_text(
+        "\n".join(
+            [
+                "function chain() {",
+                "  return {",
+                "    describe() { return this },",
+                "    optional() { return this },",
+                "  }",
+                "}",
+                "const schema = {",
+                "  string: () => chain(),",
+                "  boolean: () => chain(),",
+                "  enum: () => chain(),",
+                "  array: () => chain(),",
+                "}",
+                "export function tool(definition) {",
+                "  return definition",
+                "}",
+                "tool.schema = schema",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    for path in list((dest / ".opencode" / "tools").glob("*.ts")) + list((dest / ".opencode" / "plugins").glob("*.ts")):
+        text = path.read_text(encoding="utf-8")
+        rewritten = text.replace('from "../lib/workflow"', 'from "../lib/workflow.ts"')
+        if rewritten != text:
+            path.write_text(rewritten, encoding="utf-8")
+
+
+def run_generated_tool(dest: Path, relative_tool_path: str, args: dict[str, object]) -> dict[str, object]:
+    prepare_generated_tool_runtime(dest)
+    runner = dest / ".opencode" / "state" / "tool-runner.mjs"
+    runner.parent.mkdir(parents=True, exist_ok=True)
+    runner.write_text(
+        "\n".join(
+            [
+                'import { pathToFileURL } from "node:url"',
+                "const toolPath = process.env.SCAFFORGE_TOOL_PATH",
+                "if (!toolPath) throw new Error('Missing SCAFFORGE_TOOL_PATH')",
+                "const mod = await import(pathToFileURL(toolPath).href)",
+                "const rawArgs = process.env.SCAFFORGE_TOOL_ARGS || '{}'",
+                "const payload = await mod.default.execute(JSON.parse(rawArgs))",
+                "console.log(payload)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["SCAFFORGE_TOOL_PATH"] = str((dest / relative_tool_path).resolve())
+    env["SCAFFORGE_TOOL_ARGS"] = json.dumps(args)
+    return run_json(
+        ["node", "--experimental-strip-types", str(runner)],
+        dest,
+        env=env,
+    )
+
+
 def seed_uv_python_fixture(
     dest: Path,
     *,
@@ -2629,6 +2693,34 @@ def main() -> int:
         if "run ticket_reverify on SETUP-001 instead of trying to reclaim it" not in explicit_reverification_handoff:
             raise RuntimeError("latest-handoff should stay aligned with START-HERE for explicit closed-ticket trust restoration")
 
+        executed_reverification_dest = workspace / "executed-ticket-reverify"
+        shutil.copytree(full_dest, executed_reverification_dest)
+        seed_closed_ticket_needing_explicit_reverification(executed_reverification_dest)
+        reverification_result = run_generated_tool(
+            executed_reverification_dest,
+            ".opencode/tools/ticket_reverify.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "verification_content": "# Backlog Verification\n\n## Result\n\nPASS\n",
+                "reason": "Synthetic trust restoration proof for smoke coverage.",
+            },
+        )
+        if reverification_result["ticket_id"] != "SETUP-001" or reverification_result["verification_state"] != "reverified":
+            raise RuntimeError("ticket_reverify should return the restored source ticket id and reverified state")
+        reverification_manifest = json.loads((executed_reverification_dest / "tickets" / "manifest.json").read_text(encoding="utf-8"))
+        reverification_ticket = next(ticket for ticket in reverification_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        if reverification_ticket["verification_state"] != "reverified":
+            raise RuntimeError("ticket_reverify should persist reverified verification_state onto the historical source ticket")
+        reverification_workflow = json.loads((executed_reverification_dest / ".opencode" / "state" / "workflow-state.json").read_text(encoding="utf-8"))
+        if reverification_workflow["ticket_state"]["SETUP-001"]["needs_reverification"] is not False:
+            raise RuntimeError("ticket_reverify should clear needs_reverification in workflow-state")
+        reverification_artifact = executed_reverification_dest / str(reverification_result["reverification_artifact"])
+        if not reverification_artifact.exists():
+            raise RuntimeError("ticket_reverify should write the canonical reverification artifact")
+        backlog_verification_path = executed_reverification_dest / ".opencode" / "state" / "reviews" / "setup-001-review-backlog-verification.md"
+        if not backlog_verification_path.exists():
+            raise RuntimeError("ticket_reverify should register inline verification content as backlog-verification evidence before restoring trust")
+
         explicit_reconciliation_dest = workspace / "closed-ticket-explicit-reconciliation"
         shutil.copytree(full_dest, explicit_reconciliation_dest)
         seed_closed_ticket_needing_reconciliation(explicit_reconciliation_dest)
@@ -2641,6 +2733,106 @@ def main() -> int:
         explicit_reconciliation_handoff = (explicit_reconciliation_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
         if "Use ticket_reconcile with current registered evidence to repair SETUP-001 instead of trying to reopen or reclaim it" not in explicit_reconciliation_handoff:
             raise RuntimeError("latest-handoff should stay aligned with START-HERE for explicit historical reconciliation routing")
+
+        executed_reconciliation_dest = workspace / "executed-ticket-reconcile"
+        shutil.copytree(full_dest, executed_reconciliation_dest)
+        seed_closed_ticket_needing_reconciliation(executed_reconciliation_dest)
+        reconcile_manifest_path = executed_reconciliation_dest / "tickets" / "manifest.json"
+        reconcile_workflow_path = executed_reconciliation_dest / ".opencode" / "state" / "workflow-state.json"
+        reconcile_registry_path = executed_reconciliation_dest / ".opencode" / "state" / "artifacts" / "registry.json"
+        reconcile_manifest = json.loads(reconcile_manifest_path.read_text(encoding="utf-8"))
+        reconcile_workflow = json.loads(reconcile_workflow_path.read_text(encoding="utf-8"))
+        reconcile_registry = json.loads(reconcile_registry_path.read_text(encoding="utf-8"))
+        reconcile_manifest["tickets"].append(
+            {
+                "id": "EXEC-RECON-SRC",
+                "title": "Synthetic replacement source ticket",
+                "wave": 2,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "implementation",
+                "status": "in_progress",
+                "depends_on": [],
+                "summary": "Replacement source ticket for reconciliation smoke coverage.",
+                "acceptance": ["Replacement source remains active."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "trusted",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        reconcile_manifest["tickets"].append(
+            {
+                "id": "EXEC-RECON-TGT",
+                "title": "Synthetic stale follow-up ticket",
+                "wave": 3,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "ready",
+                "depends_on": ["SETUP-001"],
+                "summary": "Follow-up ticket with stale lineage for reconciliation smoke coverage.",
+                "acceptance": ["Reconciliation succeeds."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "post_completion_issue",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        source_ticket = next(ticket for ticket in reconcile_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        source_ticket["follow_up_ticket_ids"] = ["EXEC-RECON-TGT"]
+        evidence_rel = ".opencode/state/reviews/setup-001-review-backlog-verification.md"
+        evidence_path = executed_reconciliation_dest / evidence_rel
+        evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        evidence_path.write_text("# Historical Evidence\n\nCurrent evidence is registered.\n", encoding="utf-8")
+        evidence_artifact = {
+            "kind": "backlog-verification",
+            "path": evidence_rel,
+            "stage": "review",
+            "summary": "Synthetic reconciliation evidence.",
+            "created_at": "2026-03-30T00:00:00Z",
+            "trust_state": "current",
+        }
+        source_ticket.setdefault("artifacts", []).append(evidence_artifact)
+        reconcile_registry.setdefault("artifacts", []).append({"ticket_id": "SETUP-001", **evidence_artifact})
+        reconcile_workflow["ticket_state"]["EXEC-RECON-SRC"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        reconcile_workflow["ticket_state"]["EXEC-RECON-TGT"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        reconcile_manifest_path.write_text(json.dumps(reconcile_manifest, indent=2) + "\n", encoding="utf-8")
+        reconcile_workflow_path.write_text(json.dumps(reconcile_workflow, indent=2) + "\n", encoding="utf-8")
+        reconcile_registry_path.write_text(json.dumps(reconcile_registry, indent=2) + "\n", encoding="utf-8")
+        reconciliation_result = run_generated_tool(
+            executed_reconciliation_dest,
+            ".opencode/tools/ticket_reconcile.ts",
+            {
+                "source_ticket_id": "SETUP-001",
+                "target_ticket_id": "EXEC-RECON-TGT",
+                "replacement_source_ticket_id": "EXEC-RECON-SRC",
+                "replacement_source_mode": "split_scope",
+                "evidence_artifact_path": evidence_rel,
+                "reason": "Synthetic lineage correction proof for smoke coverage.",
+                "remove_dependency_on_source": True,
+                "activate_source": True,
+            },
+        )
+        if reconciliation_result["replacement_source_ticket_id"] != "EXEC-RECON-SRC" or reconciliation_result["active_ticket"] != "EXEC-RECON-SRC":
+            raise RuntimeError("ticket_reconcile should report and activate the replacement source ticket when requested")
+        reconciled_manifest = json.loads(reconcile_manifest_path.read_text(encoding="utf-8"))
+        reconciled_target = next(ticket for ticket in reconciled_manifest["tickets"] if ticket["id"] == "EXEC-RECON-TGT")
+        if reconciled_target["source_ticket_id"] != "EXEC-RECON-SRC":
+            raise RuntimeError("ticket_reconcile should rewrite the target source_ticket_id to the replacement source")
+        if "SETUP-001" in reconciled_target["depends_on"]:
+            raise RuntimeError("ticket_reconcile should remove contradictory dependencies on the stale canonical source when requested")
+        if reconciled_manifest["active_ticket"] != "EXEC-RECON-SRC":
+            raise RuntimeError("ticket_reconcile should persist the activated replacement source into manifest active_ticket")
+        reconciliation_artifact = executed_reconciliation_dest / str(reconciliation_result["reconciliation_artifact"])
+        if not reconciliation_artifact.exists():
+            raise RuntimeError("ticket_reconcile should write the canonical reconciliation artifact")
 
         hidden_clearable_pending_dest = workspace / "hidden-clearable-pending-process-verification"
         shutil.copytree(full_dest, hidden_clearable_pending_dest)

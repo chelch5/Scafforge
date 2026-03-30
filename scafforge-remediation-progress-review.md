@@ -194,8 +194,8 @@ Important detail:
 
 Not yet done:
 
-- true end-to-end execution of the generated TypeScript mutation tools still is not covered by a package-local runtime harness
-- there is still room to exercise `ticket_reverify` and `ticket_reconcile` through an actual generated-tool execution environment instead of validator/smoke structural checks alone
+- `ticket_reverify` and `ticket_reconcile` now have package-local generated-tool execution coverage through a stubbed plugin runtime harness, but broader generated TypeScript execution coverage is still not generalized across the full tool surface
+- there is still room to extend that execution harness beyond these two historical-mutation tools into more of the generated workflow toolchain
 
 ### Phase 6: Add A First-Class Pivot Skill
 
