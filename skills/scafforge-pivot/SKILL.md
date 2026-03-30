@@ -26,6 +26,14 @@ python3 scripts/record_pivot_stage_completion.py <repo-root> --stage <stage> --c
 
 Use this to record evidence-backed completion of a routed pivot downstream stage inside `.opencode/meta/pivot-state.json`.
 
+Explicit lineage-routing flags:
+
+- `--supersede-ticket <id>`
+- `--reopen-ticket <id>`
+- `--reconcile-ticket <id>`
+
+Use these when the pivot already proves specific ticket lineage actions that must be routed explicitly into the downstream ticket follow-up stage.
+
 ## When to use this skill
 
 - `scaffold-kickoff` classifies the request as a pivot
@@ -99,6 +107,8 @@ At minimum, classify these families:
 
 If workflow surfaces drifted, route the managed refresh through `../scafforge-repair/SKILL.md` instead of open-coding the same repair logic here.
 
+The pivot state should also carry a machine-readable `ticket_lineage_plan` whenever the pivot already proves specific ticket supersede, reopen, reconcile, or follow-up actions.
+
 The pivot state must also expose machine-readable restart-surface inputs:
 
 - `pivot_in_progress`
@@ -129,7 +139,7 @@ When the pivot invalidates existing ticket assumptions:
 - create follow-up or decision tickets when new work is introduced
 - reconcile stale lineage when old source/follow-up relationships no longer reflect the pivot
 
-Do not leave pre-pivot tickets pretending to satisfy the new design.
+Do not leave pre-pivot tickets pretending to satisfy the new design. If the specific ticket actions are already known at pivot time, record them explicitly in the pivot state's `ticket_lineage_plan` instead of burying them only in prose.
 
 ### 6. Require post-pivot verification
 
@@ -157,6 +167,7 @@ The handoff must state that a pivot occurred, which surfaces changed, and what f
 - `.opencode/meta/pivot-state.json`
 - explicit downstream refresh decisions
 - explicit downstream execution-state progress for routed pivot stages
+- machine-readable ticket lineage plan when ticket actions are already known
 - ticket lineage updates or follow-up routing
 - post-pivot verification result
 - truthful restart surface inputs for handoff

@@ -2449,6 +2449,8 @@ def main() -> int:
                 "Adopt modular service boundaries and regenerate workflow prompts around the new topology.",
                 "--unresolved-follow-up",
                 "Reconcile historical tickets that still assume the old monolith execution path.",
+                "--reconcile-ticket",
+                "SETUP-001",
                 "--format",
                 "json",
             ],
@@ -2489,6 +2491,13 @@ def main() -> int:
             raise RuntimeError("Pivot orchestration should expose truthful changed surfaces for restart publication")
         if set(pivot_state["downstream_refresh_state"]["pending_stages"]) != set(pivot_stages):
             raise RuntimeError("Pivot orchestration should initialize downstream refresh state with all routed stages pending")
+        lineage_actions = pivot_state["ticket_lineage_plan"]["actions"]
+        if not any(action["action"] == "reconcile" and action["target_ticket_id"] == "SETUP-001" for action in lineage_actions):
+            raise RuntimeError("Pivot orchestration should record explicit reconcile actions in the ticket lineage plan")
+        if not any(action["action"] == "create_follow_up" and "Reconcile historical tickets" in action["summary"] for action in lineage_actions):
+            raise RuntimeError("Pivot orchestration should convert unresolved follow-up into explicit follow-up ticket lineage actions")
+        if "reconcile:SETUP-001" not in pivot_state["restart_surface_inputs"]["pending_ticket_lineage_actions"]:
+            raise RuntimeError("Pivot restart inputs should expose pending explicit ticket lineage actions")
         pivot_evidence = pivot_dest / ".opencode" / "state" / "artifacts" / "history" / "pivot-stage-completion.md"
         pivot_evidence.parent.mkdir(parents=True, exist_ok=True)
         pivot_evidence.write_text("# Pivot stage completion\n", encoding="utf-8")
@@ -2536,10 +2545,14 @@ def main() -> int:
             raise RuntimeError("Post-pivot START-HERE should expose truthful pivot state")
         if "- pivot_pending_stages: project-skill-bootstrap, opencode-team-bootstrap, agent-prompt-engineering, ticket-pack-builder" not in pivot_start_here:
             raise RuntimeError("Post-pivot START-HERE should list the remaining pivot stages after recorded managed refresh")
+        if "- pivot_pending_ticket_lineage_actions: reconcile:SETUP-001, create_follow_up:Reconcile historical tickets that still assume the old monolith execution path." not in pivot_start_here:
+            raise RuntimeError("Post-pivot START-HERE should expose pending pivot ticket lineage actions")
         if "- pivot_in_progress: true" not in pivot_latest_handoff:
             raise RuntimeError("latest-handoff should stay aligned with START-HERE for pivot state")
         if "- pivot_changed_surfaces: agent_team_and_prompts, canonical_brief_and_truth_docs, managed_workflow_tools_and_prompts, repo_local_skills, restart_surfaces, ticket_graph_and_lineage" not in pivot_context_snapshot:
             raise RuntimeError("context snapshot should expose the pivot changed surfaces for restart review")
+        if "- pending_ticket_lineage_actions: reconcile:SETUP-001, create_follow_up:Reconcile historical tickets that still assume the old monolith execution path." not in pivot_context_snapshot:
+            raise RuntimeError("context snapshot should expose pending pivot ticket lineage actions for restart review")
         pivot_provenance = json.loads((pivot_dest / ".opencode" / "meta" / "bootstrap-provenance.json").read_text(encoding="utf-8"))
         pivot_history = pivot_provenance.get("pivot_history")
         if not isinstance(pivot_history, list) or not pivot_history or pivot_history[-1]["pivot_class"] != "architecture-change":
