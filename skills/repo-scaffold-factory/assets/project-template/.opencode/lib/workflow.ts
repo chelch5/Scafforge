@@ -654,6 +654,13 @@ export async function validateSmokeTestArtifactEvidence(ticket: Ticket, root = r
 export function blockedDependentTickets(manifest: Manifest, ticketId: string): Ticket[] {
   return manifest.tickets.filter((item) => item.depends_on.includes(ticketId) && item.status !== "done")
 }
+export function dependentContinuationAction(ticket: Ticket, blockedDependents: Ticket[]): string {
+  const nextDependent = blockedDependents[0]
+  if (!nextDependent) {
+    return "Continue the required internal lifecycle from the current ticket stage."
+  }
+  return `Current ticket is already closed. Activate dependent ticket ${nextDependent.id} and continue that lane instead of trying to mutate ${ticket.id} again.`
+}
 export function splitScopeChildren(manifest: Manifest, ticketId: string): Ticket[] {
   return manifest.tickets.filter((item) => item.source_ticket_id === ticketId && item.source_mode === "split_scope")
 }
@@ -1119,7 +1126,7 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, opt
                 ? "Use ticket_update to clear pending_process_verification now that no historical done tickets still require process verification, then rerun ticket_lookup."
                 : `Use the team leader to route ${verifierLabel} across done tickets whose trust predates the current process contract: ${processVerification.affected_done_tickets.map((item) => item.id).join(", ")}.`
               : blockedDependents.length > 0
-                ? `Resume dependent tickets waiting on ${ticket.id}: ${blockedDependents.map((item) => item.id).join(", ")}.`
+                ? dependentContinuationAction(ticket, blockedDependents)
                 : "Continue the required internal lifecycle from the current ticket stage."
   )
   const summarizeTickets = (items: Ticket[]) => items.length > 0 ? items.map((item) => item.id).join(", ") : "none"

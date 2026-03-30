@@ -405,6 +405,59 @@ def seed_workflow_overclaim(dest: Path) -> Path:
     return log_path
 
 
+def seed_closed_ticket_with_blocked_dependent(dest: Path) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    active_ticket_id = manifest["active_ticket"]
+    active_ticket = next(ticket for ticket in manifest["tickets"] if ticket["id"] == active_ticket_id)
+    active_ticket["stage"] = "closeout"
+    active_ticket["status"] = "done"
+    active_ticket["resolution_state"] = "done"
+    active_ticket["verification_state"] = "reverified"
+    if not any(ticket["id"] == "EXEC-DEP" for ticket in manifest["tickets"]):
+        manifest["tickets"].append(
+            {
+                "id": "EXEC-DEP",
+                "title": "Synthetic blocked dependent",
+                "wave": 42,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "ready",
+                "depends_on": [active_ticket_id],
+                "summary": "Synthetic dependent ticket to verify closed-ticket continuation routing.",
+                "acceptance": ["Becomes the foreground lane after the source ticket closes."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "follow_up_ticket_ids": [],
+            }
+        )
+    workflow["stage"] = "closeout"
+    workflow["status"] = "done"
+    workflow["pending_process_verification"] = False
+    workflow["bootstrap"] = {
+        "status": "ready",
+        "last_verified_at": "2026-03-26T00:00:00Z",
+        "environment_fingerprint": "synthetic-ready-bootstrap",
+        "proof_artifact": ".opencode/state/bootstrap/synthetic-ready-bootstrap.md",
+    }
+    ticket_state = workflow.get("ticket_state")
+    if isinstance(ticket_state, dict):
+        active_ticket_state = ticket_state.get(active_ticket_id)
+        if isinstance(active_ticket_state, dict):
+            active_ticket_state["needs_reverification"] = False
+    proof_path = dest / ".opencode" / "state" / "bootstrap" / "synthetic-ready-bootstrap.md"
+    proof_path.parent.mkdir(parents=True, exist_ok=True)
+    proof_path.write_text("# Ready Bootstrap\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+
+
 def seed_legacy_smoke_test_tool(dest: Path) -> None:
     tool_path = dest / ".opencode" / "tools" / "smoke_test.ts"
     tool_path.write_text(
@@ -1905,6 +1958,8 @@ def main() -> int:
             raise RuntimeError("Generated workflow.ts should own the latest-handoff restart surface")
         if "export function blockedDependentTickets" not in generated_workflow:
             raise RuntimeError("Generated workflow.ts should expose blocked dependent routing as a reusable canonical helper")
+        if "export function dependentContinuationAction" not in generated_workflow:
+            raise RuntimeError("Generated workflow.ts should expose one canonical dependent-continuation action helper for restart and lookup surfaces")
         if "Historical done-ticket reverification stays secondary until the active open ticket is resolved." not in generated_workflow:
             raise RuntimeError("Generated workflow.ts should keep the active open ticket primary when process verification is pending")
         if "Cannot publish dependency-readiness claims" not in generated_workflow or "Cannot publish causal claims" not in generated_workflow:
@@ -1918,8 +1973,8 @@ def main() -> int:
             raise RuntimeError("Generated ticket_lookup.ts should short-circuit lifecycle guidance to environment_bootstrap when bootstrap is not ready")
         if "Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly." not in generated_ticket_lookup:
             raise RuntimeError("Generated ticket_lookup.ts should foreground split children without marking the parent blocked")
-        if "Current ticket is already closed. Activate dependent ticket ${nextDependent.id} and continue that lane instead of trying to mutate ${ticket.id} again." not in generated_ticket_lookup:
-            raise RuntimeError("Generated ticket_lookup.ts should route closed completed tickets to blocked dependents instead of presenting them as terminal")
+        if "dependentContinuationAction" not in generated_ticket_lookup:
+            raise RuntimeError("Generated ticket_lookup.ts should route closed completed tickets through the shared dependent-continuation helper instead of presenting them as terminal")
         if 'next_action_tool: "smoke_test",\n          delegate_to_agent: null,\n          required_owner: "team-leader",' not in generated_ticket_lookup:
             raise RuntimeError("Generated ticket_lookup.ts should keep smoke_test team-leader-owned instead of delegating it to tester-qa")
         generated_ticket_create = (full_dest / ".opencode" / "tools" / "ticket_create.ts").read_text(encoding="utf-8")
@@ -2408,6 +2463,17 @@ def main() -> int:
             raise RuntimeError("A repo that truthfully exposes a clearable pending_process_verification state should not emit WFLOW008")
         if "WFLOW010" in clearable_pending_verification_codes:
             raise RuntimeError("A repo whose restart surfaces correctly collapse done_but_not_fully_trusted to none when the affected set is empty should not emit WFLOW010")
+
+        closed_ticket_dependent_dest = workspace / "closed-ticket-dependent-routing"
+        shutil.copytree(full_dest, closed_ticket_dependent_dest)
+        seed_closed_ticket_with_blocked_dependent(closed_ticket_dependent_dest)
+        run_json([sys.executable, str(REGENERATE), str(closed_ticket_dependent_dest)], ROOT)
+        closed_ticket_start_here = (closed_ticket_dependent_dest / "START-HERE.md").read_text(encoding="utf-8")
+        if "Current ticket is already closed. Activate dependent ticket EXEC-DEP and continue that lane instead of trying to mutate" not in closed_ticket_start_here:
+            raise RuntimeError("Restart regeneration should route a closed current ticket directly to the first blocked dependent lane")
+        closed_ticket_handoff = (closed_ticket_dependent_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        if "Current ticket is already closed. Activate dependent ticket EXEC-DEP and continue that lane instead of trying to mutate" not in closed_ticket_handoff:
+            raise RuntimeError("latest-handoff should stay aligned with START-HERE for closed-ticket dependent continuation")
 
         hidden_clearable_pending_dest = workspace / "hidden-clearable-pending-process-verification"
         shutil.copytree(full_dest, hidden_clearable_pending_dest)
