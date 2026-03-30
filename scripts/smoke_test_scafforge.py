@@ -4183,8 +4183,13 @@ def main() -> int:
             pruned_follow_on_state = json.loads(pruned_follow_on_state_process.stdout)
             if "bogus-stage" in pruned_follow_on_state["execution_record"]["recorded_completed_stages"]:
                 raise RuntimeError("Managed repair should prune unknown legacy follow-on stage records instead of trusting them as completed")
+            if pruned_follow_on_state["execution_record"]["pruned_unknown_stages"] != ["bogus-stage"]:
+                raise RuntimeError("Managed repair should report which unknown legacy follow-on stages were pruned from polluted state")
             if "bogus-stage" in pruned_follow_on_state["execution_record"]["follow_on_tracking_state"]["stage_records"]:
                 raise RuntimeError("Managed repair should remove unknown legacy follow-on stage records from the persisted tracking state")
+            prune_history = pruned_follow_on_state["execution_record"]["follow_on_tracking_state"].get("history", [])
+            if not any(item.get("status") == "pruned_unknown_stages" and item.get("pruned_unknown_stages") == ["bogus-stage"] for item in prune_history if isinstance(item, dict)):
+                raise RuntimeError("Managed repair should leave a history event when polluted unknown follow-on stages are pruned")
             if not pruned_follow_on_state["execution_record"]["blocking_reasons"]:
                 raise RuntimeError("Pruning unknown legacy follow-on stage records should not clear the real ticket follow-up blocker")
 

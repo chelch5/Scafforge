@@ -72,6 +72,27 @@ def normalize_follow_on_tracking_state(payload: Any, *, process_version: int) ->
     stage_records = payload.get("stage_records") if isinstance(payload.get("stage_records"), dict) else {}
     history = payload.get("history") if isinstance(payload.get("history"), list) else []
     timestamp = current_iso_timestamp()
+    raw_required_stages = payload.get("required_stages", []) if isinstance(payload.get("required_stages"), list) else []
+    pruned_unknown_stages = sorted(
+        {
+            stage.strip()
+            for stage in raw_required_stages
+            if isinstance(stage, str) and stage.strip() and stage.strip() not in FOLLOW_ON_STAGE_CATALOG
+        }
+        | {
+            stage.strip()
+            for stage, value in stage_records.items()
+            if isinstance(stage, str) and stage.strip() and isinstance(value, dict) and stage.strip() not in FOLLOW_ON_STAGE_CATALOG
+        }
+        | {
+            str(item.get("stage")).strip()
+            for item in history
+            if isinstance(item, dict)
+            and isinstance(item.get("stage"), str)
+            and str(item.get("stage")).strip()
+            and str(item.get("stage")).strip() not in FOLLOW_ON_STAGE_CATALOG
+        }
+    )
     return {
         "tracking_mode": "persistent_recorded_state",
         "assertion_input_mode": "transitional_manual_assertion",
@@ -81,10 +102,11 @@ def normalize_follow_on_tracking_state(payload: Any, *, process_version: int) ->
         "process_version": process_version,
         "repair_package_commit": payload.get("repair_package_commit"),
         "repair_basis_path": payload.get("repair_basis_path"),
+        "pruned_unknown_stages": pruned_unknown_stages,
         "required_stages": sorted(
             {
                 stage.strip()
-                for stage in (payload.get("required_stages", []) if isinstance(payload.get("required_stages"), list) else [])
+                for stage in raw_required_stages
                 if isinstance(stage, str) and stage.strip() in FOLLOW_ON_STAGE_CATALOG
             }
         ),
@@ -110,6 +132,18 @@ def load_follow_on_tracking_state(repo_root: Path) -> dict[str, Any]:
     process_version = workflow.get("process_version") if isinstance(workflow, dict) and isinstance(workflow.get("process_version"), int) and workflow.get("process_version") > 0 else 7
     tracking_path = repo_root / FOLLOW_ON_TRACKING_PATH
     state = normalize_follow_on_tracking_state(read_json(tracking_path), process_version=process_version)
+    if state.get("pruned_unknown_stages"):
+        history = state.get("history") if isinstance(state.get("history"), list) else []
+        history.append(
+            {
+                "recorded_at": current_iso_timestamp(),
+                "status": "pruned_unknown_stages",
+                "pruned_unknown_stages": state["pruned_unknown_stages"],
+                "cycle_id": state.get("cycle_id"),
+            }
+        )
+        state["history"] = history
+        state["last_updated_at"] = current_iso_timestamp()
     write_json(tracking_path, state)
     return state
 
@@ -285,12 +319,12 @@ def update_follow_on_tracking_state(
 
 def auto_record_stage_completion_from_canonical_evidence(
     repo_root: Path,
+    state: dict[str, Any],
     *,
     required_stage_names: list[str],
     repair_package_commit: str,
 ) -> tuple[dict[str, Any], list[str]]:
     required_stage_names = normalize_follow_on_stage_names(required_stage_names)
-    state = load_follow_on_tracking_state(repo_root)
     state = validate_recorded_execution_evidence(repo_root, state)
     persist_follow_on_tracking_state(repo_root, state)
 
