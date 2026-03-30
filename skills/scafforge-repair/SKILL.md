@@ -72,7 +72,7 @@ Prefer explicit recorded completion when a downstream follow-on stage actually r
 python3 scripts/record_repair_stage_completion.py <repo-root> --stage <stage> --completed-by <skill> --summary "<what ran>"
 ```
 
-Use that command to record real follow-on execution with evidence paths. Recorded execution must include at least one repo-relative evidence path; zero-evidence recorded completion is invalid and must be rejected. Leave `--stage-complete` as a transitional input for hosts that still cannot write a richer execution record directly.
+Use that command to record real follow-on execution with evidence paths. Recorded execution must include at least one repo-relative evidence path. Recorded execution must include a non-empty `completed_by`, a non-empty summary, and current evidence; zero-evidence or blank-provenance recorded completion is invalid and must be rejected. Leave `--stage-complete` as a transitional input for hosts that still cannot write a richer execution record directly.
 Both `--stage-complete` and `record_repair_stage_completion.py` must stay inside the canonical repair follow-on stage catalog. The current allowed stage names are:
 
 - `project-skill-bootstrap`

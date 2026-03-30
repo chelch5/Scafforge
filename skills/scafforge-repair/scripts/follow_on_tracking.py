@@ -456,6 +456,16 @@ def record_follow_on_stage_completion(
     stage = validate_follow_on_stage_name(stage)
     state = load_follow_on_tracking_state(repo_root)
     stage = validate_stage_allowed_for_current_cycle(state, stage)
+    normalized_completed_by = completed_by.strip()
+    if not normalized_completed_by:
+        raise ValueError(
+            f"Repair follow-on stage `{stage}` requires a non-empty completed_by value for recorded execution."
+        )
+    normalized_summary = summary.strip()
+    if not normalized_summary:
+        raise ValueError(
+            f"Repair follow-on stage `{stage}` requires a non-empty summary for recorded execution."
+        )
     if not any(isinstance(path, str) and path.strip() for path in evidence_paths):
         raise ValueError(
             f"Repair follow-on stage `{stage}` requires at least one repo-relative evidence path for recorded execution."
@@ -480,8 +490,8 @@ def record_follow_on_stage_completion(
         "currently_required": existing.get("currently_required", False),
         "reason": reason,
         "completion_mode": "recorded_execution",
-        "completed_by": completed_by,
-        "summary": summary,
+        "completed_by": normalized_completed_by,
+        "summary": normalized_summary,
         "evidence_paths": evidence_paths,
         "first_recorded_at": existing.get("first_recorded_at") if isinstance(existing.get("first_recorded_at"), str) and existing.get("first_recorded_at").strip() else now,
         "last_recorded_at": now,
@@ -496,8 +506,8 @@ def record_follow_on_stage_completion(
             **follow_on_stage_history_metadata(stage),
             "status": "completed",
             "completion_mode": "recorded_execution",
-            "completed_by": completed_by,
-            "summary": summary,
+            "completed_by": normalized_completed_by,
+            "summary": normalized_summary,
             "evidence_paths": evidence_paths,
             "repair_package_commit": repair_package_commit,
             "cycle_id": state["cycle_id"],
