@@ -7,273 +7,44 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import SimpleNamespace
 
-
-ROOT = Path(__file__).resolve().parents[1]
-BOOTSTRAP = ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "bootstrap_repo_scaffold.py"
-VERIFY_GENERATED = ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "verify_generated_scaffold.py"
-CHECKLIST = ROOT / "skills" / "repo-scaffold-factory" / "references" / "opencode-conformance-checklist.json"
-AUDIT = ROOT / "skills" / "scafforge-audit" / "scripts" / "audit_repo_process.py"
-REPAIR = ROOT / "skills" / "scafforge-repair" / "scripts" / "apply_repo_process_repair.py"
-PUBLIC_REPAIR = ROOT / "skills" / "scafforge-repair" / "scripts" / "run_managed_repair.py"
-REGENERATE = ROOT / "skills" / "scafforge-repair" / "scripts" / "regenerate_restart_surfaces.py"
-PIVOT = ROOT / "skills" / "scafforge-pivot" / "scripts" / "plan_pivot.py"
-PIVOT_RECORD = ROOT / "skills" / "scafforge-pivot" / "scripts" / "record_pivot_stage_completion.py"
-PIVOT_PUBLISH = ROOT / "skills" / "scafforge-pivot" / "scripts" / "publish_pivot_surfaces.py"
-PIVOT_APPLY = ROOT / "skills" / "scafforge-pivot" / "scripts" / "apply_pivot_lineage.py"
-RECORD_REPAIR_STAGE = ROOT / "skills" / "scafforge-repair" / "scripts" / "record_repair_stage_completion.py"
-BOOTSTRAP_INPUT_FILES = (
-    "package.json",
-    "package-lock.json",
-    "pnpm-lock.yaml",
-    "yarn.lock",
-    "bun.lock",
-    "bun.lockb",
-    "pyproject.toml",
-    "requirements.txt",
-    "requirements-dev.txt",
-    "poetry.lock",
-    "Pipfile",
-    "Pipfile.lock",
-    "uv.lock",
-    "Cargo.toml",
-    "Cargo.lock",
-    "go.mod",
-    "go.sum",
-    "Makefile",
-    "pytest.ini",
-    "setup.py",
-    "setup.cfg",
+from test_support.repo_seeders import (
+    make_stack_skill_non_placeholder,
+    seed_bootstrap_command_layout_mismatch,
+    seed_failing_pytest_suite,
+    seed_ready_bootstrap,
+    seed_repeated_diagnosis_churn,
+    seed_restart_surface_drift,
+    seed_workflow_overclaim,
 )
-
-
-def load_python_module(path: Path, module_name: str):
-    spec = spec_from_file_location(module_name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load module from {path}")
-    module = module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def package_commit() -> str:
-    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=False, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Unable to resolve package commit for smoke tests:\nSTDERR:\n{result.stderr}")
-    return result.stdout.strip()
-
-
-def run(command: list[str], cwd: Path, *, env: dict[str, str] | None = None) -> None:
-    result = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True, env=env)
-    if result.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(command)}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
-
-
-def run_json(command: list[str], cwd: Path, *, env: dict[str, str] | None = None) -> dict:
-    result = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True, env=env)
-    if result.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(command)}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Command did not return valid JSON: {' '.join(command)}\nSTDOUT:\n{result.stdout}") from exc
-
-
-def write_executable(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    path.chmod(path.stat().st_mode | 0o111)
-
-
-def compute_bootstrap_fingerprint(dest: Path) -> str:
-    import hashlib
-
-    digest = hashlib.sha256()
-    for relative in sorted(path for path in BOOTSTRAP_INPUT_FILES if (dest / path).is_file()):
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\x00")
-        digest.update((dest / relative).read_bytes())
-        digest.update(b"\x00")
-    return digest.hexdigest()
-
-
-def prepare_generated_tool_runtime(dest: Path) -> None:
-    plugin_dir = dest / "node_modules" / "@opencode-ai" / "plugin"
-    plugin_dir.mkdir(parents=True, exist_ok=True)
-    (plugin_dir / "package.json").write_text('{"name":"@opencode-ai/plugin","type":"module"}\n', encoding="utf-8")
-    (plugin_dir / "index.js").write_text(
-        "\n".join(
-            [
-                "function chain() {",
-                "  return {",
-                "    describe() { return this },",
-                "    optional() { return this },",
-                "    int() { return this },",
-                "  }",
-                "}",
-                "const schema = {",
-                "  string: () => chain(),",
-                "  boolean: () => chain(),",
-                "  enum: () => chain(),",
-                "  array: () => chain(),",
-                "  number: () => chain(),",
-                "}",
-                "export function tool(definition) {",
-                "  return definition",
-                "}",
-                "tool.schema = schema",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    for path in list((dest / ".opencode" / "tools").glob("*.ts")) + list((dest / ".opencode" / "plugins").glob("*.ts")):
-        text = path.read_text(encoding="utf-8")
-        rewritten = text.replace('from "../lib/workflow"', 'from "../lib/workflow.ts"')
-        if rewritten != text:
-            path.write_text(rewritten, encoding="utf-8")
-
-
-def run_generated_tool(dest: Path, relative_tool_path: str, args: dict[str, object]) -> dict[str, object]:
-    prepare_generated_tool_runtime(dest)
-    runner = dest / ".opencode" / "state" / "tool-runner.mjs"
-    runner.parent.mkdir(parents=True, exist_ok=True)
-    runner.write_text(
-        "\n".join(
-            [
-                'import { pathToFileURL } from "node:url"',
-                "const toolPath = process.env.SCAFFORGE_TOOL_PATH",
-                "if (!toolPath) throw new Error('Missing SCAFFORGE_TOOL_PATH')",
-                "const mod = await import(pathToFileURL(toolPath).href)",
-                "const rawArgs = process.env.SCAFFORGE_TOOL_ARGS || '{}'",
-                "const payload = await mod.default.execute(JSON.parse(rawArgs))",
-                "console.log(payload)",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    env = os.environ.copy()
-    env["SCAFFORGE_TOOL_PATH"] = str((dest / relative_tool_path).resolve())
-    env["SCAFFORGE_TOOL_ARGS"] = json.dumps(args)
-    return run_json(
-        ["node", "--experimental-strip-types", str(runner)],
-        dest,
-        env=env,
-    )
-
-
-def run_generated_tool_error(dest: Path, relative_tool_path: str, args: dict[str, object]) -> str:
-    prepare_generated_tool_runtime(dest)
-    runner = dest / ".opencode" / "state" / "tool-runner.mjs"
-    runner.parent.mkdir(parents=True, exist_ok=True)
-    runner.write_text(
-        "\n".join(
-            [
-                'import { pathToFileURL } from "node:url"',
-                "const toolPath = process.env.SCAFFORGE_TOOL_PATH",
-                "if (!toolPath) throw new Error('Missing SCAFFORGE_TOOL_PATH')",
-                "const mod = await import(pathToFileURL(toolPath).href)",
-                "const rawArgs = process.env.SCAFFORGE_TOOL_ARGS || '{}'",
-                "const payload = await mod.default.execute(JSON.parse(rawArgs))",
-                "console.log(payload)",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    env = os.environ.copy()
-    env["SCAFFORGE_TOOL_PATH"] = str((dest / relative_tool_path).resolve())
-    env["SCAFFORGE_TOOL_ARGS"] = json.dumps(args)
-    result = subprocess.run(
-        ["node", "--experimental-strip-types", str(runner)],
-        cwd=dest,
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    if result.returncode == 0:
-        raise RuntimeError(f"Command unexpectedly succeeded: {relative_tool_path}")
-    return f"{result.stdout}\n{result.stderr}".strip()
-
-
-def run_generated_plugin_before(dest: Path, relative_plugin_path: str, tool_name: str, args: dict[str, object]) -> None:
-    prepare_generated_tool_runtime(dest)
-    runner = dest / ".opencode" / "state" / "plugin-runner.mjs"
-    runner.parent.mkdir(parents=True, exist_ok=True)
-    runner.write_text(
-        "\n".join(
-            [
-                'import { pathToFileURL } from "node:url"',
-                "const pluginPath = process.env.SCAFFORGE_PLUGIN_PATH",
-                "if (!pluginPath) throw new Error('Missing SCAFFORGE_PLUGIN_PATH')",
-                "const mod = await import(pathToFileURL(pluginPath).href)",
-                "const factory = mod.StageGateEnforcer",
-                "if (typeof factory !== 'function') throw new Error('Missing StageGateEnforcer export')",
-                "const hooks = await factory()",
-                'const hook = hooks["tool.execute.before"]',
-                "if (typeof hook !== 'function') throw new Error('Missing tool.execute.before hook')",
-                "const toolName = process.env.SCAFFORGE_PLUGIN_TOOL",
-                "const rawArgs = process.env.SCAFFORGE_PLUGIN_ARGS || '{}'",
-                'await hook({ tool: toolName }, { args: JSON.parse(rawArgs) })',
-                'console.log(JSON.stringify({ ok: true }))',
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    env = os.environ.copy()
-    env["SCAFFORGE_PLUGIN_PATH"] = str((dest / relative_plugin_path).resolve())
-    env["SCAFFORGE_PLUGIN_TOOL"] = tool_name
-    env["SCAFFORGE_PLUGIN_ARGS"] = json.dumps(args)
-    run(["node", "--experimental-strip-types", str(runner)], dest, env=env)
-
-
-def run_generated_plugin_before_error(dest: Path, relative_plugin_path: str, tool_name: str, args: dict[str, object]) -> str:
-    prepare_generated_tool_runtime(dest)
-    runner = dest / ".opencode" / "state" / "plugin-runner.mjs"
-    runner.parent.mkdir(parents=True, exist_ok=True)
-    runner.write_text(
-        "\n".join(
-            [
-                'import { pathToFileURL } from "node:url"',
-                "const pluginPath = process.env.SCAFFORGE_PLUGIN_PATH",
-                "if (!pluginPath) throw new Error('Missing SCAFFORGE_PLUGIN_PATH')",
-                "const mod = await import(pathToFileURL(pluginPath).href)",
-                "const factory = mod.StageGateEnforcer",
-                "if (typeof factory !== 'function') throw new Error('Missing StageGateEnforcer export')",
-                "const hooks = await factory()",
-                'const hook = hooks["tool.execute.before"]',
-                "if (typeof hook !== 'function') throw new Error('Missing tool.execute.before hook')",
-                "const toolName = process.env.SCAFFORGE_PLUGIN_TOOL",
-                "const rawArgs = process.env.SCAFFORGE_PLUGIN_ARGS || '{}'",
-                'await hook({ tool: toolName }, { args: JSON.parse(rawArgs) })',
-                'console.log(JSON.stringify({ ok: true }))',
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    env = os.environ.copy()
-    env["SCAFFORGE_PLUGIN_PATH"] = str((dest / relative_plugin_path).resolve())
-    env["SCAFFORGE_PLUGIN_TOOL"] = tool_name
-    env["SCAFFORGE_PLUGIN_ARGS"] = json.dumps(args)
-    result = subprocess.run(
-        ["node", "--experimental-strip-types", str(runner)],
-        cwd=dest,
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    if result.returncode == 0:
-        raise RuntimeError(f"Plugin hook unexpectedly succeeded: {relative_plugin_path} {tool_name}")
-    return f"{result.stdout}\n{result.stderr}".strip()
+from test_support.scafforge_harness import (
+    AUDIT,
+    BOOTSTRAP,
+    CHECKLIST,
+    PIVOT,
+    PIVOT_APPLY,
+    PIVOT_PUBLISH,
+    PIVOT_RECORD,
+    PUBLIC_REPAIR,
+    RECORD_REPAIR_STAGE,
+    REGENERATE,
+    REPAIR,
+    ROOT,
+    VERIFY_GENERATED,
+    compute_bootstrap_fingerprint,
+    load_python_module,
+    package_commit,
+    prepare_generated_tool_runtime,
+    run,
+    run_generated_plugin_before,
+    run_generated_plugin_before_error,
+    run_generated_tool,
+    run_generated_tool_error,
+    run_json,
+    write_executable,
+)
 
 
 def register_current_ticket_artifact(
@@ -307,22 +78,6 @@ def register_current_ticket_artifact(
     registry.setdefault("artifacts", []).append({"ticket_id": ticket_id, **artifact})
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     registry_path.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
-
-
-def seed_ready_bootstrap(dest: Path) -> None:
-    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
-    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
-    bootstrap_rel = ".opencode/state/bootstrap/synthetic-ready-bootstrap.md"
-    bootstrap_path = dest / bootstrap_rel
-    bootstrap_path.parent.mkdir(parents=True, exist_ok=True)
-    bootstrap_path.write_text("# Ready Bootstrap\n", encoding="utf-8")
-    workflow["bootstrap"] = {
-        "status": "ready",
-        "last_verified_at": "2026-03-30T00:00:00Z",
-        "environment_fingerprint": compute_bootstrap_fingerprint(dest),
-        "proof_artifact": bootstrap_rel,
-    }
-    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
 
 
 def seed_minimal_npm_repo(dest: Path) -> None:
@@ -469,50 +224,6 @@ def seed_bootstrap_deadlock(dest: Path) -> None:
     workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
 
 
-def seed_bootstrap_command_layout_mismatch(dest: Path) -> None:
-    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
-    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
-    current_rel = ".opencode/state/artifacts/history/exec-014/bootstrap/2026-03-27T13-23-09-710Z-environment-bootstrap.md"
-    previous_rel = ".opencode/state/artifacts/history/exec-014/bootstrap/2026-03-27T13-20-16-174Z-environment-bootstrap.md"
-    current_path = dest / current_rel
-    previous_path = dest / previous_rel
-    current_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact_body = "\n".join(
-        [
-            "# Environment Bootstrap",
-            "",
-            "## Missing Prerequisites",
-            "",
-            f"- {dest / '.venv' / 'bin' / 'pytest'}",
-            "",
-            "## Commands",
-            "",
-            "### 1. uv availability",
-            "",
-            "- command: `uv --version`",
-            "",
-            "### 2. uv sync",
-            "",
-            "- command: `uv sync --locked`",
-            "",
-            "### 3. project pytest ready",
-            "",
-            f"- command: `{dest / '.venv' / 'bin' / 'pytest'} --version`",
-            f"- missing_executable: {dest / '.venv' / 'bin' / 'pytest'}",
-            "",
-        ]
-    ) + "\n"
-    current_path.write_text(artifact_body, encoding="utf-8")
-    previous_path.write_text(artifact_body, encoding="utf-8")
-    workflow["bootstrap"] = {
-        "status": "failed",
-        "last_verified_at": "2026-03-27T13:23:09.710Z",
-        "environment_fingerprint": "synthetic-bootstrap-command-mismatch",
-        "proof_artifact": current_rel,
-    }
-    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
-
-
 def seed_legacy_bootstrap_tool(dest: Path) -> None:
     tool_path = dest / ".opencode" / "tools" / "environment_bootstrap.ts"
     tool_path.write_text(
@@ -605,108 +316,6 @@ def seed_failed_repair_cycle(dest: Path, diagnosis_pack: Path) -> None:
         }
     )
     provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
-
-
-def seed_repeated_diagnosis_churn(dest: Path) -> None:
-    diagnosis_root = dest / "diagnosis"
-    baseline = sorted(path for path in diagnosis_root.iterdir() if path.is_dir())[-1]
-    baseline_manifest_path = baseline / "manifest.json"
-    baseline_manifest = json.loads(baseline_manifest_path.read_text(encoding="utf-8"))
-    baseline_manifest["generated_at"] = "2026-03-27T00:03:00Z"
-    baseline_manifest["ticket_recommendations"] = [
-        {
-            "source_finding_code": "SKILL001",
-            "route": "scafforge-repair",
-            "title": "Regenerate placeholder repo-local skills",
-        }
-    ]
-    baseline_manifest_path.write_text(json.dumps(baseline_manifest, indent=2) + "\n", encoding="utf-8")
-
-    for folder_name, generated_at in (
-        ("20260327-002513", "2026-03-27T00:25:13Z"),
-        ("20260327-014404", "2026-03-27T01:44:04Z"),
-    ):
-        target = diagnosis_root / folder_name
-        if target.exists():
-            shutil.rmtree(target)
-        shutil.copytree(baseline, target)
-        manifest_path = target / "manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["generated_at"] = generated_at
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-
-
-def make_stack_skill_non_placeholder(dest: Path) -> None:
-    skill_path = dest / ".opencode" / "skills" / "stack-standards" / "SKILL.md"
-    skill_path.write_text(
-        skill_path.read_text(encoding="utf-8").replace(
-            "Replace this file with stack-specific rules once the real project stack is known.",
-            "Use `uv run pytest -q` for validation and keep Python tooling repo-local via `uv`.",
-        ),
-        encoding="utf-8",
-    )
-
-
-def seed_workflow_overclaim(dest: Path) -> Path:
-    manifest_path = dest / "tickets" / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    active_ticket = manifest["active_ticket"]
-    manifest["tickets"].append(
-        {
-            "id": "WFLOW-DEP",
-            "title": "Synthetic dependent ticket",
-            "wave": 99,
-            "lane": "workflow",
-            "parallel_safe": True,
-            "overlap_risk": "low",
-            "stage": "planning",
-            "status": "ready",
-            "depends_on": [active_ticket],
-            "summary": "Synthetic dependent ticket for handoff overclaim coverage.",
-            "acceptance": ["Dependency claim remains blocked until the active ticket is done."],
-            "decision_blockers": [],
-            "artifacts": [],
-            "resolution_state": "open",
-            "verification_state": "suspect",
-            "follow_up_ticket_ids": [],
-        }
-    )
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-
-    overclaim = (
-        "Active work is only blocked by a tool/env mismatch, not a code defect. "
-        "The downstream dependency is now unblocked and ready to proceed."
-    )
-    for relative in ("START-HERE.md", ".opencode/state/latest-handoff.md"):
-        path = dest / relative
-        original = path.read_text(encoding="utf-8") if path.exists() else (dest / "START-HERE.md").read_text(encoding="utf-8")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if "## Next Action" in original:
-            updated = original.replace("## Next Action", f"## Next Action\n\n{overclaim}\n")
-        else:
-            updated = original.rstrip() + f"\n\n## Next Action\n\n{overclaim}\n"
-        path.write_text(updated, encoding="utf-8")
-
-    log_path = dest / "session-log.md"
-    log_path.write_text(
-        "\n".join(
-            [
-                "Active ticket: `EXEC-001` — stage `planning`, status `ready`.",
-                "`approved_plan: false`",
-                "Cannot move EXEC-005 to implementation before it passes through plan_review.",
-                "Cannot move EXEC-005 to implementation before it passes through plan_review.",
-                'Workaround needed again — using the `todo` bypass: {"stage": "todo"}',
-                "Unable to run verification commands — The bash tool is blocked by permission rules in this environment.",
-                "Result: PASS (scoped)",
-                "Verified by running the scoped command above",
-                "Later evidence: 126 tests collected and the service imports cleanly.",
-                "Final summary: tool/env mismatch, not a code defect. EXEC-002 is now unblocked.",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return log_path
 
 
 def seed_closed_ticket_with_blocked_dependent(dest: Path) -> None:
@@ -1090,40 +699,6 @@ def write_python_wrapper(path: Path, *, allow_pytest: bool) -> None:
         encoding="utf-8",
     )
     path.chmod(0o755)
-
-
-def seed_failing_pytest_suite(dest: Path) -> None:
-    seed_uv_python_fixture(dest)
-    src_pkg = dest / "src" / "smoke_pkg"
-    src_pkg.mkdir(parents=True, exist_ok=True)
-    (src_pkg / "__init__.py").write_text("__all__ = ['ok']\n", encoding="utf-8")
-    tests_dir = dest / "tests"
-    tests_dir.mkdir(parents=True, exist_ok=True)
-    (tests_dir / "test_sample.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
-
-    venv_bin = dest / ".venv" / "bin"
-    venv_bin.mkdir(parents=True, exist_ok=True)
-    write_python_wrapper(venv_bin / "python", allow_pytest=True)
-    (venv_bin / "pytest").write_text(
-        "\n".join(
-            [
-                f"#!{sys.executable}",
-                "import sys",
-                "args = sys.argv[1:]",
-                'if "--version" in args:',
-                '    print("pytest 8.1.0")',
-                "    raise SystemExit(0)",
-                'if "--collect-only" in args:',
-                '    print("2 tests collected")',
-                "    raise SystemExit(0)",
-                'print("1 failed, 1 passed in 0.10s")',
-                "raise SystemExit(1)",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (venv_bin / "pytest").chmod(0o755)
 
 
 def seed_missing_pytest_env(dest: Path) -> None:
@@ -1737,184 +1312,6 @@ def seed_blocked_split_parent(dest: Path) -> None:
         }
     )
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-
-
-def seed_restart_surface_drift(dest: Path) -> None:
-    manifest_path = dest / "tickets" / "manifest.json"
-    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
-    ticket = manifest["tickets"][0]
-    proof_rel = ".opencode/state/bootstrap/synthetic-bootstrap-proof.md"
-    proof_path = dest / proof_rel
-    proof_path.parent.mkdir(parents=True, exist_ok=True)
-    proof_path.write_text("# Bootstrap Proof\n", encoding="utf-8")
-
-    workflow["bootstrap"] = {
-        "status": "failed",
-        "last_verified_at": "2026-03-25T23:02:26Z",
-        "environment_fingerprint": "synthetic-bootstrap",
-        "proof_artifact": proof_rel,
-    }
-    workflow["pending_process_verification"] = True
-    workflow["state_revision"] = 122
-    workflow["lane_leases"] = [
-        {
-            "ticket_id": ticket["id"],
-            "lane": ticket["lane"],
-            "owner_agent": "synthetic-team-leader",
-            "write_lock": True,
-            "claimed_at": "2026-03-25T23:00:24Z",
-            "allowed_paths": ["."],
-        }
-    ]
-    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
-
-    (dest / "START-HERE.md").write_text(
-        "\n".join(
-            [
-                "# START HERE",
-                "",
-                "<!-- SCAFFORGE:START_HERE_BLOCK START -->",
-                "## What This Repo Is",
-                "",
-                "Smoke Example",
-                "",
-                "## Current Or Next Ticket",
-                "",
-                f"- ID: {ticket['id']}",
-                f"- Title: {ticket['title']}",
-                f"- Wave: {ticket['wave']}",
-                f"- Lane: {ticket['lane']}",
-                f"- Stage: {ticket['stage']}",
-                "- Status: ready",
-                f"- Resolution: {ticket['resolution_state']}",
-                f"- Verification: {ticket['verification_state']}",
-                "",
-                "## Generation Status",
-                "",
-                "- handoff_status: ready for continued development",
-                f"- process_version: {workflow['process_version']}",
-                f"- parallel_mode: {workflow['parallel_mode']}",
-                "- pending_process_verification: false",
-                "- bootstrap_status: ready",
-                "- bootstrap_proof: None",
-                "",
-                "## Post-Generation Audit Status",
-                "",
-                "- audit_or_repair_follow_up: none recorded",
-                "- reopened_tickets: none",
-                "- done_but_not_fully_trusted: none",
-                "- pending_reverification: none",
-                "",
-                "## Known Risks",
-                "",
-                "- None recorded.",
-                "",
-                "## Next Action",
-                "",
-                "Continue the required internal lifecycle from the current ticket stage.",
-                "<!-- SCAFFORGE:START_HERE_BLOCK END -->",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    (dest / ".opencode" / "state" / "context-snapshot.md").write_text(
-        "\n".join(
-            [
-                "# Context Snapshot",
-                "",
-                "## Project",
-                "",
-                "Smoke Example",
-                "",
-                "## Active Ticket",
-                "",
-                f"- ID: {ticket['id']}",
-                f"- Title: {ticket['title']}",
-                f"- Stage: {ticket['stage']}",
-                "- Status: ready",
-                f"- Resolution: {ticket['resolution_state']}",
-                f"- Verification: {ticket['verification_state']}",
-                "- Approved plan: no",
-                "- Needs reverification: no",
-                "",
-                "## Bootstrap",
-                "",
-                "- status: ready",
-                "- last_verified_at: 2026-03-25T22:00:00Z",
-                "- proof_artifact: None",
-                "",
-                "## Process State",
-                "",
-                f"- process_version: {workflow['process_version']}",
-                "- pending_process_verification: false",
-                f"- parallel_mode: {workflow['parallel_mode']}",
-                "- state_revision: 113",
-                "",
-                "## Lane Leases",
-                "",
-                "- No active lane leases",
-                "",
-                "## Recent Artifacts",
-                "",
-                "- No artifacts recorded yet",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    (dest / ".opencode" / "state" / "latest-handoff.md").write_text(
-        "\n".join(
-            [
-                "# START HERE",
-                "",
-                "<!-- SCAFFORGE:START_HERE_BLOCK START -->",
-                "## What This Repo Is",
-                "",
-                "Smoke Example",
-                "",
-                "## Current Or Next Ticket",
-                "",
-                f"- ID: {ticket['id']}",
-                f"- Title: {ticket['title']}",
-                f"- Wave: {ticket['wave']}",
-                f"- Lane: {ticket['lane']}",
-                f"- Stage: {ticket['stage']}",
-                "- Status: ready",
-                f"- Resolution: {ticket['resolution_state']}",
-                f"- Verification: {ticket['verification_state']}",
-                "",
-                "## Generation Status",
-                "",
-                "- handoff_status: ready for continued development",
-                f"- process_version: {workflow['process_version']}",
-                f"- parallel_mode: {workflow['parallel_mode']}",
-                "- pending_process_verification: false",
-                "- bootstrap_status: ready",
-                "- bootstrap_proof: None",
-                "",
-                "## Post-Generation Audit Status",
-                "",
-                "- audit_or_repair_follow_up: none recorded",
-                "- reopened_tickets: none",
-                "- done_but_not_fully_trusted: none",
-                "- pending_reverification: none",
-                "",
-                "## Known Risks",
-                "",
-                "- None recorded.",
-                "",
-                "## Next Action",
-                "",
-                "Continue the required internal lifecycle from the current ticket stage.",
-                "<!-- SCAFFORGE:START_HERE_BLOCK END -->",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
 
 
 def seed_bootstrap_guidance_drift(dest: Path) -> None:
