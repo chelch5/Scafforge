@@ -76,14 +76,15 @@ The default route should be:
 1. `scaffold-kickoff` decides this is a greenfield build
 2. `spec-pack-normalizer` produces a canonical brief
 3. `repo-scaffold-factory` renders the base scaffold
-4. `project-skill-bootstrap` completes the full greenfield local-skill pass
-5. `opencode-team-bootstrap` designs the project-specific agent team
-6. `agent-prompt-engineering` runs the required same-session prompt-hardening pass
-7. `ticket-pack-builder` runs in bootstrap mode
-8. the kickoff-owned immediate-continuation verification gate proves the repo is truthful and immediately runnable
-9. `handoff-brief` refreshes the restart surface
+4. the kickoff-owned bootstrap-lane proof confirms one canonical first move before specialization begins
+5. `project-skill-bootstrap` completes the full greenfield local-skill pass
+6. `opencode-team-bootstrap` designs the project-specific agent team
+7. `agent-prompt-engineering` runs the required same-session prompt-hardening pass
+8. `ticket-pack-builder` runs in bootstrap mode
+9. the kickoff-owned immediate-continuation verification gate proves the repo is truthful and immediately runnable
+10. `handoff-brief` refreshes the restart surface
 
-A greenfield scaffold allows one batched blocking-decision round and then completes in one uninterrupted same-session pass. No second Scafforge generation pass is required before development begins. Greenfield completion requires immediate continuation proof before handoff publication, not only surface agreement.
+A greenfield scaffold allows one batched blocking-decision round and then completes in one uninterrupted same-session pass. No second Scafforge generation pass is required before development begins. Greenfield now has an early bootstrap-lane proof plus the later immediate-continuation proof before handoff publication, not only surface agreement.
 The package still carries one explicit temporary contract smell: `project-skill-bootstrap` and `opencode-team-bootstrap` form a dependency seam, and the current order stays in place until Scafforge introduces a real minimal-operable-versus-specialization split.
 
 ## Product contract refinements

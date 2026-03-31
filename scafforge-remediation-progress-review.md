@@ -55,7 +55,7 @@ Important clarification:
 
 - Phase 0: complete
 - Phase 1: largely implemented
-- Phase 2: partially implemented
+- Phase 2: complete
 - Phase 3: substantially implemented
 - Phase 4: complete
 - Phase 5: complete for the primary generated tool surfaces in the plan
@@ -111,21 +111,20 @@ Not yet done:
 
 Implemented:
 
+- a packaged bootstrap-lane verification mode now exists inside:
+  - [verify_generated_scaffold.py](/home/rowan/Scafforge/skills/repo-scaffold-factory/scripts/verify_generated_scaffold.py)
 - a packaged greenfield verification entrypoint exists:
   - [verify_generated_scaffold.py](/home/rowan/Scafforge/skills/repo-scaffold-factory/scripts/verify_generated_scaffold.py)
 - greenfield docs now require immediate continuation proof instead of only surface agreement
 - the verifier checks a wider set of workflow-critical docs and tools than before
 - malformed generated state now produces structured verification failure instead of crashing
+- the greenfield manifest and kickoff flow now include an early post-scaffold bootstrap-lane proof before project-specific specialization begins
 
 What this achieved:
 
+- a raw scaffold now has to prove one canonical bootstrap lane before later specialization work begins
 - greenfield completion is harder to overclaim
-- the proof-first gate is now a real packaged surface instead of only an internal helper
-
-Not yet done:
-
-- the early proof layer described in the plan, immediately after `repo-scaffold-factory`, has not been separately implemented as a distinct gate
-- the plan’s full T0 bootstrap-lane architecture has not been completed beyond the stronger current scaffold/verification contract
+- the proof-first model now has both the earlier bootstrap-lane gate and the later immediate-continuation gate as real packaged surfaces
 
 ### Phase 3: Shrink And Refocus Audit
 

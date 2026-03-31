@@ -29,6 +29,7 @@ Greenfield generation is one kickoff run. The default chain is:
 scaffold-kickoff
   -> spec-pack-normalizer
   -> repo-scaffold-factory
+  -> repo-scaffold-factory:verify-bootstrap-lane
   -> project-skill-bootstrap
   -> opencode-team-bootstrap
   -> agent-prompt-engineering
@@ -37,7 +38,7 @@ scaffold-kickoff
   -> handoff-brief
 ```
 
-This pass allows one batched blocking-decision round and then completes in one uninterrupted same-session generation run. No second Scafforge generation pass is required before development begins. Greenfield completion requires immediate continuation proof, not only surface agreement. That proof must be completed before handoff publication.
+This pass allows one batched blocking-decision round and then completes in one uninterrupted same-session generation run. No second Scafforge generation pass is required before development begins. Greenfield now has two proof layers: an early bootstrap-lane proof immediately after scaffold render, and the later immediate-continuation proof before handoff. Greenfield completion requires immediate continuation proof, not only surface agreement. That proof must be completed before handoff publication.
 The current package still carries one temporary contract smell: `project-skill-bootstrap` and `opencode-team-bootstrap` form a dependency seam, so Scafforge keeps the current order until a minimal-operable-versus-specialization split exists.
 
 `scaffold-kickoff` remains the single public entrypoint for:

@@ -100,7 +100,15 @@ After the script generates the base files, you MUST customize them with actual p
 
 ## After this step
 
-Continue to `../project-skill-bootstrap/SKILL.md` for the full greenfield local-skill pass, then continue through the remaining same-session generation steps. Before final handoff, the greenfield flow should use `scripts/verify_generated_scaffold.py` as the internal immediate-continuation gate for the generated repo.
+Before continuing into project-specific specialization, run the early bootstrap-lane proof:
+
+```sh
+python3 scripts/verify_generated_scaffold.py <repo-root> --verification-kind bootstrap-lane --format both
+```
+
+That early gate must prove one canonical bootstrap ticket, one valid bootstrap status, and one aligned bootstrap-first route across restart, workflow, and tool surfaces before `project-skill-bootstrap` begins.
+
+Then continue to `../project-skill-bootstrap/SKILL.md` for the full greenfield local-skill pass, and later use `scripts/verify_generated_scaffold.py` again with the default verification kind as the final immediate-continuation gate before handoff.
 
 ## References
 

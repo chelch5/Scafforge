@@ -66,6 +66,140 @@ def _contains_all(text: str, required_snippets: tuple[str, ...]) -> bool:
     return all(snippet in text for snippet in required_snippets)
 
 
+def verify_greenfield_bootstrap_lane(root: Path) -> list[Finding]:
+    findings: list[Finding] = []
+
+    manifest_path = root / "tickets" / "manifest.json"
+    workflow_path = root / ".opencode" / "state" / "workflow-state.json"
+    start_here_path = root / "START-HERE.md"
+    latest_handoff_path = root / ".opencode" / "state" / "latest-handoff.md"
+    workflow_doc_path = root / "docs" / "process" / "workflow.md"
+    tooling_doc_path = root / "docs" / "process" / "tooling.md"
+    ticket_lookup_path = root / ".opencode" / "tools" / "ticket_lookup.ts"
+    environment_bootstrap_path = root / ".opencode" / "tools" / "environment_bootstrap.ts"
+
+    manifest, manifest_error = _read_json(manifest_path)
+    workflow, workflow_error = _read_json(workflow_path)
+    start_here = _read_text(start_here_path)
+    latest_handoff = _read_text(latest_handoff_path)
+    workflow_doc = _read_text(workflow_doc_path)
+    tooling_doc = _read_text(tooling_doc_path)
+    ticket_lookup = _read_text(ticket_lookup_path)
+    environment_bootstrap = _read_text(environment_bootstrap_path)
+
+    if not isinstance(manifest, dict) or not isinstance(workflow, dict):
+        findings.append(
+            _finding(
+                code="VERIFY101",
+                problem="The base scaffold is missing canonical queue or workflow state for the bootstrap lane.",
+                root_cause="The earliest greenfield proof cannot validate one legal first move when manifest or workflow-state is absent or invalid immediately after scaffold generation.",
+                files=[_normalize(manifest_path, root), _normalize(workflow_path, root)],
+                safer_pattern="Emit tickets/manifest.json and .opencode/state/workflow-state.json as part of the scaffold render before any later specialization step begins.",
+                evidence=[
+                    f"{_normalize(manifest_path, root)} exists: {manifest_path.exists()}",
+                    f"{_normalize(workflow_path, root)} exists: {workflow_path.exists()}",
+                    f"{_normalize(manifest_path, root)} parse_error: {manifest_error or 'none'}",
+                    f"{_normalize(workflow_path, root)} parse_error: {workflow_error or 'none'}",
+                ],
+            )
+        )
+        return findings
+
+    active_ticket = workflow.get("active_ticket")
+    bootstrap = workflow.get("bootstrap") if isinstance(workflow.get("bootstrap"), dict) else {}
+    bootstrap_status = str(bootstrap.get("status", "")).strip()
+    bootstrap_proof = str(bootstrap.get("proof_artifact", "")).strip()
+    tickets = manifest.get("tickets") if isinstance(manifest.get("tickets"), list) else []
+    first_ticket = tickets[0] if tickets and isinstance(tickets[0], dict) else {}
+
+    if active_ticket != manifest.get("active_ticket") or active_ticket != first_ticket.get("id"):
+        findings.append(
+            _finding(
+                code="VERIFY102",
+                problem="The base scaffold does not expose one canonical bootstrap ticket across manifest and workflow state.",
+                root_cause="The first legal move becomes ambiguous before specialization even starts when manifest and workflow state disagree on the foreground bootstrap lane.",
+                files=[_normalize(manifest_path, root), _normalize(workflow_path, root)],
+                safer_pattern="Keep one bounded setup/bootstrap ticket aligned across tickets/manifest.json and workflow-state immediately after scaffold generation.",
+                evidence=[
+                    f"workflow active_ticket = {active_ticket!r}",
+                    f"manifest active_ticket = {manifest.get('active_ticket')!r}",
+                    f"first manifest ticket id = {first_ticket.get('id')!r}",
+                ],
+            )
+        )
+
+    if first_ticket.get("id") != "SETUP-001" or "Bootstrap environment" not in str(first_ticket.get("title", "")):
+        findings.append(
+            _finding(
+                code="VERIFY103",
+                problem="The base scaffold does not keep the bootstrap lane as the bounded first move.",
+                root_cause="The early proof layer fails when the initial scaffold does not seed one explicit setup/bootstrap ticket as the foreground lane.",
+                files=[_normalize(manifest_path, root)],
+                safer_pattern="Seed SETUP-001 as the explicit bootstrap and scaffold-readiness lane before any deeper implementation or specialization work.",
+                evidence=[
+                    f"first manifest ticket id = {first_ticket.get('id')!r}",
+                    f"first manifest ticket title = {first_ticket.get('title')!r}",
+                ],
+            )
+        )
+
+    if bootstrap_status not in {"missing", "failed", "ready"}:
+        findings.append(
+            _finding(
+                code="VERIFY104",
+                problem="The base scaffold records an invalid bootstrap state for the first legal move.",
+                root_cause="The bootstrap-lane proof cannot route cleanly when bootstrap.status is missing or unknown immediately after scaffold generation.",
+                files=[_normalize(workflow_path, root)],
+                safer_pattern="Keep bootstrap.status explicit as missing, failed, or ready from the first scaffold render onward.",
+                evidence=[f"bootstrap.status = {bootstrap_status!r}"],
+            )
+        )
+
+    if bootstrap_status == "ready" and not bootstrap_proof:
+        findings.append(
+            _finding(
+                code="VERIFY105",
+                problem="Bootstrap is marked ready without proof in the early scaffold state.",
+                root_cause="The first proof layer becomes untrustworthy when bootstrap readiness is recorded before a proof artifact path exists.",
+                files=[_normalize(workflow_path, root)],
+                safer_pattern="Only mark bootstrap ready when workflow-state also records the proof artifact path, even in the earliest scaffold state.",
+                evidence=[f"bootstrap = {json.dumps(bootstrap, sort_keys=True)}"],
+            )
+        )
+
+    missing_routing: list[str] = []
+    if bootstrap_status != "ready":
+        if GREENFIELD_BOOTSTRAP_NEXT_ACTION not in start_here:
+            missing_routing.append(_normalize(start_here_path, root))
+        if "bootstrap recovery required" not in latest_handoff:
+            missing_routing.append(_normalize(latest_handoff_path, root))
+        if "run `environment_bootstrap` first, then rerun `ticket_lookup` before any stage change" not in workflow_doc:
+            missing_routing.append(_normalize(workflow_doc_path, root))
+        if "if bootstrap is not ready it short-circuits normal lifecycle guidance and routes `environment_bootstrap` first" not in tooling_doc:
+            missing_routing.append(_normalize(tooling_doc_path, root))
+        if "Run environment_bootstrap first, then rerun ticket_lookup before attempting lifecycle transitions." not in ticket_lookup:
+            missing_routing.append(_normalize(ticket_lookup_path, root))
+    if not environment_bootstrap.strip():
+        missing_routing.append(_normalize(environment_bootstrap_path, root))
+
+    if missing_routing:
+        findings.append(
+            _finding(
+                code="VERIFY106",
+                problem="The base scaffold does not preserve one executable bootstrap-first route across its managed surfaces.",
+                root_cause="The early proof layer fails when restart, workflow, and tool surfaces do not align on environment_bootstrap as the first legal move before specialization begins.",
+                files=missing_routing,
+                safer_pattern="Keep START-HERE, latest-handoff, workflow docs, tooling docs, ticket_lookup, and environment_bootstrap aligned on one bootstrap-first route immediately after scaffold generation.",
+                evidence=[
+                    f"bootstrap.status = {bootstrap_status!r}",
+                    f"missing aligned bootstrap-lane surfaces: {', '.join(missing_routing)}",
+                ],
+            )
+        )
+
+    return findings
+
+
 def verify_greenfield_continuation(root: Path) -> list[Finding]:
     findings: list[Finding] = []
 
@@ -278,4 +412,10 @@ def verify_greenfield_continuation(root: Path) -> list[Finding]:
     return findings
 
 
-__all__ = ["Finding", "audit_repo", "verify_greenfield_continuation", "GREENFIELD_BOOTSTRAP_NEXT_ACTION"]
+__all__ = [
+    "Finding",
+    "audit_repo",
+    "verify_greenfield_bootstrap_lane",
+    "verify_greenfield_continuation",
+    "GREENFIELD_BOOTSTRAP_NEXT_ACTION",
+]
