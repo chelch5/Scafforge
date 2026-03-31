@@ -63,8 +63,46 @@ Public repair command:
 python3 scripts/run_managed_repair.py <repo-root>
 ```
 
-Use this as the default repair entrypoint. It runs the deterministic managed-surface refresh, emits the machine-readable repair plan and execution record, reruns verification, and fails closed when required follow-on stages still have not been executed.
+Use this as the default repair entrypoint. It runs the deterministic managed-surface refresh, emits the machine-readable repair plan, stale-surface map, and execution record, reruns verification, and fails closed when required follow-on stages still have not been executed.
+The canonical execution record lives at `.opencode/meta/repair-execution.json`, and the persistent follow-on tracking ledger lives at `.opencode/meta/repair-follow-on-state.json`.
 If the selected diagnosis basis still records `package_work_required_first: true`, repair must stop and send the user back to one fresh post-package revalidation audit instead of mutating the subject repo.
+Prefer explicit recorded completion when a downstream follow-on stage actually ran:
+
+```sh
+python3 scripts/record_repair_stage_completion.py <repo-root> --stage <stage> --completed-by <skill> --summary "<what ran>"
+```
+
+Use that command to record real follow-on execution with evidence paths. Recorded execution must include at least one repo-relative evidence path. Recorded execution must include a non-empty `completed_by`, a non-empty summary, and current evidence; zero-evidence or blank-provenance recorded completion is invalid and must be rejected.
+Recorded completion also requires repair-package provenance; a missing package commit must surface as `missing_provenance` and be rejected instead of silently degrading to `unknown`.
+`record_repair_stage_completion.py` and canonical repair-completion artifacts are the normal public completion path inside the canonical repair follow-on stage catalog. A hidden legacy `--stage-complete` compatibility shim may still exist for older hosts, but it must stay outside the normal documented happy path and still obey the same stage-catalog and current-cycle rules.
+The current allowed stage names are:
+
+- `project-skill-bootstrap`
+- `opencode-team-bootstrap`
+- `agent-prompt-engineering`
+- `ticket-pack-builder`
+- `handoff-brief`
+
+Reject unknown stage names instead of silently recording arbitrary labels into repair state.
+Known stage names are still not enough by themselves. Outside the special closeout case for `handoff-brief`, a stage that is not part of the current repair cycle must be rejected instead of being recorded into the current cycle. In practice that means the stage must also be present in the current repair cycle's `required_stages`.
+When a downstream stage emits a canonical repair completion artifact for the current repair cycle, the public repair runner may auto-recognize that stage on the next run instead of requiring a separate recording command. The current bounded auto-recognition path is:
+
+- `project-skill-bootstrap` via `.opencode/state/artifacts/history/repair/project-skill-bootstrap-completion.md`
+- `opencode-team-bootstrap` via `.opencode/state/artifacts/history/repair/opencode-team-bootstrap-completion.md`
+- `agent-prompt-engineering` via `.opencode/state/artifacts/history/repair/agent-prompt-engineering-completion.md`
+- `ticket-pack-builder` via `.opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md`
+- `handoff-brief` via `.opencode/state/artifacts/history/repair/handoff-brief-completion.md`
+
+That artifact is only trusted for the current repair cycle when it includes both:
+
+- `- completed_stage: <stage-name>`
+- `- cycle_id: <current .opencode/meta/repair-follow-on-state.json cycle_id>`
+
+If a follow-on stage does not yet emit a canonical completion artifact, use `record_repair_stage_completion.py`.
+If recorded execution uses the canonical repair completion artifact path for a stage, that artifact must also match the current repair cycle before Scafforge accepts the recorded completion.
+If a previously recorded canonical repair completion artifact is later edited so its `completed_stage` or `cycle_id` no longer matches the current repair cycle, Scafforge must invalidate that recorded execution automatically instead of continuing to trust it.
+If recorded execution evidence is later deleted, moved, or was never recorded at all, Scafforge must stop trusting that recorded completion automatically instead of silently continuing to reuse stale completion state.
+The public runner must also fail explicit repair-contract consistency checks. At minimum, do not allow it to report verification success when restart surfaces still drift, placeholder local skills survive refresh, or it somehow reports zero findings while still not being current-state clean.
 
 ### 4. Use the deterministic engine as the internal refresh phase
 
@@ -76,7 +114,10 @@ python3 scripts/apply_repo_process_repair.py <repo-root>
 
 Use this when the repo needs one deliberate workflow-contract refresh rather than piecemeal edits.
 This deterministic repair flow regenerates `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` from canonical state, then records the verification outcome before publishing the updated restart narrative.
+It must also emit a machine-readable stale-surface map using the bounded categories `stable`, `replace`, `regenerate`, and `ticket_follow_up`.
+Intent-changing drift is out of scope for routine public repair and must route back through kickoff or pivot instead of being reported as a repair-emitted stale-surface category.
 Treat this command as the internal refresh engine, not as the whole user-facing repair contract. A repair run is still incomplete if required regeneration, ticket follow-up, or post-repair verification did not happen afterward.
+If repair runs after a pivot, preserve the pivot-owned stale-surface and restart-state truth instead of republishing generic ready-state restart surfaces. Managed repair can refresh workflow surfaces, but it must not erase active pivot blockers or pending pivot lineage work from `START-HERE.md`, `.opencode/state/latest-handoff.md`, or `.opencode/state/context-snapshot.md`.
 
 ### 5. Continue into required project-specific regeneration
 
@@ -194,9 +235,13 @@ Keep the diagnosis decision and the repair action separated.
 - Validated repair basis
 - Prior diagnosis/repair-cycle analysis when this is a repeat repair attempt
 - Exact files changed
+- Machine-readable stale-surface map
 - Safe-versus-escalated repair boundary
 - Whether deterministic managed-surface replacement occurred
 - Whether project-skill, agent-team, and prompt-hardening follow-up ran
+- Which follow-on stages were only host-asserted through the legacy compatibility assertion path
+- Which follow-on stages were explicitly recorded as completed through `record_repair_stage_completion.py`
+- The persistent follow-on state path and recorded stage state for the current repair cycle
 - Provenance and workflow-state updates applied
 - Ticket follow-up created or recommended
 - Post-repair verification results

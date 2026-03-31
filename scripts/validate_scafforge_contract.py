@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,6 +45,14 @@ def require_absent(findings: list[Finding], path: Path, needle: str) -> None:
         return
     if needle in read_text(path):
         findings.append(Finding("error", f"{path.relative_to(ROOT)} still contains forbidden text: {needle}"))
+
+
+def require_absent_regex(findings: list[Finding], path: Path, pattern: str) -> None:
+    if not path.exists():
+        add_missing(findings, path)
+        return
+    if re.search(pattern, read_text(path), flags=re.MULTILINE):
+        findings.append(Finding("error", f"{path.relative_to(ROOT)} still matches forbidden pattern: {pattern}"))
 
 
 def require_order(findings: list[Finding], path: Path, first: str, second: str) -> None:
@@ -134,6 +144,34 @@ def require_files_equal(findings: list[Finding], left: Path, right: Path) -> Non
         findings.append(Finding("error", f"Shared reference surfaces diverged: {left.relative_to(ROOT)} != {right.relative_to(ROOT)}"))
 
 
+def require_script_help_runs(findings: list[Finding], path: Path) -> None:
+    if not path.exists():
+        add_missing(findings, path)
+        return
+    result = subprocess.run(
+        [sys.executable, str(path), "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        summary = detail[0] if detail else "no error output"
+        findings.append(
+            Finding(
+                "error",
+                f"{path.relative_to(ROOT)} --help failed with exit code {result.returncode}: {summary}",
+            )
+        )
+
+
+def split_sequence_step(step: object) -> tuple[str | None, str | None]:
+    if not isinstance(step, str) or not step.strip():
+        return None, None
+    skill_name, _, mode = step.partition(":")
+    return skill_name.strip() or None, mode.strip() or None
+
+
 def validate_flow_manifest(findings: list[Finding]) -> None:
     if not FLOW_MANIFEST.exists():
         add_missing(findings, FLOW_MANIFEST)
@@ -152,23 +190,82 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
     if not isinstance(skills, dict):
         findings.append(Finding("error", "skill-flow-manifest.json is missing a skills object"))
         return
+    contract_smells = manifest.get("contract_smells")
+    flow_graph_sanity = manifest.get("flow_graph_sanity")
+    if not isinstance(contract_smells, list):
+        findings.append(Finding("error", "skill-flow-manifest.json is missing a contract_smells list"))
+        contract_smells = []
+    if not isinstance(flow_graph_sanity, dict):
+        findings.append(Finding("error", "skill-flow-manifest.json is missing a flow_graph_sanity object"))
+        flow_graph_sanity = {}
+    else:
+        if flow_graph_sanity.get("single_public_entrypoint") != "scaffold-kickoff":
+            findings.append(Finding("error", "flow_graph_sanity.single_public_entrypoint must remain scaffold-kickoff"))
+        if flow_graph_sanity.get("all_run_types_end_with") != "handoff-brief":
+            findings.append(Finding("error", "flow_graph_sanity.all_run_types_end_with must remain handoff-brief"))
+        if flow_graph_sanity.get("validate_sequence_modes") is not True:
+            findings.append(Finding("error", "flow_graph_sanity.validate_sequence_modes must remain true"))
+        if flow_graph_sanity.get("acyclic_except_contract_smells") != ["CYCLE001"]:
+            findings.append(Finding("error", "flow_graph_sanity.acyclic_except_contract_smells must only list CYCLE001"))
+
+    cycle_smell = None
+    for smell in contract_smells:
+        if isinstance(smell, dict) and smell.get("code") == "CYCLE001":
+            cycle_smell = smell
+            break
+    if not isinstance(cycle_smell, dict):
+        findings.append(Finding("error", "skill-flow-manifest.json must declare contract smell CYCLE001"))
+    else:
+        if cycle_smell.get("status") != "accepted-temporary-debt":
+            findings.append(Finding("error", "CYCLE001 must remain marked as accepted-temporary-debt"))
+        if cycle_smell.get("skills") != ["project-skill-bootstrap", "opencode-team-bootstrap"]:
+            findings.append(Finding("error", "CYCLE001 must name project-skill-bootstrap and opencode-team-bootstrap as the affected skills"))
+        if cycle_smell.get("current_order") != ["project-skill-bootstrap:full-greenfield-pass", "opencode-team-bootstrap"]:
+            findings.append(Finding("error", "CYCLE001 must record the current greenfield order for the project-skill/team-bootstrap seam"))
+        if "minimal-operable" not in str(cycle_smell.get("removal_condition", "")):
+            findings.append(Finding("error", "CYCLE001 removal_condition must point to a minimal-operable versus specialization split"))
 
     for run_type, payload in run_types.items():
         if isinstance(payload, dict) and payload.get("entrypoint") != "scaffold-kickoff":
             findings.append(Finding("error", f"{run_type} must use scaffold-kickoff as its entrypoint"))
+        if isinstance(payload, dict):
+            sequence = payload.get("sequence")
+            if not isinstance(sequence, list) or not sequence or sequence[-1] != "handoff-brief":
+                findings.append(Finding("error", f"{run_type} sequence must end with handoff-brief"))
 
     for skill_name in skills:
         skill_file = ROOT / "skills" / skill_name / "SKILL.md"
         if not skill_file.exists():
             findings.append(Finding("error", f"Flow manifest references missing skill file: skills/{skill_name}/SKILL.md"))
 
+    if flow_graph_sanity.get("validate_sequence_modes") is True:
+        for run_type, payload in run_types.items():
+            sequence = payload.get("sequence") if isinstance(payload, dict) else None
+            if not isinstance(sequence, list):
+                continue
+            for step in sequence:
+                skill_name, mode = split_sequence_step(step)
+                if not skill_name:
+                    findings.append(Finding("error", f"{run_type} contains an invalid sequence step: {step!r}"))
+                    continue
+                skill_payload = skills.get(skill_name)
+                if not isinstance(skill_payload, dict):
+                    findings.append(Finding("error", f"{run_type} references unknown skill in its sequence: {skill_name}"))
+                    continue
+                if mode:
+                    modes = skill_payload.get("modes")
+                    if not isinstance(modes, list) or mode not in modes:
+                        findings.append(Finding("error", f"{run_type} references {skill_name}:{mode}, but {skill_name} does not declare that mode"))
+
     expected_greenfield = [
         "spec-pack-normalizer",
         "repo-scaffold-factory",
+        "repo-scaffold-factory:verify-bootstrap-lane",
         "project-skill-bootstrap:full-greenfield-pass",
         "opencode-team-bootstrap",
         "agent-prompt-engineering",
         "ticket-pack-builder:bootstrap",
+        "repo-scaffold-factory:verify-generated-scaffold",
         "handoff-brief",
     ]
     greenfield = run_types.get("greenfield", {})
@@ -226,8 +323,27 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
             )
         )
 
+    expected_pivot = [
+        "scafforge-pivot:classify_and_route",
+        "project-skill-bootstrap:repair-or-regeneration_if_needed",
+        "opencode-team-bootstrap:follow_up_if_project_specific_drift",
+        "agent-prompt-engineering:repair-hardening_if_needed",
+        "ticket-pack-builder:refine_if_needed",
+        "scafforge-repair:follow_up_if_managed_workflow_drift",
+        "handoff-brief",
+    ]
+    pivot_sequence = run_types.get("pivot", {}).get("sequence", [])
+    if pivot_sequence != expected_pivot:
+        findings.append(
+            Finding(
+                "error",
+                "pivot sequence must route through bounded pivot orchestration before selective downstream refresh: "
+                + " -> ".join(expected_pivot),
+            )
+        )
+
     kickoff_modes = skills.get("scaffold-kickoff", {}).get("modes", [])
-    for mode in ("greenfield", "retrofit", "managed-repair", "diagnosis-review"):
+    for mode in ("greenfield", "retrofit", "managed-repair", "pivot", "diagnosis-review"):
         if mode not in kickoff_modes:
             findings.append(Finding("error", f"scaffold-kickoff must expose {mode} mode"))
     if "refinement-routing" in kickoff_modes:
@@ -238,11 +354,23 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
         if mode not in project_skill_modes:
             findings.append(Finding("error", f"project-skill-bootstrap must expose {mode} mode"))
 
-    audit_modes = skills.get("scafforge-audit", {}).get("modes", [])
-    if audit_modes != ["full-diagnosis"]:
-        findings.append(Finding("error", "scafforge-audit must expose only the full-diagnosis mode"))
+    project_skill = skills.get("project-skill-bootstrap", {})
+    team_bootstrap = skills.get("opencode-team-bootstrap", {})
+    if "opencode-team-bootstrap" not in project_skill.get("downstreams", []):
+        findings.append(Finding("error", "project-skill-bootstrap must flow into opencode-team-bootstrap while CYCLE001 remains active"))
+    if "opencode-team-bootstrap" not in project_skill.get("upstreams", []):
+        findings.append(Finding("error", "project-skill-bootstrap must record opencode-team-bootstrap as an upstream while CYCLE001 remains active"))
+    if "project-skill-bootstrap" not in team_bootstrap.get("downstreams", []):
+        findings.append(Finding("error", "opencode-team-bootstrap must record project-skill-bootstrap as a downstream while CYCLE001 remains active"))
+    if "project-skill-bootstrap" not in team_bootstrap.get("upstreams", []):
+        findings.append(Finding("error", "opencode-team-bootstrap must record project-skill-bootstrap as an upstream while CYCLE001 remains active"))
 
-    for required_skill in ("scafforge-audit", "scafforge-repair"):
+    audit_modes = skills.get("scafforge-audit", {}).get("modes", [])
+    for mode in ("full-diagnosis", "audit_then_route_repair_if_needed", "review_and_emit_diagnosis_pack"):
+        if mode not in audit_modes:
+            findings.append(Finding("error", f"scafforge-audit must expose {mode} mode"))
+
+    for required_skill in ("scafforge-audit", "scafforge-repair", "scafforge-pivot"):
         if required_skill not in skills:
             findings.append(Finding("error", f"skill-flow-manifest.json is missing required skill: {required_skill}"))
 
@@ -274,14 +402,18 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, readme, "one batched blocking-decision round")
     require_contains(findings, readme, "one uninterrupted same-session generation run")
     require_contains(findings, readme, "No second Scafforge generation pass is required before development begins.")
-    require_contains(findings, readme, "Generation, audit, and repair are separate lifecycle stages.")
-    require_contains(findings, readme, "scafforge-audit` and `scafforge-repair` are later lifecycle tools")
+    require_contains(findings, readme, "Greenfield completion requires immediate continuation proof, not only surface agreement.")
+    require_contains(findings, readme, "Generation, audit, repair, and pivot are separate lifecycle stages.")
+    require_contains(findings, readme, "scafforge-audit`, `scafforge-repair`, and `scafforge-pivot` are later lifecycle tools")
     require_contains(findings, readme, "model-operating-profile")
     require_contains(findings, readme, "always validates review evidence")
     require_contains(findings, readme, "public repair contract")
+    require_contains(findings, readme, "public pivot contract")
     require_contains(findings, readme, "deterministic refresh engine")
     require_contains(findings, readme, "references/competence-contract.md")
     require_contains(findings, readme, "one legal next move")
+    require_contains(findings, readme, "temporary contract smell")
+    require_contains(findings, readme, "minimal-operable-versus-specialization split")
 
     require_contains(findings, agents, "## Product contract refinements")
     require_contains(findings, agents, "## Canonical generated-repo truth hierarchy")
@@ -291,28 +423,45 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, agents, "full diagnosis-pack generation on every audit run")
     require_contains(findings, agents, "references/competence-contract.md")
     require_contains(findings, agents, "one legal next move")
+    require_contains(findings, agents, "explicit temporary contract smell")
+    require_contains(findings, agents, "minimal-operable-versus-specialization split")
+    require_contains(findings, agents, "scafforge-pivot")
+    require_contains(findings, agents, "immediately continuable")
 
     require_contains(findings, competence_contract, "one legal next action")
     require_contains(findings, competence_contract, "operator confusion is package evidence")
     require_contains(findings, competence_contract, "causal-regression coverage")
+    require_contains(findings, competence_contract, "## Pivot expectations")
 
     require_contains(findings, one_shot, "one public generation entrypoint")
     require_contains(findings, one_shot, "`scaffold-kickoff`")
     require_contains(findings, one_shot, "one batched blocking-decision round")
     require_contains(findings, one_shot, "one uninterrupted same-session generation pass")
     require_contains(findings, one_shot, "No second Scafforge generation pass is required before development begins.")
+    require_contains(findings, one_shot, "Greenfield completion requires immediate continuation proof, not only surface agreement.")
     require_contains(findings, one_shot, "Audit and repair are outside the generation cycle.")
+    require_contains(findings, one_shot, "Pivot is outside the initial generation cycle.")
+    require_contains(findings, one_shot, "`scafforge-pivot` is a later change-management lifecycle skill.")
 
 
 def validate_skill_contracts(findings: list[Finding]) -> None:
     scaffold_kickoff = ROOT / "skills" / "scaffold-kickoff" / "SKILL.md"
     spec_pack = ROOT / "skills" / "spec-pack-normalizer" / "SKILL.md"
     repo_factory = ROOT / "skills" / "repo-scaffold-factory" / "SKILL.md"
+    repo_factory_verify = ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "verify_generated_scaffold.py"
     project_skill = ROOT / "skills" / "project-skill-bootstrap" / "SKILL.md"
     team_bootstrap = ROOT / "skills" / "opencode-team-bootstrap" / "SKILL.md"
     prompt_engineering = ROOT / "skills" / "agent-prompt-engineering" / "SKILL.md"
     ticket_builder = ROOT / "skills" / "ticket-pack-builder" / "SKILL.md"
     ticket_system_ref = ROOT / "skills" / "ticket-pack-builder" / "references" / "ticket-system.md"
+    pivot_skill = ROOT / "skills" / "scafforge-pivot" / "SKILL.md"
+    pivot_agent = ROOT / "skills" / "scafforge-pivot" / "agents" / "openai.yaml"
+    pivot_script = ROOT / "skills" / "scafforge-pivot" / "scripts" / "plan_pivot.py"
+    pivot_record_script = ROOT / "skills" / "scafforge-pivot" / "scripts" / "record_pivot_stage_completion.py"
+    pivot_publish_script = ROOT / "skills" / "scafforge-pivot" / "scripts" / "publish_pivot_surfaces.py"
+    pivot_apply_script = ROOT / "skills" / "scafforge-pivot" / "scripts" / "apply_pivot_lineage.py"
+    pivot_tracking = ROOT / "skills" / "scafforge-pivot" / "scripts" / "pivot_tracking.py"
+    pivot_runtime = ROOT / "skills" / "scafforge-pivot" / "scripts" / "generated_tool_runtime.py"
     handoff = ROOT / "skills" / "handoff-brief" / "SKILL.md"
 
     require_paths(
@@ -321,11 +470,20 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
             scaffold_kickoff,
             spec_pack,
             repo_factory,
+            repo_factory_verify,
             project_skill,
             team_bootstrap,
             prompt_engineering,
             ticket_builder,
             ticket_system_ref,
+            pivot_skill,
+            pivot_agent,
+            pivot_script,
+            pivot_record_script,
+            pivot_publish_script,
+            pivot_apply_script,
+            pivot_tracking,
+            pivot_runtime,
             handoff,
         ],
     )
@@ -336,10 +494,21 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, scaffold_kickoff, "a first-development handoff that is valid without any later audit or repair pass")
     require_contains(findings, scaffold_kickoff, "route to `opencode-team-bootstrap` to add or repair `.opencode/`, then run `project-skill-bootstrap`")
     require_contains(findings, scaffold_kickoff, "let it continue through any required project-specific regeneration or ticket follow-up")
-    require_contains(findings, scaffold_kickoff, "same-session contract-conformance check")
+    require_contains(findings, scaffold_kickoff, "same-session immediate-continuation verification gate")
+    require_contains(findings, scaffold_kickoff, "--verification-kind bootstrap-lane")
+    require_contains(findings, scaffold_kickoff, "one canonical bootstrap ticket")
+    require_contains(findings, scaffold_kickoff, "Do not continue into project-specific specialization if this bootstrap-lane proof fails.")
+    require_contains(findings, scaffold_kickoff, "verify_generated_scaffold.py <repo-root> --format both")
     require_contains(findings, scaffold_kickoff, "full non-mutating diagnosis")
     require_contains(findings, scaffold_kickoff, "redirecting the output directory")
     require_contains(findings, scaffold_kickoff, "explicit ticket acceptance smoke commands as the canonical smoke scope")
+    require_contains(findings, scaffold_kickoff, "one legal first move while bootstrap proof is still missing")
+    require_contains(findings, scaffold_kickoff, "## Pivot flow")
+    require_contains(findings, scaffold_kickoff, "Route midstream feature and design changes through `scafforge-pivot`")
+    require_absent(findings, ROOT / "skills" / "scafforge-audit" / "SKILL.md", "greenfield or retrofit flow")
+    require_contains(findings, ROOT / "skills" / "scafforge-audit" / "SKILL.md", "retrofit audit step or an explicit diagnosis/review flow")
+    require_contains(findings, ROOT / "skills" / "scafforge-audit" / "SKILL.md", "grouped by invariant family in code modules")
+    require_contains(findings, ROOT / "skills" / "scafforge-audit" / "SKILL.md", "rule implementation plus regression coverage")
 
     require_contains(findings, spec_pack, "The batched decision packet is a required generation artifact.")
     require_contains(findings, spec_pack, "Blocking decisions are all resolved before greenfield generation continues")
@@ -348,7 +517,19 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, repo_factory, "Phase B is mandatory completion work, not an optional revisit.")
     require_contains(findings, repo_factory, "Complete Phase B in the same session as the scaffold render.")
     require_contains(findings, repo_factory, "No generic placeholder text or template filler may remain in any handoff surface")
+    require_contains(findings, repo_factory, "A fresh scaffold must already expose one legal first move while bootstrap proof is missing")
     require_contains(findings, repo_factory, "explicit ticket acceptance smoke commands are canonical smoke scope")
+    require_contains(findings, repo_factory, "verify_generated_scaffold.py")
+    require_contains(findings, repo_factory, "--verification-kind bootstrap-lane")
+    require_contains(findings, repo_factory, "one canonical bootstrap ticket")
+    require_contains(findings, repo_factory_verify, "verify_greenfield_continuation")
+    require_contains(findings, repo_factory_verify, "verify_greenfield_bootstrap_lane")
+    require_contains(findings, repo_factory_verify, "greenfield_bootstrap_lane")
+    require_contains(findings, repo_factory_verify, "greenfield_continuation")
+    require_contains(findings, repo_factory_verify, "--verification-kind")
+    require_contains(findings, repo_factory_verify, "bootstrap_lane_valid")
+    require_contains(findings, repo_factory_verify, "immediately_continuable")
+    require_script_help_runs(findings, repo_factory_verify)
 
     require_contains(findings, project_skill, "**greenfield full pass**")
     require_contains(findings, project_skill, "baseline skill pack and all required synthesized skills in one invocation")
@@ -395,12 +576,76 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, ticket_system_ref, "`split_scope`")
     require_contains(findings, ticket_system_ref, "scope-isolated")
 
+    require_contains(findings, pivot_skill, "machine-readable stale-surface map")
+    require_contains(findings, pivot_skill, "Pivot History")
+    require_contains(findings, pivot_skill, "python3 scripts/plan_pivot.py <repo-root>")
+    require_contains(findings, pivot_skill, "python3 scripts/record_pivot_stage_completion.py <repo-root>")
+    require_contains(findings, pivot_skill, "python3 scripts/apply_pivot_lineage.py <repo-root>")
+    require_contains(findings, pivot_skill, "python3 scripts/publish_pivot_surfaces.py <repo-root>")
+    require_contains(findings, pivot_skill, ".opencode/meta/pivot-state.json")
+    require_contains(findings, pivot_skill, "pivot_in_progress")
+    require_contains(findings, pivot_skill, "pending_downstream_stages")
+    require_contains(findings, pivot_skill, "downstream execution-state progress")
+    require_contains(findings, pivot_skill, "--supersede-ticket <id>")
+    require_contains(findings, pivot_skill, "--reopen-ticket <id>")
+    require_contains(findings, pivot_skill, "--reconcile-ticket <id>")
+    require_contains(findings, pivot_skill, "--lineage-evidence <ticket-id>=<repo-relative-artifact-path>")
+    require_contains(findings, pivot_skill, "--replacement-source <ticket-id>=<replacement-source-ticket-id>")
+    require_contains(findings, pivot_skill, "ticket_lineage_plan")
+    require_contains(findings, pivot_skill, "restart-surface publication")
+    require_contains(findings, pivot_skill, "Do not let `scafforge-pivot` become a second scaffold engine or a second repair engine.")
+    require_contains(findings, pivot_skill, "Use repair only for managed workflow refresh, not for product-truth changes")
+    require_contains(findings, pivot_agent, 'display_name: "Scafforge Pivot"')
+    require_contains(findings, pivot_script, '"verification_kind": "post_pivot"')
+    require_contains(findings, pivot_script, "build_pivot_stale_surface_map")
+    require_contains(findings, pivot_script, "downstream_refresh")
+    require_contains(findings, pivot_script, "downstream_refresh_state")
+    require_contains(findings, pivot_script, "restart_surface_inputs")
+    require_contains(findings, pivot_script, "ticket_lineage_plan")
+    require_contains(findings, pivot_script, "--supersede-ticket")
+    require_contains(findings, pivot_script, "--reconcile-ticket")
+    require_contains(findings, pivot_script, "--lineage-evidence")
+    require_contains(findings, pivot_script, "--replacement-source")
+    require_contains(findings, pivot_script, "publish_pivot_surfaces")
+    require_contains(findings, pivot_script, "docs/spec/CANONICAL-BRIEF.md")
+    require_contains(findings, pivot_script, ".opencode/meta/pivot-state.json")
+    require_contains(findings, pivot_script, "Pivot History")
+    require_script_help_runs(findings, pivot_script)
+    require_contains(findings, pivot_tracking, "PIVOT_STAGE_CATALOG")
+    require_contains(findings, pivot_tracking, "restart_surface_inputs")
+    require_contains(findings, pivot_tracking, "pending_downstream_stages")
+    require_contains(findings, pivot_tracking, "pending_ticket_lineage_actions")
+    require_contains(findings, pivot_tracking, "create_follow_up")
+    require_contains(findings, pivot_tracking, "recorded_execution")
+    require_contains(findings, pivot_tracking, "restart_surface_publication")
+    require_contains(findings, pivot_tracking, "generated_tool_execution")
+    require_contains(findings, pivot_tracking, "pivot_lineage_execution")
+    require_contains(findings, pivot_record_script, "Record completion of a Scafforge pivot downstream stage")
+    require_contains(findings, pivot_record_script, ".opencode/meta/pivot-state.json")
+    require_contains(findings, pivot_record_script, "publish_pivot_surfaces")
+    require_script_help_runs(findings, pivot_record_script)
+    require_contains(findings, pivot_publish_script, "Republish generated restart surfaces")
+    require_contains(findings, pivot_publish_script, ".opencode/tools/handoff_publish.ts")
+    require_script_help_runs(findings, pivot_publish_script)
+    require_contains(findings, pivot_apply_script, "Execute explicit pivot ticket lineage actions")
+    require_contains(findings, pivot_apply_script, "ticket_reopen.ts")
+    require_contains(findings, pivot_apply_script, "ticket_reconcile.ts")
+    require_contains(findings, pivot_apply_script, "publish_pivot_surfaces")
+    require_script_help_runs(findings, pivot_apply_script)
+    require_contains(findings, pivot_runtime, "--experimental-strip-types")
+    require_contains(findings, pivot_runtime, "@opencode-ai/plugin")
+
     require_contains(findings, handoff, "**Generation Status**")
     require_contains(findings, handoff, "**Post-Generation Audit Status**")
     require_contains(findings, handoff, "The handoff is a truthful restart surface bounded by current evidence")
+    require_contains(findings, handoff, "The next action matches the one legal first move exposed by canonical state when bootstrap is not yet ready")
+    require_contains(findings, handoff, ".opencode/meta/pivot-state.json")
+    require_contains(findings, handoff, "the handoff surfaces reflect the current pivot state truthfully")
+    require_contains(findings, handoff, "active pivot state is reflected in `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md`")
+    require_contains(findings, handoff, "the handoff proves immediate continuation rather than only surface agreement")
     require_absent(findings, handoff, "Validation Status")
 
-    for skill_file in (scaffold_kickoff, spec_pack, project_skill, team_bootstrap, prompt_engineering, ticket_builder, handoff):
+    for skill_file in (scaffold_kickoff, spec_pack, project_skill, team_bootstrap, prompt_engineering, ticket_builder, pivot_skill, handoff):
         require_contains(findings, skill_file, "## Output contract")
 
 
@@ -479,12 +724,27 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, workflow_lib, "WorkflowBlocker")
     require_contains(findings, workflow_lib, "throwWorkflowBlocker")
     require_contains(findings, workflow_lib, "ticketClaimBlockerArgs")
+    require_contains(findings, workflow_lib, "export function blockedDependentTickets")
+    require_contains(findings, workflow_lib, "export function dependentContinuationAction")
+    require_contains(findings, workflow_lib, "export function ticketNeedsHistoricalReconciliation")
+    require_contains(findings, workflow_lib, "export function ticketNeedsTrustRestoration")
     require_contains(findings, workflow_lib, "Historical done-ticket reverification stays secondary until the active open ticket is resolved.")
     require_contains(findings, workflow_lib, "Run environment_bootstrap, register its proof artifact, rerun ticket_lookup, and do not continue lifecycle work until bootstrap is ready.")
     require_contains(findings, workflow_lib, 'export type RepairFollowOnOutcome = "managed_blocked" | "source_follow_up" | "clean"')
     require_contains(findings, workflow_lib, 'export type TicketSourceMode = "process_verification" | "post_completion_issue" | "net_new_scope" | "split_scope"')
+    require_contains(findings, workflow_lib, "repoVenvExecutableCandidates")
+    require_contains(findings, workflow_lib, "repoVenvExecutable")
+    require_contains(findings, workflow_lib, "findExistingRepoVenvExecutable")
     require_contains(findings, workflow_lib, "repair_follow_on_outcome")
     require_contains(findings, workflow_lib, "workflow.repair_follow_on.outcome === \"source_follow_up\"")
+    require_contains(findings, workflow_lib, "export type PivotState")
+    require_contains(findings, workflow_lib, "pivotStatePath")
+    require_contains(findings, workflow_lib, "loadPivotState")
+    require_contains(findings, workflow_lib, "pivot_in_progress")
+    require_contains(findings, workflow_lib, "pivot follow-up required")
+    require_contains(findings, workflow_lib, "Continue the pivot follow-on stage")
+    require_contains(findings, workflow_lib, "pivot_pending_ticket_lineage_actions")
+    require_contains(findings, workflow_lib, "pending_ticket_lineage_actions")
     require_contains(findings, workflow_lib, '"plan_review"')
     require_absent(findings, workflow_lib, "## Workflow State")
     require_absent(findings, workflow_lib, "tool({")
@@ -496,11 +756,16 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, environment_bootstrap, "escapeRegExp")
     require_contains(findings, environment_bootstrap, "repo pip availability")
     require_contains(findings, environment_bootstrap, "required bootstrap prerequisites are missing")
+    require_contains(findings, environment_bootstrap, "permission_restriction")
+    require_contains(findings, environment_bootstrap, "blocked_by_permissions")
+    require_contains(findings, environment_bootstrap, "host_surface_classification")
+    require_contains(findings, environment_bootstrap, "Fix the permission/tool policy")
     require_contains(findings, environment_bootstrap, "defaultBootstrapProofPath")
     require_contains(findings, environment_bootstrap, "normalizeRepoPath")
-    require_absent(findings, environment_bootstrap, "(?:\\\\n\\\\[|$)")
+    require_contains(findings, environment_bootstrap, "repoVenvExecutable")
+    require_contains(findings, environment_bootstrap, "findExistingRepoVenvExecutable")
     require_contains(findings, smoke_test, 'join(root, "uv.lock")')
-    require_contains(findings, smoke_test, 'join(root, ".venv", "bin", "python")')
+    require_contains(findings, smoke_test, "findExistingRepoVenvExecutable")
     require_contains(findings, smoke_test, "[tool.pytest.ini_options]")
     require_contains(findings, smoke_test, "scope:")
     require_contains(findings, smoke_test, "test_paths:")
@@ -516,6 +781,10 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, smoke_test, "inferAcceptanceSmokeCommands")
     require_contains(findings, smoke_test, "ticket.acceptance")
     require_contains(findings, smoke_test, "Ticket acceptance criteria define an explicit smoke-test command.")
+    require_contains(findings, smoke_test, "host_surface_classification")
+    require_contains(findings, smoke_test, "permission_restriction")
+    require_contains(findings, smoke_test, "blocked_by_permissions")
+    require_contains(findings, smoke_test, "Fix the permission/tool policy")
     require_contains(findings, smoke_test, "defaultArtifactPath")
     require_contains(findings, smoke_test, "normalizeRepoPath")
     require_contains(findings, artifact_write, "expectedPath = defaultArtifactPath")
@@ -527,16 +796,32 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", "transition_guidance")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", "Do not fabricate a PASS artifact through generic artifact tools.")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", "historical trust still needs restoration")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", "ticketNeedsHistoricalReconciliation")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", "ticket_reconcile")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", "ticketNeedsTrustRestoration")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", "Run environment_bootstrap first, then rerun ticket_lookup before attempting lifecycle transitions.")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", "Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly.")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", "dependentContinuationAction")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", 'next_action_tool: "smoke_test"')
-    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", 'next_action_tool: "smoke_test",\n          delegate_to_agent: null,\n          required_owner: "team-leader",')
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", 'delegate_to_agent: null')
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts", 'required_owner: "team-leader"')
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reverify.ts", "legal mutation path for closed done tickets")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reverify.ts", 'if (sourceTicket.status !== "done")')
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reverify.ts", "ticket_reverify requires evidence_artifact_path or verification_content.")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reverify.ts", 'sourceTicket.verification_state = "reverified"')
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reverify.ts", "getTicketWorkflowState(workflow, sourceTicket.id).needs_reverification = false")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reverify.ts", 'kind: "backlog-verification"')
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reverify.ts", 'kind: "reverification"')
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_create.ts", '"split_scope"')
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_create.ts", "split-scope child ticket")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reconcile.ts", "export default tool({")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reconcile.ts", "stale or contradictory source/follow-up linkage")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reconcile.ts", "ticket-reconciliation")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reconcile.ts", "removeDependencyOnSource")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reconcile.ts", "targetTicket.depends_on = targetTicket.depends_on.filter")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reconcile.ts", 'targetTicket.resolution_state = "superseded"')
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reconcile.ts", 'targetTicket.verification_state = "reverified"')
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reconcile.ts", "syncWorkflowSelection(workflow, manifest)")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts", 'const RESERVED_ARTIFACT_STAGES = new Set(["smoke-test"])')
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts", "Generic artifact_write is not allowed for that stage.")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts", "Generic artifact_register is not allowed for that stage.")
@@ -555,7 +840,11 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_absent(findings, TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-docs-handoff.md", "ticket_claim: allow")
     require_absent(findings, TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-docs-handoff.md", "ticket_release: allow")
     require_contains(findings, handoff_publish, "validateHandoffNextAction")
+    require_contains(findings, handoff_publish, "loadPivotState")
+    require_contains(findings, handoff_publish, "refreshRestartSurfaces({ manifest, workflow, pivot")
     require_order(findings, handoff_publish, "const handoffBlocker = await validateHandoffNextAction", "await refreshRestartSurfaces")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "context_snapshot.ts", "loadPivotState")
+    require_contains(findings, TEMPLATE_ROOT / ".opencode" / "tools" / "context_snapshot.ts", "renderContextSnapshot(manifest, snapshotState, pivot")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "commands" / "kickoff.md", "one active write lane")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "commands" / "kickoff.md", "The team leader claims and releases write leases.")
     require_contains(findings, TEMPLATE_ROOT / ".opencode" / "commands" / "kickoff.md", "ticket_reconcile")
@@ -610,17 +899,40 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     for workflow_tool in (environment_bootstrap, smoke_test, handoff_publish, TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts"):
         require_contains(findings, workflow_tool, "../lib/workflow")
     require_contains(findings, TEMPLATE_ROOT / "tickets" / "README.md", "mirror artifact metadata into `.opencode/state/artifacts/registry.json`")
+    require_files_equal(
+        findings,
+        ROOT / "skills" / "ticket-pack-builder" / "assets" / "templates" / "TICKET.template.md",
+        TEMPLATE_ROOT / "tickets" / "templates" / "TICKET.template.md",
+    )
 
 
 def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     audit_skill = ROOT / "skills" / "scafforge-audit"
     repair_skill = ROOT / "skills" / "scafforge-repair"
+    audit_contract_surfaces = audit_skill / "scripts" / "audit_contract_surfaces.py"
+    audit_execution_surfaces = audit_skill / "scripts" / "audit_execution_surfaces.py"
+    audit_lifecycle_contracts = audit_skill / "scripts" / "audit_lifecycle_contracts.py"
+    audit_repair_cycles = audit_skill / "scripts" / "audit_repair_cycles.py"
+    audit_reporting = audit_skill / "scripts" / "audit_reporting.py"
+    audit_session_transcripts = audit_skill / "scripts" / "audit_session_transcripts.py"
+    audit_restart_surfaces = audit_skill / "scripts" / "audit_restart_surfaces.py"
+    audit_ticket_graph = audit_skill / "scripts" / "audit_ticket_graph.py"
     require_paths(
         findings,
         [
             audit_skill / "SKILL.md",
             audit_skill / "agents" / "openai.yaml",
             audit_skill / "scripts" / "audit_repo_process.py",
+            audit_contract_surfaces,
+            audit_execution_surfaces,
+            audit_lifecycle_contracts,
+            audit_repair_cycles,
+            audit_reporting,
+            audit_session_transcripts,
+            audit_restart_surfaces,
+            audit_ticket_graph,
+            audit_skill / "scripts" / "shared_verifier.py",
+            audit_skill / "scripts" / "shared_verifier_types.py",
             audit_skill / "references" / "four-report-templates.md",
             audit_skill / "references" / "pr-review-workflow.md",
             audit_skill / "references" / "review-contract.md",
@@ -630,17 +942,121 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
             repair_skill / "scripts" / "run_managed_repair.py",
             repair_skill / "scripts" / "regenerate_restart_surfaces.py",
             repair_skill / "scripts" / "audit_repo_process.py",
+            repair_skill / "scripts" / "shared_verifier.py",
         ],
     )
 
     require_contains(findings, ROOT / "README.md", "run_managed_repair.py")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier.py", "from audit_repo_process import audit_repo")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier.py", "from shared_verifier_types import Finding")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier.py", "verify_greenfield_continuation")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier.py", "GREENFIELD_BOOTSTRAP_NEXT_ACTION")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier.py", "tooling_doc_path")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier.py", "tickets_readme_path")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier.py", "ticket_update_path")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier.py", "smoke_test_path")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier.py", "handoff_publish_path")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier.py", "VERIFY008")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier_types.py", "@dataclass")
+    require_contains(findings, audit_skill / "scripts" / "shared_verifier_types.py", "class Finding")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "from audit_contract_surfaces import ContractSurfaceAuditContext, run_contract_surface_audits")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "from audit_execution_surfaces import ExecutionSurfaceAuditContext, run_execution_surface_audits")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "from audit_lifecycle_contracts import LifecycleContractAuditContext, run_lifecycle_contract_audits")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "from audit_repair_cycles import RepairCycleAuditContext, run_repair_cycle_audits")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "from audit_reporting import (")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "from audit_session_transcripts import SessionTranscriptAuditContext, run_session_transcript_audits")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "from audit_restart_surfaces import RestartSurfaceAuditContext, run_restart_surface_audits")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "from audit_ticket_graph import TicketGraphAuditContext, run_ticket_graph_audits")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "contract_surface_audit_context")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "execution_surface_audit_context")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "lifecycle_contract_audit_context")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "repair_cycle_audit_context")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "session_transcript_audit_context")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "restart_surface_audit_context")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "ticket_graph_audit_context")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "run_contract_surface_audits(root, findings, contract_ctx)")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "run_execution_surface_audits(root, findings, execution_ctx)")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "run_lifecycle_contract_audits(root, findings, lifecycle_ctx)")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "run_repair_cycle_audits(root, findings, repair_cycle_ctx)")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "run_session_transcript_audits(root, findings, logs or [], session_ctx)")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "run_restart_surface_audits(root, findings, restart_ctx)")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "run_ticket_graph_audits(root, findings, ticket_graph_ctx)")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "def reporting_context() -> AuditReportingContext:")
+    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "return emit_diagnosis_pack_impl(")
+    require_contains(findings, audit_contract_surfaces, "class ContractSurfaceAuditContext")
+    require_contains(findings, audit_contract_surfaces, "def run_contract_surface_audits(")
+    require_contains(findings, audit_contract_surfaces, "def audit_status_model(")
+    require_contains(findings, audit_contract_surfaces, "def audit_model_profile_drift(")
+    require_contains(findings, audit_execution_surfaces, "class ExecutionSurfaceAuditContext")
+    require_contains(findings, audit_execution_surfaces, "def run_execution_surface_audits(")
+    require_contains(findings, audit_execution_surfaces, "def audit_environment_prerequisites(")
+    require_contains(findings, audit_execution_surfaces, "def audit_python_execution(")
+    require_contains(findings, audit_lifecycle_contracts, "class LifecycleContractAuditContext")
+    require_contains(findings, audit_lifecycle_contracts, "def run_lifecycle_contract_audits(")
+    require_contains(findings, audit_lifecycle_contracts, "def audit_active_process_verification(")
+    require_contains(findings, audit_lifecycle_contracts, "def audit_ticket_transition_contract(")
+    require_contains(findings, audit_repair_cycles, "class RepairCycleAuditContext")
+    require_contains(findings, audit_repair_cycles, "def run_repair_cycle_audits(")
+    require_contains(findings, audit_repair_cycles, "def audit_failed_repair_cycle(")
+    require_contains(findings, audit_repair_cycles, "def audit_verification_basis_regression(")
+    require_contains(findings, audit_reporting, "class AuditReportingContext")
+    require_contains(findings, audit_reporting, "def emit_diagnosis_pack(")
+    require_contains(findings, audit_reporting, "def render_report_four(")
+    require_contains(findings, audit_reporting, "# Initial Codebase Review")
+    require_contains(findings, audit_reporting, "## Scope")
+    require_contains(findings, audit_reporting, "## Result State")
+    require_contains(findings, audit_reporting, "## Validated Findings")
+    require_contains(findings, audit_reporting, "## Verification Gaps")
+    require_contains(findings, audit_reporting, "# Scafforge Process Failures")
+    require_contains(findings, audit_reporting, "## Failure Map")
+    require_contains(findings, audit_reporting, "## Ownership Classification")
+    require_contains(findings, audit_reporting, "## Root Cause Analysis")
+    require_contains(findings, audit_reporting, "# Scafforge Prevention Actions")
+    require_contains(findings, audit_reporting, "## Package Changes Required")
+    require_contains(findings, audit_reporting, "## Validation and Test Updates")
+    require_contains(findings, audit_reporting, "## Documentation or Prompt Updates")
+    require_contains(findings, audit_reporting, "## Open Decisions")
+    require_contains(findings, audit_reporting, "# Live Repo Repair Plan")
+    require_contains(findings, audit_reporting, "## Preconditions")
+    require_contains(findings, audit_reporting, "## Package Changes Required First")
+    require_contains(findings, audit_reporting, "## Post-Update Repair Actions")
+    require_contains(findings, audit_reporting, "## Ticket Follow-Up")
+    require_contains(findings, audit_reporting, "## Reverification Plan")
+    require_contains(findings, audit_reporting, '"no validated failures found"')
+    require_contains(findings, audit_reporting, '"audit_package_commit"')
+    require_contains(findings, audit_reporting, '"package_work_required_first"')
+    require_contains(findings, audit_reporting, '"recommended_next_step"')
+    require_contains(findings, audit_reporting, 'code="ENV004"')
+    require_contains(findings, audit_session_transcripts, "class SessionTranscriptAuditContext")
+    require_contains(findings, audit_session_transcripts, "def run_session_transcript_audits(")
+    require_contains(findings, audit_session_transcripts, "def audit_session_chronology(")
+    require_contains(findings, audit_session_transcripts, "def audit_session_operator_trap(")
+    require_contains(findings, audit_restart_surfaces, "class RestartSurfaceAuditContext")
+    require_contains(findings, audit_restart_surfaces, "def run_restart_surface_audits(")
+    require_contains(findings, audit_restart_surfaces, "def audit_restart_surface_drift(")
+    require_contains(findings, audit_restart_surfaces, "def audit_resume_truth_hierarchy(")
+    require_contains(findings, audit_ticket_graph, "class TicketGraphAuditContext")
+    require_contains(findings, audit_ticket_graph, "def run_ticket_graph_audits(")
+    require_contains(findings, audit_ticket_graph, "def audit_stale_ticket_graph(")
+    require_contains(findings, audit_ticket_graph, "def audit_historical_reconciliation_deadlock(")
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", "scafforge-repair")
+    require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", "from shared_verifier import audit_repo")
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", 'workflow_contract.get("parallel_mode", "sequential")')
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", "regenerate_restart_surfaces(")
+    require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", "build_stale_surface_map")
+    require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", '"stale_surface_map"')
+    require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", '"ticket_follow_up"')
+    require_absent(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", '"human_decision"')
+    require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", '"stage_completion_mode": "legacy_manual_assertion"')
+    require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", '"legacy_asserted_completed_stages": []')
+    require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", '"tracking_mode": "persistent_recorded_state"')
+    require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", "repair-follow-on-state.json")
+    require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", '"asserted_completed_stages": []')
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", ".opencode/state/context-snapshot.md")
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", ".opencode/state/latest-handoff.md")
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", '"verification_passed": verification_passed')
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", '"clean": not findings and not pending_process_verification')
+    require_absent(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", 'startswith(("WFLOW", "BOOT", "CYCLE", "ENV"))')
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", "resolve_repair_basis")
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", "load_latest_previous_diagnosis")
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", "manifest_supporting_logs")
@@ -649,7 +1065,117 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", "verification_next_action")
     require_contains(findings, repair_skill / "scripts" / "apply_repo_process_repair.py", "Run scafforge-audit before relying on this restart narrative for continued development.")
     require_contains(findings, repair_skill / "SKILL.md", "python3 scripts/run_managed_repair.py <repo-root>")
+    require_contains(findings, repair_skill / "SKILL.md", "machine-readable stale-surface map")
+    require_contains(findings, repair_skill / "SKILL.md", "`stable`, `replace`, `regenerate`, and `ticket_follow_up`")
+    require_contains(findings, repair_skill / "SKILL.md", "python3 scripts/record_repair_stage_completion.py <repo-root>")
+    require_contains(findings, repair_skill / "SKILL.md", ".opencode/meta/repair-follow-on-state.json")
+    require_contains(findings, repair_skill / "SKILL.md", "hidden legacy `--stage-complete` compatibility shim")
+    require_contains(findings, repair_skill / "SKILL.md", "`missing_provenance`")
+    require_contains(findings, repair_skill / "SKILL.md", "canonical repair follow-on stage catalog")
+    require_contains(findings, repair_skill / "SKILL.md", "`project-skill-bootstrap`")
+    require_contains(findings, repair_skill / "SKILL.md", "`opencode-team-bootstrap`")
+    require_contains(findings, repair_skill / "SKILL.md", "`agent-prompt-engineering`")
+    require_contains(findings, repair_skill / "SKILL.md", "`ticket-pack-builder`")
+    require_contains(findings, repair_skill / "SKILL.md", "`handoff-brief`")
+    require_contains(findings, repair_skill / "SKILL.md", "not part of the current repair cycle")
+    require_contains(findings, repair_skill / "SKILL.md", "ticket-pack-builder")
+    require_contains(findings, repair_skill / "SKILL.md", "handoff-brief")
+    require_contains(findings, repair_skill / "SKILL.md", ".opencode/state/artifacts/history/repair/project-skill-bootstrap-completion.md")
+    require_contains(findings, repair_skill / "SKILL.md", ".opencode/state/artifacts/history/repair/opencode-team-bootstrap-completion.md")
+    require_contains(findings, repair_skill / "SKILL.md", ".opencode/state/artifacts/history/repair/agent-prompt-engineering-completion.md")
+    require_contains(findings, repair_skill / "SKILL.md", ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md")
+    require_contains(findings, repair_skill / "SKILL.md", ".opencode/state/artifacts/history/repair/handoff-brief-completion.md")
+    require_contains(findings, repair_skill / "SKILL.md", "- `- cycle_id: <current .opencode/meta/repair-follow-on-state.json cycle_id>`")
+    require_contains(findings, repair_skill / "SKILL.md", "Recorded execution must include at least one repo-relative evidence path")
+    require_contains(findings, repair_skill / "SKILL.md", "must include a non-empty `completed_by`, a non-empty summary")
+    require_contains(findings, repair_skill / "SKILL.md", "must also match the current repair cycle before Scafforge accepts the recorded completion")
+    require_contains(findings, repair_skill / "SKILL.md", "must invalidate that recorded execution automatically")
+    require_contains(findings, repair_skill / "SKILL.md", "repair-contract consistency checks")
     require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"required_follow_on_stages"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"required_follow_on_stage_details"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", "from shared_verifier import audit_repo")
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", "from follow_on_tracking import")
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", "build_stale_surface_map")
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", "verification_contract_failures")
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"stale_surface_map"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"stage_completion_mode": "legacy_manual_assertion"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"follow_on_tracking_mode": "persistent_recorded_state"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"follow_on_state_path"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"recorded_completed_stages"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"recorded_execution_completed_stages"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"auto_detected_recorded_stages"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"pruned_unknown_stages"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"invalidated_recorded_stages"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"recorded_stage_state"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"required_stage_details"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"status": "recorded_completed"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"asserted_completed_stages"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"legacy_asserted_completed_stages"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", "argparse.SUPPRESS")
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"status": "asserted_completed"')
+    require_paths(findings, [repair_skill / "scripts" / "follow_on_tracking.py", repair_skill / "scripts" / "record_repair_stage_completion.py"])
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"completion_mode": "recorded_execution"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"completion_mode": "legacy_manual_assertion"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"status": "completed"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"status": "evidence_missing"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"missing_evidence_paths"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"missing_recorded_evidence"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"canonical_evidence_cycle_mismatch"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", "must match the current repair cycle before recorded execution can be accepted")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", "requires a non-empty completed_by value")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", "requires a non-empty summary")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", "requires repair_package_commit provenance")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"missing_provenance"')
+    require_contains(findings, ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "bootstrap_repo_scaffold.py", '"missing_provenance"')
+    require_contains(findings, audit_reporting, '"missing_provenance"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"project-skill-bootstrap"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"opencode-team-bootstrap"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"agent-prompt-engineering"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"ticket-pack-builder"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"handoff-brief"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"repo_local_skills"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"agent_team"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"prompt_hardening"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"ticket_follow_up"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"restart_surface"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", "follow_on_stage_history_metadata")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", "OPTIONAL_RECORDABLE_FOLLOW_ON_STAGES")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", "validate_stage_allowed_for_current_cycle")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", "not part of the current repair cycle")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", "Unknown repair follow-on stage")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"status": "pruned_unknown_stages"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"pruned_unknown_stages"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", ".opencode/state/artifacts/history/repair/project-skill-bootstrap-completion.md")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", ".opencode/state/artifacts/history/repair/opencode-team-bootstrap-completion.md")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", ".opencode/state/artifacts/history/repair/agent-prompt-engineering-completion.md")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", ".opencode/state/artifacts/history/repair/handoff-brief-completion.md")
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"project-skill-bootstrap:auto-detected"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"opencode-team-bootstrap:auto-detected"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"agent-prompt-engineering:auto-detected"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"ticket-pack-builder:auto-detected"')
+    require_contains(findings, repair_skill / "scripts" / "follow_on_tracking.py", '"handoff-brief:auto-detected"')
+    require_contains(findings, repair_skill / "scripts" / "record_repair_stage_completion.py", '"follow_on_state_path"')
+    require_contains(findings, repair_skill / "scripts" / "record_repair_stage_completion.py", '"recorded_stage"')
+    require_contains(findings, repair_skill / "scripts" / "record_repair_stage_completion.py", "validate_follow_on_stage_name")
+    require_contains(findings, repair_skill / "scripts" / "record_repair_stage_completion.py", "Evidence path does not exist")
+    require_contains(findings, repair_skill / "scripts" / "record_repair_stage_completion.py", "requires at least one repo-relative evidence path")
+    require_script_help_runs(findings, repair_skill / "scripts" / "record_repair_stage_completion.py")
+    require_contains(findings, project_skill_bootstrap_skill := ROOT / "skills" / "project-skill-bootstrap" / "SKILL.md", ".opencode/state/artifacts/history/repair/project-skill-bootstrap-completion.md")
+    require_contains(findings, project_skill_bootstrap_skill, "- completed_stage: project-skill-bootstrap")
+    require_contains(findings, project_skill_bootstrap_skill, "- cycle_id: <cycle_id from .opencode/meta/repair-follow-on-state.json>")
+    require_contains(findings, opencode_team_bootstrap_skill := ROOT / "skills" / "opencode-team-bootstrap" / "SKILL.md", ".opencode/state/artifacts/history/repair/opencode-team-bootstrap-completion.md")
+    require_contains(findings, opencode_team_bootstrap_skill, "- completed_stage: opencode-team-bootstrap")
+    require_contains(findings, opencode_team_bootstrap_skill, "- cycle_id: <cycle_id from .opencode/meta/repair-follow-on-state.json>")
+    require_contains(findings, agent_prompt_engineering_skill := ROOT / "skills" / "agent-prompt-engineering" / "SKILL.md", ".opencode/state/artifacts/history/repair/agent-prompt-engineering-completion.md")
+    require_contains(findings, agent_prompt_engineering_skill, "- completed_stage: agent-prompt-engineering")
+    require_contains(findings, agent_prompt_engineering_skill, "- cycle_id: <cycle_id from .opencode/meta/repair-follow-on-state.json>")
+    require_contains(findings, ticket_pack_builder_skill := ROOT / "skills" / "ticket-pack-builder" / "SKILL.md", ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md")
+    require_contains(findings, ticket_pack_builder_skill, "- completed_stage: ticket-pack-builder")
+    require_contains(findings, ticket_pack_builder_skill, "- cycle_id: <cycle_id from .opencode/meta/repair-follow-on-state.json>")
+    require_contains(findings, handoff_brief_skill := ROOT / "skills" / "handoff-brief" / "SKILL.md", ".opencode/state/artifacts/history/repair/handoff-brief-completion.md")
+    require_contains(findings, handoff_brief_skill, "- completed_stage: handoff-brief")
+    require_contains(findings, handoff_brief_skill, "- cycle_id: <cycle_id from .opencode/meta/repair-follow-on-state.json>")
     require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"blocking_reasons"')
     require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"handoff_allowed"')
     require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"repair_follow_on_outcome"')
@@ -658,6 +1184,11 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"clean"')
     require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"current_state_clean"')
     require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"causal_regression_verified"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"contract_failures"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"contract_passed"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"non_clean_without_findings"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"restart_surface_drift_after_repair"')
+    require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"placeholder_local_skills_survived_refresh"')
     require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"repair_basis_path"')
     require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"repair_package_commit"')
     require_contains(findings, repair_skill / "scripts" / "run_managed_repair.py", '"verification_kind": "post_repair"')
@@ -673,66 +1204,78 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "workflow verification pending")
     require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "clear pending_process_verification now that no historical done tickets still require process verification")
     require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "process_verification_state(")
+    require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "dependent_continuation_action(")
+    require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "ticket_needs_historical_reconciliation(")
+    require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "ticket_needs_trust_restoration(")
+    require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "Current ticket is already closed. Activate dependent ticket")
     require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "Historical done-ticket reverification stays secondary until the active open ticket is resolved.")
     require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "repair_follow_on_outcome")
     require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "split_child_tickets")
     require_contains(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "Open split children")
     require_absent(findings, repair_skill / "scripts" / "regenerate_restart_surfaces.py", "repair_follow_on_handoff_allowed")
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="BOOT001"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="BOOT002"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="SKILL001"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="MODEL001"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="CYCLE001"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="CYCLE002"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="CYCLE003"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW001"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW002"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW003"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW004"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW005"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW006"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW007"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW008"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW009"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW010"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "Affected done tickets: none; the workflow flag should now be directly clearable.")
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "does not expose whether pending_process_verification is immediately clearable")
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW011"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW012"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW013"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW014"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW015"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW016"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW017"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW018"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW019"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW020"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW021"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW022"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW023"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="WFLOW024"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="ENV001"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="ENV002"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="ENV003"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="ENV004"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="SESSION001"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="SESSION002"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="SESSION003"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="SESSION004"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="SESSION005"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="SESSION006"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", 'code="SKILL002"')
+    require_contains(findings, audit_execution_surfaces, 'code="BOOT001"')
+    require_contains(findings, audit_execution_surfaces, 'code="BOOT002"')
+    require_contains(findings, audit_contract_surfaces, 'code="status-stage-collision"')
+    require_contains(findings, audit_contract_surfaces, 'code="dual-state-model"')
+    require_contains(findings, audit_contract_surfaces, 'code="artifact-persistence-through-register"')
+    require_contains(findings, audit_contract_surfaces, 'code="invalid-opencode-tool-schema"')
+    require_contains(findings, audit_contract_surfaces, 'code="SKILL001"')
+    require_contains(findings, audit_contract_surfaces, 'code="MODEL001"')
+    require_contains(findings, audit_repair_cycles, 'code="CYCLE001"')
+    require_contains(findings, audit_repair_cycles, 'code="CYCLE002"')
+    require_contains(findings, audit_repair_cycles, 'code="CYCLE003"')
+    require_contains(findings, audit_execution_surfaces, 'code="WFLOW001"')
+    require_contains(findings, audit_restart_surfaces, 'code="WFLOW002"')
+    require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW003"')
+    require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW004"')
+    require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW005"')
+    require_contains(findings, audit_restart_surfaces, 'code="WFLOW006"')
+    require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW007"')
+    require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW008"')
+    require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW009"')
+    require_contains(findings, audit_restart_surfaces, 'code="WFLOW010"')
+    require_contains(findings, audit_lifecycle_contracts, "Affected done tickets: none; the workflow flag should now be directly clearable.")
+    require_contains(findings, audit_lifecycle_contracts, "does not expose whether pending_process_verification is immediately clearable")
+    require_contains(findings, audit_restart_surfaces, 'code="WFLOW011"')
+    require_contains(findings, audit_restart_surfaces, 'code="WFLOW012"')
+    require_contains(findings, audit_restart_surfaces, 'code="WFLOW013"')
+    require_contains(findings, audit_restart_surfaces, 'code="WFLOW014"')
+    require_contains(findings, audit_session_transcripts, 'code="WFLOW015"')
+    require_contains(findings, audit_session_transcripts, 'code="WFLOW016"')
+    require_contains(findings, audit_session_transcripts, 'code="WFLOW017"')
+    require_contains(findings, audit_ticket_graph, 'code="WFLOW018"')
+    require_contains(findings, audit_ticket_graph, 'code="WFLOW019"')
+    require_contains(findings, audit_ticket_graph, 'code="WFLOW020"')
+    require_contains(findings, audit_restart_surfaces, 'code="WFLOW021"')
+    require_contains(findings, audit_session_transcripts, 'code="WFLOW022"')
+    require_contains(findings, audit_session_transcripts, 'code="WFLOW023"')
+    require_contains(findings, audit_ticket_graph, 'code="WFLOW024"')
+    require_contains(findings, audit_execution_surfaces, 'code="ENV001"')
+    require_contains(findings, audit_execution_surfaces, 'code="ENV002"')
+    require_contains(findings, audit_execution_surfaces, 'code="ENV003"')
+    require_contains(findings, audit_reporting, 'code="ENV004"')
+    require_contains(findings, audit_session_transcripts, 'code="SESSION001"')
+    require_contains(findings, audit_session_transcripts, 'code="SESSION002"')
+    require_contains(findings, audit_session_transcripts, 'code="SESSION003"')
+    require_contains(findings, audit_session_transcripts, 'code="SESSION004"')
+    require_contains(findings, audit_session_transcripts, 'code="SESSION005"')
+    require_contains(findings, audit_session_transcripts, 'code="SESSION006"')
+    require_contains(findings, audit_restart_surfaces, 'code="SKILL002"')
     require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "--supporting-log")
     require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "TRANSCRIPT_SMOKE_OVERRIDE_FAILURE_PATTERNS")
     require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "extract_transcript_smoke_acceptance_commands")
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", '"audit_package_commit"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", '"diagnosis_kind"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", '"package_work_required_first"')
-    require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", '"recommended_next_step"')
+    require_contains(findings, audit_reporting, '"audit_package_commit"')
+    require_contains(findings, audit_reporting, '"diagnosis_kind"')
+    require_contains(findings, audit_reporting, '"package_work_required_first"')
+    require_contains(findings, audit_reporting, '"recommended_next_step"')
     require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "--diagnosis-kind")
     require_contains(findings, audit_skill / "scripts" / "audit_repo_process.py", "current_package_commit")
     require_contains(findings, repair_skill / "scripts" / "audit_repo_process.py", "module_from_spec")
     require_contains(findings, repair_skill / "scripts" / "audit_repo_process.py", "audit_repo = AUDIT_MODULE.audit_repo")
+    require_contains(findings, repair_skill / "scripts" / "shared_verifier.py", "module_from_spec")
+    require_contains(findings, repair_skill / "scripts" / "shared_verifier.py", "audit_repo = VERIFIER_MODULE.audit_repo")
+    require_script_help_runs(findings, repair_skill / "scripts" / "run_managed_repair.py")
+    require_script_help_runs(findings, repair_skill / "scripts" / "apply_repo_process_repair.py")
     require_contains(findings, audit_skill / "references" / "process-smells.md", "Bootstrap deadlock (BOOT001")
     require_contains(findings, audit_skill / "references" / "process-smells.md", "Bootstrap command/layout mismatch (BOOT002")
     require_contains(findings, audit_skill / "references" / "process-smells.md", "Placeholder local skills (SKILL001")
@@ -929,6 +1472,80 @@ def validate_no_hidden_defaults(findings: list[Finding]) -> None:
                     )
 
 
+def validate_curated_fixtures(findings: list[Finding]) -> None:
+    fixtures_root = ROOT / "tests" / "fixtures"
+    gpttalker_root = fixtures_root / "gpttalker"
+    index_path = gpttalker_root / "index.json"
+    integration_script = ROOT / "scripts" / "integration_test_scafforge.py"
+    archived_plans = ROOT / "references" / "archived-diagnosis-plans"
+
+    require_paths(
+        findings,
+        [
+            fixtures_root / "README.md",
+            gpttalker_root / "README.md",
+            index_path,
+            integration_script,
+            archived_plans,
+        ],
+    )
+    require_script_help_runs(findings, integration_script)
+    require_contains(findings, integration_script, "greenfield_integration")
+    require_contains(findings, integration_script, "repair_integration")
+    require_contains(findings, integration_script, "pivot_integration")
+    require_not_exists(findings, ROOT / "out" / "scafforge audit archive")
+    require_not_exists(findings, ROOT / "scafforgechurnissue")
+
+    if not index_path.exists():
+        return
+    payload = read_json(index_path)
+    if not isinstance(payload, dict):
+        findings.append(Finding("error", "tests/fixtures/gpttalker/index.json must be a JSON object"))
+        return
+    families = payload.get("families")
+    if not isinstance(families, list):
+        findings.append(Finding("error", "tests/fixtures/gpttalker/index.json must contain a families list"))
+        return
+    expected_slugs = {
+        "bootstrap-dependency-layout-drift",
+        "host-tool-or-permission-blockage",
+        "repeated-lifecycle-contradiction",
+        "restart-surface-drift-after-repair",
+        "placeholder-skill-after-refresh",
+        "split-scope-and-historical-trust-reconciliation",
+    }
+    actual_slugs: set[str] = set()
+    for item in families:
+        if not isinstance(item, dict):
+            findings.append(Finding("error", "Fixture family entries must be JSON objects"))
+            continue
+        slug = item.get("slug")
+        notes = item.get("notes")
+        coverage = item.get("expected_coverage")
+        if not isinstance(slug, str) or not slug.strip():
+            findings.append(Finding("error", "Fixture family entry is missing a non-empty slug"))
+            continue
+        actual_slugs.add(slug)
+        if not isinstance(notes, str) or not notes.strip():
+            findings.append(Finding("error", f"Fixture family `{slug}` is missing a notes path"))
+        else:
+            notes_path = gpttalker_root / notes
+            if not notes_path.exists():
+                findings.append(Finding("error", f"Fixture family `{slug}` notes file is missing: {notes_path.relative_to(ROOT)}"))
+        if not isinstance(coverage, list) or not coverage:
+            findings.append(Finding("error", f"Fixture family `{slug}` must declare expected coverage"))
+        expected_codes = item.get("expected_finding_codes")
+        if not isinstance(expected_codes, list) or not expected_codes:
+            findings.append(Finding("error", f"Fixture family `{slug}` must declare expected_finding_codes"))
+    if actual_slugs != expected_slugs:
+        findings.append(
+            Finding(
+                "error",
+                "tests/fixtures/gpttalker/index.json must contain the complete curated GPTTalker fixture family set",
+            )
+        )
+
+
 def main() -> int:
     findings: list[Finding] = []
     validate_flow_manifest(findings)
@@ -936,6 +1553,7 @@ def main() -> int:
     validate_skill_contracts(findings)
     validate_template_surfaces(findings)
     validate_audit_repair_surfaces(findings)
+    validate_curated_fixtures(findings)
     validate_no_hidden_defaults(findings)
 
     if findings:

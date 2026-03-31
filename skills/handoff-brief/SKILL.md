@@ -57,6 +57,8 @@ Verify the handoff:
 - The referenced ticket actually exists in the manifest
 - The reading order files all exist
 - The next action is specific and actionable
+- The next action matches the one legal first move exposed by canonical state when bootstrap is not yet ready
+- if `.opencode/meta/pivot-state.json` exists, the handoff surfaces reflect the current pivot state truthfully
 - The handoff is a truthful restart surface bounded by current evidence, even when later audit, repair, or backlog reverification is still pending
 
 ## Output contract
@@ -64,8 +66,32 @@ Verify the handoff:
 Before leaving this skill, confirm all of these are true:
 - `START-HERE.md` exists and uses canonical manifest/workflow-state facts rather than stale narrative memory
 - `.opencode/state/latest-handoff.md` exists and agrees with `START-HERE.md` on active ticket, bootstrap status, and pending process verification
+- active pivot state is reflected in `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` when present
 - the read order lists `tickets/manifest.json` before `tickets/BOARD.md`
 - the next action is actionable and does not overclaim readiness beyond current evidence
+- the handoff proves immediate continuation rather than only surface agreement
+
+## Repair follow-on artifact
+
+When this skill runs as a `scafforge-repair` follow-on closeout, read `.opencode/meta/repair-follow-on-state.json` and, after the restart surfaces are actually refreshed for the current repair cycle, write:
+
+- `.opencode/state/artifacts/history/repair/handoff-brief-completion.md`
+
+Use this minimal shape so the public repair runner can auto-recognize `handoff-brief` completion for the current repair cycle on the next run:
+
+```md
+# Repair Follow-On Completion
+
+- completed_stage: handoff-brief
+- cycle_id: <cycle_id from .opencode/meta/repair-follow-on-state.json>
+- completed_by: handoff-brief
+
+## Summary
+
+- Refreshed START-HERE.md, context-snapshot.md, and latest-handoff.md for the current repair cycle.
+```
+
+Do not emit this artifact speculatively. Only write it once the handoff refresh work is actually complete for the current repair cycle.
 
 ## After this step
 

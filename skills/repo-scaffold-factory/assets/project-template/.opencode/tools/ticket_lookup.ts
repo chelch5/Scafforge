@@ -1,8 +1,10 @@
 import { tool } from "@opencode-ai/plugin"
 import { readFile } from "node:fs/promises"
 import {
+  blockedDependentTickets,
   currentArtifacts,
   defaultArtifactPath,
+  dependentContinuationAction,
   describeAllowedStatusesForStage,
   getTicket,
   getTicketWorkflowState,
@@ -19,6 +21,8 @@ import {
   nextRepairFollowOnStage,
   openSplitScopeChildren,
   repairFollowOnBlockingReason,
+  ticketNeedsHistoricalReconciliation,
+  ticketNeedsTrustRestoration,
   ticketNeedsProcessVerification,
   validateImplementationArtifactEvidence,
   validateLifecycleStageStatus,
@@ -31,11 +35,14 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
   const blocker = validateLifecycleStageStatus(ticket.stage, ticket.status)
   const approvedPlan = isPlanApprovedForTicket(workflow, ticket.id)
   const needsProcessVerification = ticketNeedsProcessVerification(ticket, workflow)
+  const ticketNeedsReconciliation = ticketNeedsHistoricalReconciliation(ticket)
+  const ticketTrustNeedsRestoration = ticketNeedsTrustRestoration(ticket, workflow)
   const bootstrapStatus = workflow.bootstrap.status
   const repairFollowOnPending = hasPendingRepairFollowOn(workflow)
   const repairFollowOnStage = nextRepairFollowOnStage(workflow)
   const repairFollowOnBlocker = repairFollowOnBlockingReason(workflow)
   const splitChildren = openSplitScopeChildren(manifest, ticket.id)
+  const blockedDependents = blockedDependentTickets(manifest, ticket.id)
   const base = {
     current_stage: ticket.stage,
     current_status: ticket.status,
@@ -275,7 +282,23 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
       }
     }
     case "closeout":
-      if (ticket.status === "done" && needsProcessVerification) {
+      if (ticket.status === "done" && ticketNeedsReconciliation) {
+        return {
+          ...base,
+          next_allowed_stages: [],
+          required_artifacts: ["current reconciliation evidence artifact"],
+          next_action_kind: "reconcile",
+          next_action_tool: "ticket_reconcile",
+          delegate_to_agent: null,
+          required_owner: "team-leader",
+          canonical_artifact_path: defaultArtifactPath(ticket.id, "review", "ticket-reconciliation"),
+          artifact_stage: "review",
+          artifact_kind: "ticket-reconciliation",
+          recommended_action: "Ticket is already closed, but its historical lineage is still contradictory. Use ticket_reconcile with current registered evidence instead of trying to reopen or reclaim it.",
+          recommended_ticket_update: null,
+        }
+      }
+      if (ticket.status === "done" && ticketTrustNeedsRestoration) {
         return {
           ...base,
           next_allowed_stages: [],
@@ -289,6 +312,20 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           artifact_kind: "backlog-verification",
           recommended_action: "Ticket is already closed, but historical trust still needs restoration. Use the backlog verifier to produce current evidence, then run ticket_reverify on this closed ticket instead of trying to reclaim it.",
           recommended_ticket_update: null,
+        }
+      }
+      if (ticket.status === "done" && blockedDependents.length > 0) {
+        const nextDependent = blockedDependents[0]
+        return {
+          ...base,
+          next_allowed_stages: [nextDependent.stage],
+          required_artifacts: ["smoke-test"],
+          next_action_kind: "ticket_update",
+          next_action_tool: "ticket_update",
+          delegate_to_agent: null,
+          required_owner: "team-leader",
+          recommended_action: dependentContinuationAction(ticket, blockedDependents),
+          recommended_ticket_update: { ticket_id: nextDependent.id, activate: true },
         }
       }
       return {
