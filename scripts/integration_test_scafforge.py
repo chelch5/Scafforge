@@ -150,6 +150,22 @@ def greenfield_integration(fixtures: dict[str, dict[str, object]], workspace: Pa
     _ = fixtures["host-tool-or-permission-blockage"]
     dest = workspace / "greenfield"
     bootstrap_full(dest)
+    bootstrap_lane = run_json(
+        [
+            sys.executable,
+            str(smoke.VERIFY_GENERATED),
+            str(dest),
+            "--verification-kind",
+            "bootstrap-lane",
+            "--format",
+            "json",
+        ],
+        ROOT,
+    )
+    if bootstrap_lane.get("verification_kind") != "greenfield_bootstrap_lane":
+        raise RuntimeError("Greenfield integration should run the bootstrap-lane verifier before specialization.")
+    if bootstrap_lane.get("bootstrap_lane_valid") is not True:
+        raise RuntimeError("Greenfield integration should preserve one valid bootstrap lane immediately after scaffold render.")
     smoke.make_stack_skill_non_placeholder(dest)
     payload = run_json(
         [

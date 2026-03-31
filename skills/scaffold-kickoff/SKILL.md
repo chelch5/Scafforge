@@ -55,7 +55,24 @@ This has two phases:
 - Phase A: run the Python script to generate the template file tree with placeholder substitution
 - Phase B: customize the generated files with project-specific content from the canonical brief
 
-### Step 4: Bootstrap project-local skills
+### Step 4: Prove the bootstrap lane before specialization
+
+Before you continue into local-skill generation, run the early greenfield proof layer across the freshly rendered scaffold:
+
+```sh
+python3 ../repo-scaffold-factory/scripts/verify_generated_scaffold.py <repo-root> --verification-kind bootstrap-lane --format both
+```
+
+This early gate is narrower than the final handoff gate. It must prove:
+
+- one canonical bootstrap ticket
+- one valid bootstrap status
+- one bootstrap-first legal move while proof is still missing
+- aligned managed restart, workflow, and tool surfaces for `environment_bootstrap`
+
+Do not continue into project-specific specialization if this bootstrap-lane proof fails.
+
+### Step 5: Bootstrap project-local skills
 
 Read `../project-skill-bootstrap/SKILL.md` and follow its greenfield procedure.
 
@@ -64,7 +81,7 @@ Populate the repo-local skill pack in one pass:
 - create any required synthesized skills from project evidence
 - write the downstream model operating profile skill for the selected model profile
 
-### Step 5: Design and customize the agent team
+### Step 6: Design and customize the agent team
 
 Read `../opencode-team-bootstrap/SKILL.md` and follow its procedure.
 
@@ -74,13 +91,13 @@ The scaffold creates generic agent templates. You must now customize them:
 - keep the topology conservative unless the brief proves disjoint domains
 - reference only repo-local skills that already exist
 
-### Step 6: Harden agent prompts
+### Step 7: Harden agent prompts
 
 Read `../agent-prompt-engineering/SKILL.md` and follow its procedure.
 
 This is a required same-session hardening pass in the standard greenfield scaffold flow.
 
-### Step 7: Build the ticket backlog
+### Step 8: Build the ticket backlog
 
 Read `../ticket-pack-builder/SKILL.md` and follow its procedure in bootstrap mode.
 
@@ -89,7 +106,7 @@ Create implementation-ready tickets only after local skills, team topology, and 
 - keep each ticket small enough for one agent session
 - convert unresolved major decisions into blocked or decision tickets instead of guesses
 
-### Step 8: Verify immediate continuation before handoff
+### Step 9: Verify immediate continuation before handoff
 
 Before you begin the handoff step, run one same-session immediate-continuation verification gate across the generated workflow surfaces:
 
@@ -117,13 +134,13 @@ Confirm that they agree on:
 
 If these surfaces disagree, fix the contract before handing off the repo.
 
-### Step 9: Write the handoff surface
+### Step 10: Write the handoff surface
 
 Read `../handoff-brief/SKILL.md` and follow its procedure.
 
 Generate `START-HERE.md` with actual project state so the repo can be resumed by another agent or session.
 
-### Step 10: Done
+### Step 11: Done
 
 The scaffold is complete when all of these exist:
 - `docs/spec/CANONICAL-BRIEF.md` with real project content

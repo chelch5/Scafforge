@@ -2765,6 +2765,54 @@ def main() -> int:
         if "expectedPath = defaultArtifactPath" not in generated_artifact_register or "canonicalizeRepoPath(args.path)" not in generated_artifact_register:
             raise RuntimeError("Generated artifact_register.ts should enforce canonical artifact paths")
 
+        bootstrap_lane_gate = run_json(
+            [
+                sys.executable,
+                str(VERIFY_GENERATED),
+                str(full_dest),
+                "--verification-kind",
+                "bootstrap-lane",
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        if bootstrap_lane_gate.get("findings"):
+            codes = ", ".join(item["code"] for item in bootstrap_lane_gate.get("findings", []))
+            raise RuntimeError(f"A fresh scaffold should preserve one valid bootstrap lane before specialization, but it emitted: {codes}")
+
+        broken_bootstrap_lane_dest = workspace / "greenfield-bootstrap-lane-broken"
+        shutil.copytree(full_dest, broken_bootstrap_lane_dest)
+        broken_start_here = broken_bootstrap_lane_dest / "START-HERE.md"
+        broken_start_here.write_text(
+            broken_start_here.read_text(encoding="utf-8").replace(
+                "Run `environment_bootstrap`, register its proof artifact, rerun `ticket_lookup`, and do not continue lifecycle work until bootstrap is ready.",
+                "Continue with normal ticket lifecycle work.",
+            ),
+            encoding="utf-8",
+        )
+        broken_bootstrap_lane_result = subprocess.run(
+            [
+                sys.executable,
+                str(VERIFY_GENERATED),
+                str(broken_bootstrap_lane_dest),
+                "--verification-kind",
+                "bootstrap-lane",
+                "--format",
+                "json",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        broken_bootstrap_lane_payload = json.loads(broken_bootstrap_lane_result.stdout)
+        broken_bootstrap_lane_codes = {finding["code"] for finding in broken_bootstrap_lane_payload.get("findings", [])}
+        if broken_bootstrap_lane_result.returncode != 2:
+            raise RuntimeError("Bootstrap-lane verifier should fail when the rendered scaffold loses its bootstrap-first route")
+        if "VERIFY106" not in broken_bootstrap_lane_codes:
+            raise RuntimeError("Bootstrap-lane verifier should emit VERIFY106 when the base scaffold loses aligned bootstrap-first routing")
+
         greenfield_gate_dest = workspace / "greenfield-proof-gate"
         shutil.copytree(full_dest, greenfield_gate_dest)
         make_stack_skill_non_placeholder(greenfield_gate_dest)
@@ -2774,9 +2822,16 @@ def main() -> int:
             raise RuntimeError(f"A placeholder-free fresh scaffold should pass the shared greenfield continuation verifier, but it emitted: {codes}")
         manifest = json.loads((ROOT / "skills" / "skill-flow-manifest.json").read_text(encoding="utf-8"))
         greenfield_sequence = manifest["run_types"]["greenfield"]["sequence"]
+        bootstrap_verifier_step = "repo-scaffold-factory:verify-bootstrap-lane"
         verifier_step = "repo-scaffold-factory:verify-generated-scaffold"
+        if bootstrap_verifier_step not in greenfield_sequence:
+            raise RuntimeError("Greenfield manifest sequence should include the early bootstrap-lane verification gate")
         if verifier_step not in greenfield_sequence:
             raise RuntimeError("Greenfield manifest sequence should include the pre-handoff verification gate")
+        if greenfield_sequence.index(bootstrap_verifier_step) != greenfield_sequence.index("repo-scaffold-factory") + 1:
+            raise RuntimeError("Greenfield manifest sequence should place the bootstrap-lane verifier immediately after repo-scaffold-factory")
+        if greenfield_sequence.index(bootstrap_verifier_step) >= greenfield_sequence.index("project-skill-bootstrap:full-greenfield-pass"):
+            raise RuntimeError("Greenfield manifest sequence should place the bootstrap-lane verifier before project-skill-bootstrap")
         if greenfield_sequence.index(verifier_step) >= greenfield_sequence.index("handoff-brief"):
             raise RuntimeError("Greenfield manifest sequence should place the verification gate before handoff-brief")
 

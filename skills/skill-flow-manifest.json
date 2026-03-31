@@ -23,6 +23,7 @@
       "sequence": [
         "spec-pack-normalizer",
         "repo-scaffold-factory",
+        "repo-scaffold-factory:verify-bootstrap-lane",
         "project-skill-bootstrap:full-greenfield-pass",
         "opencode-team-bootstrap",
         "agent-prompt-engineering",

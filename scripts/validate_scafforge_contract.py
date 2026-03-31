@@ -209,6 +209,7 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
     expected_greenfield = [
         "spec-pack-normalizer",
         "repo-scaffold-factory",
+        "repo-scaffold-factory:verify-bootstrap-lane",
         "project-skill-bootstrap:full-greenfield-pass",
         "opencode-team-bootstrap",
         "agent-prompt-engineering",
@@ -442,6 +443,9 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, scaffold_kickoff, "route to `opencode-team-bootstrap` to add or repair `.opencode/`, then run `project-skill-bootstrap`")
     require_contains(findings, scaffold_kickoff, "let it continue through any required project-specific regeneration or ticket follow-up")
     require_contains(findings, scaffold_kickoff, "same-session immediate-continuation verification gate")
+    require_contains(findings, scaffold_kickoff, "--verification-kind bootstrap-lane")
+    require_contains(findings, scaffold_kickoff, "one canonical bootstrap ticket")
+    require_contains(findings, scaffold_kickoff, "Do not continue into project-specific specialization if this bootstrap-lane proof fails.")
     require_contains(findings, scaffold_kickoff, "verify_generated_scaffold.py <repo-root> --format both")
     require_contains(findings, scaffold_kickoff, "full non-mutating diagnosis")
     require_contains(findings, scaffold_kickoff, "redirecting the output directory")
@@ -464,8 +468,14 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(findings, repo_factory, "A fresh scaffold must already expose one legal first move while bootstrap proof is missing")
     require_contains(findings, repo_factory, "explicit ticket acceptance smoke commands are canonical smoke scope")
     require_contains(findings, repo_factory, "verify_generated_scaffold.py")
+    require_contains(findings, repo_factory, "--verification-kind bootstrap-lane")
+    require_contains(findings, repo_factory, "one canonical bootstrap ticket")
     require_contains(findings, repo_factory_verify, "verify_greenfield_continuation")
-    require_contains(findings, repo_factory_verify, '"verification_kind": "greenfield_continuation"')
+    require_contains(findings, repo_factory_verify, "verify_greenfield_bootstrap_lane")
+    require_contains(findings, repo_factory_verify, "greenfield_bootstrap_lane")
+    require_contains(findings, repo_factory_verify, "greenfield_continuation")
+    require_contains(findings, repo_factory_verify, "--verification-kind")
+    require_contains(findings, repo_factory_verify, "bootstrap_lane_valid")
     require_contains(findings, repo_factory_verify, "immediately_continuable")
     require_script_help_runs(findings, repo_factory_verify)
 
