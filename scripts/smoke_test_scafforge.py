@@ -8,89 +8,112 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+
+from test_support.repo_seeders import (
+    make_stack_skill_non_placeholder,
+    seed_bootstrap_command_layout_mismatch,
+    seed_failing_pytest_suite,
+    seed_ready_bootstrap,
+    seed_repeated_diagnosis_churn,
+    seed_restart_surface_drift,
+    seed_uv_python_fixture,
+    seed_workflow_overclaim,
+    write_python_wrapper,
+)
+from test_support.scafforge_harness import (
+    AUDIT,
+    BOOTSTRAP,
+    CHECKLIST,
+    PIVOT,
+    PIVOT_APPLY,
+    PIVOT_PUBLISH,
+    PIVOT_RECORD,
+    PUBLIC_REPAIR,
+    RECORD_REPAIR_STAGE,
+    REGENERATE,
+    REPAIR,
+    ROOT,
+    VERIFY_GENERATED,
+    compute_bootstrap_fingerprint,
+    load_python_module,
+    package_commit,
+    prepare_generated_tool_runtime,
+    run,
+    run_generated_plugin_before,
+    run_generated_plugin_before_error,
+    run_generated_tool,
+    run_generated_tool_error,
+    run_json,
+    write_executable,
+)
 
 
-ROOT = Path(__file__).resolve().parents[1]
-BOOTSTRAP = ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "bootstrap_repo_scaffold.py"
-CHECKLIST = ROOT / "skills" / "repo-scaffold-factory" / "references" / "opencode-conformance-checklist.json"
-AUDIT = ROOT / "skills" / "scafforge-audit" / "scripts" / "audit_repo_process.py"
-REPAIR = ROOT / "skills" / "scafforge-repair" / "scripts" / "apply_repo_process_repair.py"
-PUBLIC_REPAIR = ROOT / "skills" / "scafforge-repair" / "scripts" / "run_managed_repair.py"
-REGENERATE = ROOT / "skills" / "scafforge-repair" / "scripts" / "regenerate_restart_surfaces.py"
-
-
-def package_commit() -> str:
-    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=False, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Unable to resolve package commit for smoke tests:\nSTDERR:\n{result.stderr}")
-    return result.stdout.strip()
-
-
-def run(command: list[str], cwd: Path, *, env: dict[str, str] | None = None) -> None:
-    result = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True, env=env)
-    if result.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(command)}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
-
-
-def run_json(command: list[str], cwd: Path, *, env: dict[str, str] | None = None) -> dict:
-    result = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True, env=env)
-    if result.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(command)}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Command did not return valid JSON: {' '.join(command)}\nSTDOUT:\n{result.stdout}") from exc
-
-
-def seed_uv_python_fixture(
+def register_current_ticket_artifact(
     dest: Path,
     *,
-    dependency_block: list[str] | None = None,
-    include_pytest_tool_config: bool = False,
+    ticket_id: str,
+    kind: str,
+    stage: str,
+    relative_path: str,
+    summary: str,
+    content: str,
+    created_at: str = "2026-03-30T00:00:00Z",
 ) -> None:
-    dependency_lines = dependency_block or [
-        "[project.optional-dependencies]",
-        'dev = ["pytest>=8.0.0"]',
-    ]
-    pyproject_lines = [
-        "[project]",
-        'name = "smoke-python"',
-        'version = "0.1.0"',
-        'requires-python = ">=3.11"',
-        "",
-        *dependency_lines,
-        "",
-    ]
-    if include_pytest_tool_config:
-        pyproject_lines.extend(
-            [
-                "[tool.pytest.ini_options]",
-                'pythonpath = ["src"]',
-                "",
-            ]
-        )
+    manifest_path = dest / "tickets" / "manifest.json"
+    registry_path = dest / ".opencode" / "state" / "artifacts" / "registry.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    artifact_path = dest / relative_path
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(content, encoding="utf-8")
+    artifact = {
+        "kind": kind,
+        "path": relative_path,
+        "stage": stage,
+        "summary": summary,
+        "created_at": created_at,
+        "trust_state": "current",
+    }
+    ticket = next(item for item in manifest["tickets"] if item["id"] == ticket_id)
+    ticket.setdefault("artifacts", []).append(artifact)
+    registry.setdefault("artifacts", []).append({"ticket_id": ticket_id, **artifact})
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    registry_path.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
 
-    (dest / "pyproject.toml").write_text(
-        "\n".join(pyproject_lines) + "\n",
-        encoding="utf-8",
-    )
-    (dest / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-    venv_dir = dest / ".venv"
-    venv_dir.mkdir(parents=True, exist_ok=True)
-    (venv_dir / "pyvenv.cfg").write_text(
-        "\n".join(
-            [
-                "home = /usr/bin",
-                "implementation = CPython",
-                "uv = 0.10.12",
-                "version_info = 3.12.3",
-                "include-system-site-packages = false",
-            ]
+
+def seed_minimal_npm_repo(dest: Path) -> None:
+    (dest / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "smoke-example",
+                "version": "1.0.0",
+                "private": True,
+            },
+            indent=2,
         )
         + "\n",
         encoding="utf-8",
     )
-
+    (dest / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "name": "smoke-example",
+                "version": "1.0.0",
+                "lockfileVersion": 3,
+                "requires": True,
+                "packages": {
+                    "": {
+                        "name": "smoke-example",
+                        "version": "1.0.0",
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 def seed_dependency_group_python_fixture(dest: Path) -> None:
     seed_uv_python_fixture(
@@ -148,50 +171,6 @@ def seed_bootstrap_deadlock(dest: Path) -> None:
         "last_verified_at": "2026-03-25T00:23:01Z",
         "environment_fingerprint": "synthetic-bootstrap-deadlock",
         "proof_artifact": artifact_rel,
-    }
-    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
-
-
-def seed_bootstrap_command_layout_mismatch(dest: Path) -> None:
-    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
-    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
-    current_rel = ".opencode/state/artifacts/history/exec-014/bootstrap/2026-03-27T13-23-09-710Z-environment-bootstrap.md"
-    previous_rel = ".opencode/state/artifacts/history/exec-014/bootstrap/2026-03-27T13-20-16-174Z-environment-bootstrap.md"
-    current_path = dest / current_rel
-    previous_path = dest / previous_rel
-    current_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact_body = "\n".join(
-        [
-            "# Environment Bootstrap",
-            "",
-            "## Missing Prerequisites",
-            "",
-            f"- {dest / '.venv' / 'bin' / 'pytest'}",
-            "",
-            "## Commands",
-            "",
-            "### 1. uv availability",
-            "",
-            "- command: `uv --version`",
-            "",
-            "### 2. uv sync",
-            "",
-            "- command: `uv sync --locked`",
-            "",
-            "### 3. project pytest ready",
-            "",
-            f"- command: `{dest / '.venv' / 'bin' / 'pytest'} --version`",
-            f"- missing_executable: {dest / '.venv' / 'bin' / 'pytest'}",
-            "",
-        ]
-    ) + "\n"
-    current_path.write_text(artifact_body, encoding="utf-8")
-    previous_path.write_text(artifact_body, encoding="utf-8")
-    workflow["bootstrap"] = {
-        "status": "failed",
-        "last_verified_at": "2026-03-27T13:23:09.710Z",
-        "environment_fingerprint": "synthetic-bootstrap-command-mismatch",
-        "proof_artifact": current_rel,
     }
     workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
 
@@ -290,106 +269,121 @@ def seed_failed_repair_cycle(dest: Path, diagnosis_pack: Path) -> None:
     provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
 
 
-def seed_repeated_diagnosis_churn(dest: Path) -> None:
-    diagnosis_root = dest / "diagnosis"
-    baseline = sorted(path for path in diagnosis_root.iterdir() if path.is_dir())[-1]
-    baseline_manifest_path = baseline / "manifest.json"
-    baseline_manifest = json.loads(baseline_manifest_path.read_text(encoding="utf-8"))
-    baseline_manifest["generated_at"] = "2026-03-27T00:03:00Z"
-    baseline_manifest["ticket_recommendations"] = [
-        {
-            "source_finding_code": "SKILL001",
-            "route": "scafforge-repair",
-            "title": "Regenerate placeholder repo-local skills",
-        }
-    ]
-    baseline_manifest_path.write_text(json.dumps(baseline_manifest, indent=2) + "\n", encoding="utf-8")
-
-    for folder_name, generated_at in (
-        ("20260327-002513", "2026-03-27T00:25:13Z"),
-        ("20260327-014404", "2026-03-27T01:44:04Z"),
-    ):
-        target = diagnosis_root / folder_name
-        if target.exists():
-            shutil.rmtree(target)
-        shutil.copytree(baseline, target)
-        manifest_path = target / "manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["generated_at"] = generated_at
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-
-
-def make_stack_skill_non_placeholder(dest: Path) -> None:
-    skill_path = dest / ".opencode" / "skills" / "stack-standards" / "SKILL.md"
-    skill_path.write_text(
-        skill_path.read_text(encoding="utf-8").replace(
-            "Replace this file with stack-specific rules once the real project stack is known.",
-            "Use `uv run pytest -q` for validation and keep Python tooling repo-local via `uv`.",
-        ),
-        encoding="utf-8",
-    )
-
-
-def seed_workflow_overclaim(dest: Path) -> Path:
+def seed_closed_ticket_with_blocked_dependent(dest: Path) -> None:
     manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    active_ticket = manifest["active_ticket"]
-    manifest["tickets"].append(
-        {
-            "id": "WFLOW-DEP",
-            "title": "Synthetic dependent ticket",
-            "wave": 99,
-            "lane": "workflow",
-            "parallel_safe": True,
-            "overlap_risk": "low",
-            "stage": "planning",
-            "status": "ready",
-            "depends_on": [active_ticket],
-            "summary": "Synthetic dependent ticket for handoff overclaim coverage.",
-            "acceptance": ["Dependency claim remains blocked until the active ticket is done."],
-            "decision_blockers": [],
-            "artifacts": [],
-            "resolution_state": "open",
-            "verification_state": "suspect",
-            "follow_up_ticket_ids": [],
-        }
-    )
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-
-    overclaim = (
-        "Active work is only blocked by a tool/env mismatch, not a code defect. "
-        "The downstream dependency is now unblocked and ready to proceed."
-    )
-    for relative in ("START-HERE.md", ".opencode/state/latest-handoff.md"):
-        path = dest / relative
-        original = path.read_text(encoding="utf-8") if path.exists() else (dest / "START-HERE.md").read_text(encoding="utf-8")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if "## Next Action" in original:
-            updated = original.replace("## Next Action", f"## Next Action\n\n{overclaim}\n")
-        else:
-            updated = original.rstrip() + f"\n\n## Next Action\n\n{overclaim}\n"
-        path.write_text(updated, encoding="utf-8")
-
-    log_path = dest / "session-log.md"
-    log_path.write_text(
-        "\n".join(
-            [
-                "Active ticket: `EXEC-001` — stage `planning`, status `ready`.",
-                "`approved_plan: false`",
-                "Cannot move EXEC-005 to implementation before it passes through plan_review.",
-                "Cannot move EXEC-005 to implementation before it passes through plan_review.",
-                'Workaround needed again — using the `todo` bypass: {"stage": "todo"}',
-                "Unable to run verification commands — The bash tool is blocked by permission rules in this environment.",
-                "Result: PASS (scoped)",
-                "Verified by running the scoped command above",
-                "Later evidence: 126 tests collected and the service imports cleanly.",
-                "Final summary: tool/env mismatch, not a code defect. EXEC-002 is now unblocked.",
-            ]
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    active_ticket_id = manifest["active_ticket"]
+    active_ticket = next(ticket for ticket in manifest["tickets"] if ticket["id"] == active_ticket_id)
+    active_ticket["stage"] = "closeout"
+    active_ticket["status"] = "done"
+    active_ticket["resolution_state"] = "done"
+    active_ticket["verification_state"] = "reverified"
+    if not any(ticket["id"] == "EXEC-DEP" for ticket in manifest["tickets"]):
+        manifest["tickets"].append(
+            {
+                "id": "EXEC-DEP",
+                "title": "Synthetic blocked dependent",
+                "wave": 42,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "ready",
+                "depends_on": [active_ticket_id],
+                "summary": "Synthetic dependent ticket to verify closed-ticket continuation routing.",
+                "acceptance": ["Becomes the foreground lane after the source ticket closes."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "follow_up_ticket_ids": [],
+            }
         )
-        + "\n",
-        encoding="utf-8",
-    )
-    return log_path
+    workflow["stage"] = "closeout"
+    workflow["status"] = "done"
+    workflow["pending_process_verification"] = False
+    workflow["bootstrap"] = {
+        "status": "ready",
+        "last_verified_at": "2026-03-26T00:00:00Z",
+        "environment_fingerprint": "synthetic-ready-bootstrap",
+        "proof_artifact": ".opencode/state/bootstrap/synthetic-ready-bootstrap.md",
+    }
+    ticket_state = workflow.get("ticket_state")
+    if isinstance(ticket_state, dict):
+        active_ticket_state = ticket_state.get(active_ticket_id)
+        if isinstance(active_ticket_state, dict):
+            active_ticket_state["needs_reverification"] = False
+    proof_path = dest / ".opencode" / "state" / "bootstrap" / "synthetic-ready-bootstrap.md"
+    proof_path.parent.mkdir(parents=True, exist_ok=True)
+    proof_path.write_text("# Ready Bootstrap\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+
+
+def seed_closed_ticket_needing_explicit_reverification(dest: Path) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    active_ticket_id = manifest["active_ticket"]
+    active_ticket = next(ticket for ticket in manifest["tickets"] if ticket["id"] == active_ticket_id)
+    active_ticket["stage"] = "closeout"
+    active_ticket["status"] = "done"
+    active_ticket["resolution_state"] = "done"
+    active_ticket["verification_state"] = "suspect"
+    workflow["stage"] = "closeout"
+    workflow["status"] = "done"
+    workflow["pending_process_verification"] = False
+    workflow["bootstrap"] = {
+        "status": "ready",
+        "last_verified_at": "2026-03-26T00:00:00Z",
+        "environment_fingerprint": "synthetic-ready-bootstrap",
+        "proof_artifact": ".opencode/state/bootstrap/synthetic-ready-bootstrap.md",
+    }
+    ticket_state = workflow.get("ticket_state")
+    if isinstance(ticket_state, dict):
+        active_ticket_state = ticket_state.get(active_ticket_id)
+        if isinstance(active_ticket_state, dict):
+            active_ticket_state["needs_reverification"] = True
+    proof_path = dest / ".opencode" / "state" / "bootstrap" / "synthetic-ready-bootstrap.md"
+    proof_path.parent.mkdir(parents=True, exist_ok=True)
+    proof_path.write_text("# Ready Bootstrap\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+
+
+def seed_closed_ticket_needing_reconciliation(dest: Path) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    active_ticket_id = manifest["active_ticket"]
+    active_ticket = next(ticket for ticket in manifest["tickets"] if ticket["id"] == active_ticket_id)
+    active_ticket["stage"] = "closeout"
+    active_ticket["status"] = "done"
+    active_ticket["resolution_state"] = "superseded"
+    active_ticket["verification_state"] = "invalidated"
+    workflow["stage"] = "closeout"
+    workflow["status"] = "done"
+    workflow["pending_process_verification"] = False
+    workflow["bootstrap"] = {
+        "status": "ready",
+        "last_verified_at": "2026-03-26T00:00:00Z",
+        "environment_fingerprint": "synthetic-ready-bootstrap",
+        "proof_artifact": ".opencode/state/bootstrap/synthetic-ready-bootstrap.md",
+    }
+    ticket_state = workflow.get("ticket_state")
+    if isinstance(ticket_state, dict):
+        active_ticket_state = ticket_state.get(active_ticket_id)
+        if isinstance(active_ticket_state, dict):
+            active_ticket_state["needs_reverification"] = False
+    proof_path = dest / ".opencode" / "state" / "bootstrap" / "synthetic-ready-bootstrap.md"
+    proof_path.parent.mkdir(parents=True, exist_ok=True)
+    proof_path.write_text("# Ready Bootstrap\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
 
 
 def seed_legacy_smoke_test_tool(dest: Path) -> None:
@@ -633,64 +627,6 @@ def seed_coordinator_artifact_log(dest: Path) -> Path:
         encoding="utf-8",
     )
     return log_path
-
-
-def write_python_wrapper(path: Path, *, allow_pytest: bool) -> None:
-    real_python = sys.executable
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "\n".join(
-            [
-                f"#!{real_python}",
-                "import subprocess",
-                "import sys",
-                f"REAL_PYTHON = {real_python!r}",
-                "args = sys.argv[1:]",
-                f"ALLOW_PYTEST = {allow_pytest!r}",
-                'if not ALLOW_PYTEST and len(args) >= 2 and args[0] == "-m" and args[1] == "pytest":',
-                "    sys.exit(1)",
-                "raise SystemExit(subprocess.run([REAL_PYTHON, *args], check=False).returncode)",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    path.chmod(0o755)
-
-
-def seed_failing_pytest_suite(dest: Path) -> None:
-    seed_uv_python_fixture(dest)
-    src_pkg = dest / "src" / "smoke_pkg"
-    src_pkg.mkdir(parents=True, exist_ok=True)
-    (src_pkg / "__init__.py").write_text("__all__ = ['ok']\n", encoding="utf-8")
-    tests_dir = dest / "tests"
-    tests_dir.mkdir(parents=True, exist_ok=True)
-    (tests_dir / "test_sample.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
-
-    venv_bin = dest / ".venv" / "bin"
-    venv_bin.mkdir(parents=True, exist_ok=True)
-    write_python_wrapper(venv_bin / "python", allow_pytest=True)
-    (venv_bin / "pytest").write_text(
-        "\n".join(
-            [
-                f"#!{sys.executable}",
-                "import sys",
-                "args = sys.argv[1:]",
-                'if "--version" in args:',
-                '    print("pytest 8.1.0")',
-                "    raise SystemExit(0)",
-                'if "--collect-only" in args:',
-                '    print("2 tests collected")',
-                "    raise SystemExit(0)",
-                'print("1 failed, 1 passed in 0.10s")',
-                "raise SystemExit(1)",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (venv_bin / "pytest").chmod(0o755)
-
 
 def seed_missing_pytest_env(dest: Path) -> None:
     seed_uv_python_fixture(dest)
@@ -1305,184 +1241,6 @@ def seed_blocked_split_parent(dest: Path) -> None:
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
-def seed_restart_surface_drift(dest: Path) -> None:
-    manifest_path = dest / "tickets" / "manifest.json"
-    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
-    ticket = manifest["tickets"][0]
-    proof_rel = ".opencode/state/bootstrap/synthetic-bootstrap-proof.md"
-    proof_path = dest / proof_rel
-    proof_path.parent.mkdir(parents=True, exist_ok=True)
-    proof_path.write_text("# Bootstrap Proof\n", encoding="utf-8")
-
-    workflow["bootstrap"] = {
-        "status": "failed",
-        "last_verified_at": "2026-03-25T23:02:26Z",
-        "environment_fingerprint": "synthetic-bootstrap",
-        "proof_artifact": proof_rel,
-    }
-    workflow["pending_process_verification"] = True
-    workflow["state_revision"] = 122
-    workflow["lane_leases"] = [
-        {
-            "ticket_id": ticket["id"],
-            "lane": ticket["lane"],
-            "owner_agent": "synthetic-team-leader",
-            "write_lock": True,
-            "claimed_at": "2026-03-25T23:00:24Z",
-            "allowed_paths": ["."],
-        }
-    ]
-    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
-
-    (dest / "START-HERE.md").write_text(
-        "\n".join(
-            [
-                "# START HERE",
-                "",
-                "<!-- SCAFFORGE:START_HERE_BLOCK START -->",
-                "## What This Repo Is",
-                "",
-                "Smoke Example",
-                "",
-                "## Current Or Next Ticket",
-                "",
-                f"- ID: {ticket['id']}",
-                f"- Title: {ticket['title']}",
-                f"- Wave: {ticket['wave']}",
-                f"- Lane: {ticket['lane']}",
-                f"- Stage: {ticket['stage']}",
-                "- Status: ready",
-                f"- Resolution: {ticket['resolution_state']}",
-                f"- Verification: {ticket['verification_state']}",
-                "",
-                "## Generation Status",
-                "",
-                "- handoff_status: ready for continued development",
-                f"- process_version: {workflow['process_version']}",
-                f"- parallel_mode: {workflow['parallel_mode']}",
-                "- pending_process_verification: false",
-                "- bootstrap_status: ready",
-                "- bootstrap_proof: None",
-                "",
-                "## Post-Generation Audit Status",
-                "",
-                "- audit_or_repair_follow_up: none recorded",
-                "- reopened_tickets: none",
-                "- done_but_not_fully_trusted: none",
-                "- pending_reverification: none",
-                "",
-                "## Known Risks",
-                "",
-                "- None recorded.",
-                "",
-                "## Next Action",
-                "",
-                "Continue the required internal lifecycle from the current ticket stage.",
-                "<!-- SCAFFORGE:START_HERE_BLOCK END -->",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    (dest / ".opencode" / "state" / "context-snapshot.md").write_text(
-        "\n".join(
-            [
-                "# Context Snapshot",
-                "",
-                "## Project",
-                "",
-                "Smoke Example",
-                "",
-                "## Active Ticket",
-                "",
-                f"- ID: {ticket['id']}",
-                f"- Title: {ticket['title']}",
-                f"- Stage: {ticket['stage']}",
-                "- Status: ready",
-                f"- Resolution: {ticket['resolution_state']}",
-                f"- Verification: {ticket['verification_state']}",
-                "- Approved plan: no",
-                "- Needs reverification: no",
-                "",
-                "## Bootstrap",
-                "",
-                "- status: ready",
-                "- last_verified_at: 2026-03-25T22:00:00Z",
-                "- proof_artifact: None",
-                "",
-                "## Process State",
-                "",
-                f"- process_version: {workflow['process_version']}",
-                "- pending_process_verification: false",
-                f"- parallel_mode: {workflow['parallel_mode']}",
-                "- state_revision: 113",
-                "",
-                "## Lane Leases",
-                "",
-                "- No active lane leases",
-                "",
-                "## Recent Artifacts",
-                "",
-                "- No artifacts recorded yet",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    (dest / ".opencode" / "state" / "latest-handoff.md").write_text(
-        "\n".join(
-            [
-                "# START HERE",
-                "",
-                "<!-- SCAFFORGE:START_HERE_BLOCK START -->",
-                "## What This Repo Is",
-                "",
-                "Smoke Example",
-                "",
-                "## Current Or Next Ticket",
-                "",
-                f"- ID: {ticket['id']}",
-                f"- Title: {ticket['title']}",
-                f"- Wave: {ticket['wave']}",
-                f"- Lane: {ticket['lane']}",
-                f"- Stage: {ticket['stage']}",
-                "- Status: ready",
-                f"- Resolution: {ticket['resolution_state']}",
-                f"- Verification: {ticket['verification_state']}",
-                "",
-                "## Generation Status",
-                "",
-                "- handoff_status: ready for continued development",
-                f"- process_version: {workflow['process_version']}",
-                f"- parallel_mode: {workflow['parallel_mode']}",
-                "- pending_process_verification: false",
-                "- bootstrap_status: ready",
-                "- bootstrap_proof: None",
-                "",
-                "## Post-Generation Audit Status",
-                "",
-                "- audit_or_repair_follow_up: none recorded",
-                "- reopened_tickets: none",
-                "- done_but_not_fully_trusted: none",
-                "- pending_reverification: none",
-                "",
-                "## Known Risks",
-                "",
-                "- None recorded.",
-                "",
-                "## Next Action",
-                "",
-                "Continue the required internal lifecycle from the current ticket stage.",
-                "<!-- SCAFFORGE:START_HERE_BLOCK END -->",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-
 def seed_bootstrap_guidance_drift(dest: Path) -> None:
     workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
     workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
@@ -1806,7 +1564,11 @@ def verify_render(dest: Path, *, expect_full_repo: bool) -> None:
 
 def main() -> int:
     workspace = Path(tempfile.mkdtemp(prefix="scafforge-smoke-"))
+    host_has_uv = shutil.which("uv") is not None
+    host_has_npm = shutil.which("npm") is not None
     try:
+        if not host_has_uv:
+            print("Warning: uv is not available on this host; uv-dependent smoke coverage will be skipped.", file=sys.stderr)
         full_dest = workspace / "full"
         opencode_dest = workspace / "opencode"
 
@@ -1851,9 +1613,12 @@ def main() -> int:
             raise RuntimeError("Generated environment_bootstrap.ts should not keep the legacy multiline section regex that misses optional dependency bodies")
         if "defaultBootstrapProofPath" not in generated_bootstrap or "normalizeRepoPath" not in generated_bootstrap:
             raise RuntimeError("Generated environment_bootstrap.ts should persist bootstrap proof through canonical artifact-path helpers")
+        for expected in ("host_surface_classification", "failure_classification", "blocked_by_permissions", "permission_restriction"):
+            if expected not in generated_bootstrap:
+                raise RuntimeError("Generated environment_bootstrap.ts should classify missing-tool and permission-restriction host failures explicitly")
         generated_smoke_test = (full_dest / ".opencode" / "tools" / "smoke_test.ts").read_text(encoding="utf-8")
-        if 'join(root, ".venv", "bin", "python")' not in generated_smoke_test:
-            raise RuntimeError("Generated smoke_test.ts should support repo-local .venv Python execution")
+        if "findExistingRepoVenvExecutable" not in generated_smoke_test:
+            raise RuntimeError("Generated smoke_test.ts should support repo-local .venv Python execution across platform-specific virtualenv layouts")
         if "[tool.pytest.ini_options]" not in generated_smoke_test:
             raise RuntimeError("Generated smoke_test.ts should detect pyproject-only pytest configuration, not only tests/ or pytest.ini")
         for expected in ("scope:", "test_paths:", "args.scope", "args.test_paths"):
@@ -1865,6 +1630,9 @@ def main() -> int:
             raise RuntimeError("Generated smoke_test.ts should reject malformed mixed command_override forms")
         if "defaultArtifactPath" not in generated_smoke_test or "normalizeRepoPath" not in generated_smoke_test:
             raise RuntimeError("Generated smoke_test.ts should persist smoke artifacts through canonical artifact-path helpers")
+        for expected in ("host_surface_classification", "failure_classification", "blocked_by_permissions", "permission_restriction"):
+            if expected not in generated_smoke_test:
+                raise RuntimeError("Generated smoke_test.ts should classify missing-tool and permission-restriction host failures explicitly")
         generated_stage_gate = (full_dest / ".opencode" / "plugins" / "stage-gate-enforcer.ts").read_text(encoding="utf-8")
         if 'const RESERVED_ARTIFACT_STAGES = new Set(["smoke-test"])' not in generated_stage_gate:
             raise RuntimeError("Generated stage-gate-enforcer.ts should reserve smoke-test artifacts to their owning tool")
@@ -1883,6 +1651,14 @@ def main() -> int:
             raise RuntimeError("Generated workflow.ts should refresh derived restart surfaces after workflow mutations")
         if "latestHandoffPath" not in generated_workflow:
             raise RuntimeError("Generated workflow.ts should own the latest-handoff restart surface")
+        if "export function blockedDependentTickets" not in generated_workflow:
+            raise RuntimeError("Generated workflow.ts should expose blocked dependent routing as a reusable canonical helper")
+        if "export function dependentContinuationAction" not in generated_workflow:
+            raise RuntimeError("Generated workflow.ts should expose one canonical dependent-continuation action helper for restart and lookup surfaces")
+        if "export function ticketNeedsHistoricalReconciliation" not in generated_workflow:
+            raise RuntimeError("Generated workflow.ts should expose explicit historical-reconciliation state for restart and lookup surfaces")
+        if "export function ticketNeedsTrustRestoration" not in generated_workflow:
+            raise RuntimeError("Generated workflow.ts should expose explicit closed-ticket trust-restoration state for restart and lookup surfaces")
         if "Historical done-ticket reverification stays secondary until the active open ticket is resolved." not in generated_workflow:
             raise RuntimeError("Generated workflow.ts should keep the active open ticket primary when process verification is pending")
         if "Cannot publish dependency-readiness claims" not in generated_workflow or "Cannot publish causal claims" not in generated_workflow:
@@ -1896,6 +1672,12 @@ def main() -> int:
             raise RuntimeError("Generated ticket_lookup.ts should short-circuit lifecycle guidance to environment_bootstrap when bootstrap is not ready")
         if "Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly." not in generated_ticket_lookup:
             raise RuntimeError("Generated ticket_lookup.ts should foreground split children without marking the parent blocked")
+        if "dependentContinuationAction" not in generated_ticket_lookup:
+            raise RuntimeError("Generated ticket_lookup.ts should route closed completed tickets through the shared dependent-continuation helper instead of presenting them as terminal")
+        if "ticketNeedsHistoricalReconciliation" not in generated_ticket_lookup or "ticket_reconcile" not in generated_ticket_lookup:
+            raise RuntimeError("Generated ticket_lookup.ts should surface ticket_reconcile when a closed historical ticket still needs lineage repair")
+        if "ticketNeedsTrustRestoration" not in generated_ticket_lookup:
+            raise RuntimeError("Generated ticket_lookup.ts should detect explicit closed-ticket trust-restoration state, not only global pending process verification")
         if 'next_action_tool: "smoke_test",\n          delegate_to_agent: null,\n          required_owner: "team-leader",' not in generated_ticket_lookup:
             raise RuntimeError("Generated ticket_lookup.ts should keep smoke_test team-leader-owned instead of delegating it to tester-qa")
         generated_ticket_create = (full_dest / ".opencode" / "tools" / "ticket_create.ts").read_text(encoding="utf-8")
@@ -1903,11 +1685,28 @@ def main() -> int:
             raise RuntimeError("Generated ticket_create.ts should not mark split-scope parents blocked")
         if "Keep the parent open and non-foreground until the child work lands." not in generated_ticket_create:
             raise RuntimeError("Generated ticket_create.ts should leave split-scope parents open and linked to their children")
+        generated_ticket_reverify = (full_dest / ".opencode" / "tools" / "ticket_reverify.ts").read_text(encoding="utf-8")
+        if 'if (sourceTicket.status !== "done")' not in generated_ticket_reverify:
+            raise RuntimeError("Generated ticket_reverify.ts should reject attempts to restore trust on non-done tickets")
+        if "ticket_reverify requires evidence_artifact_path or verification_content." not in generated_ticket_reverify:
+            raise RuntimeError("Generated ticket_reverify.ts should require concrete reverification evidence")
+        if 'sourceTicket.verification_state = "reverified"' not in generated_ticket_reverify:
+            raise RuntimeError("Generated ticket_reverify.ts should restore the source ticket verification state to reverified")
+        if "getTicketWorkflowState(workflow, sourceTicket.id).needs_reverification = false" not in generated_ticket_reverify:
+            raise RuntimeError("Generated ticket_reverify.ts should clear the explicit needs_reverification flag after trust restoration")
+        if 'kind: "backlog-verification"' not in generated_ticket_reverify or 'kind: "reverification"' not in generated_ticket_reverify:
+            raise RuntimeError("Generated ticket_reverify.ts should register both inline backlog-verification evidence and the final reverification artifact")
         generated_ticket_reconcile = (full_dest / ".opencode" / "tools" / "ticket_reconcile.ts").read_text(encoding="utf-8")
         if "currentRegistryArtifact" not in generated_ticket_reconcile:
             raise RuntimeError("Generated ticket_reconcile.ts should allow current registered evidence to justify historical reconciliation")
+        if "targetTicket.depends_on = targetTicket.depends_on.filter" not in generated_ticket_reconcile:
+            raise RuntimeError("Generated ticket_reconcile.ts should remove contradictory dependencies when reconciliation repairs lineage")
         if 'targetTicket.verification_state = "reverified"' not in generated_ticket_reconcile:
             raise RuntimeError("Generated ticket_reconcile.ts should leave successfully superseded historical targets non-blocking for handoff publication")
+        if 'targetTicket.resolution_state = "superseded"' not in generated_ticket_reconcile:
+            raise RuntimeError("Generated ticket_reconcile.ts should explicitly mark superseded historical targets closed when requested")
+        if "syncWorkflowSelection(workflow, manifest)" not in generated_ticket_reconcile:
+            raise RuntimeError("Generated ticket_reconcile.ts should resync active workflow selection after lineage changes")
         if "supersededTarget,\n" in generated_ticket_reconcile:
             raise RuntimeError("Generated ticket_reconcile.ts should not contain the legacy supersededTarget runtime typo")
         generated_team_leader = next((full_dest / ".opencode" / "agents").glob("*team-leader*.md")).read_text(encoding="utf-8")
@@ -1956,6 +1755,388 @@ def main() -> int:
         context_snapshot = (full_dest / ".opencode" / "state" / "context-snapshot.md").read_text(encoding="utf-8")
         if "- Open split children: none" not in context_snapshot or "- handoff_allowed:" in context_snapshot:
             raise RuntimeError("Generated context snapshot should expose split children and omit public handoff_allowed state")
+        pivot_dest = workspace / "pivot"
+        shutil.copytree(full_dest, pivot_dest)
+        make_stack_skill_non_placeholder(pivot_dest)
+        seed_ready_bootstrap(pivot_dest)
+        run_generated_tool(
+            pivot_dest,
+            ".opencode/tools/handoff_publish.ts",
+            {},
+        )
+        pivot_payload = run_json(
+            [
+                sys.executable,
+                str(PIVOT),
+                str(pivot_dest),
+                "--pivot-class",
+                "architecture-change",
+                "--requested-change",
+                "Move from single-service layout to modular domain services with explicit workflow contract updates.",
+                "--accepted-decision",
+                "Adopt modular service boundaries and regenerate workflow prompts around the new topology.",
+                "--unresolved-follow-up",
+                "Reconcile historical tickets that still assume the old monolith execution path.",
+                "--reconcile-ticket",
+                "SETUP-001",
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        if pivot_payload["verification_status"]["verification_kind"] != "post_pivot":
+            raise RuntimeError("Pivot orchestration should record a post_pivot verification result")
+        if not pivot_payload["verification_status"]["verification_passed"]:
+            raise RuntimeError("Pivot orchestration should pass verification on a clean generated repo")
+        if pivot_payload["stale_surface_map"]["canonical_brief_and_truth_docs"]["status"] != "replace":
+            raise RuntimeError("Pivot orchestration should always replace canonical brief truth surfaces")
+        if pivot_payload["stale_surface_map"]["managed_workflow_tools_and_prompts"]["status"] != "replace":
+            raise RuntimeError("Architecture pivots should route managed workflow drift through replacement state")
+        pivot_stages = [item["stage"] for item in pivot_payload["downstream_refresh"]]
+        for expected in ("project-skill-bootstrap", "opencode-team-bootstrap", "agent-prompt-engineering", "ticket-pack-builder", "scafforge-repair"):
+            if expected not in pivot_stages:
+                raise RuntimeError(f"Pivot orchestration should route {expected} for an architecture-change pivot")
+        pivot_brief = (pivot_dest / "docs" / "spec" / "CANONICAL-BRIEF.md").read_text(encoding="utf-8")
+        if "## Pivot History" not in pivot_brief or "architecture-change" not in pivot_brief:
+            raise RuntimeError("Pivot orchestration should append a Pivot History section to the canonical brief")
+        pivot_state_path = pivot_dest / ".opencode" / "meta" / "pivot-state.json"
+        if not pivot_state_path.exists():
+            raise RuntimeError("Pivot orchestration should persist .opencode/meta/pivot-state.json")
+        pivot_state = json.loads(pivot_state_path.read_text(encoding="utf-8"))
+        if pivot_state["pivot_state_path"] != ".opencode/meta/pivot-state.json":
+            raise RuntimeError("Pivot orchestration should record the canonical pivot state path")
+        if pivot_state["restart_surface_inputs"]["pivot_in_progress"] is not True:
+            raise RuntimeError("Pivot orchestration should mark pivot_in_progress while routed downstream work remains")
+        expected_changed_surfaces = {
+            "canonical_brief_and_truth_docs",
+            "repo_local_skills",
+            "agent_team_and_prompts",
+            "managed_workflow_tools_and_prompts",
+            "ticket_graph_and_lineage",
+            "restart_surfaces",
+        }
+        if set(pivot_state["restart_surface_inputs"]["pivot_changed_surfaces"]) != expected_changed_surfaces:
+            raise RuntimeError("Pivot orchestration should expose truthful changed surfaces for restart publication")
+        if set(pivot_state["downstream_refresh_state"]["pending_stages"]) != set(pivot_stages):
+            raise RuntimeError("Pivot orchestration should initialize downstream refresh state with all routed stages pending")
+        lineage_actions = pivot_state["ticket_lineage_plan"]["actions"]
+        if not any(action["action"] == "reconcile" and action["target_ticket_id"] == "SETUP-001" for action in lineage_actions):
+            raise RuntimeError("Pivot orchestration should record explicit reconcile actions in the ticket lineage plan")
+        if not any(action["action"] == "create_follow_up" and "Reconcile historical tickets" in action["summary"] for action in lineage_actions):
+            raise RuntimeError("Pivot orchestration should convert unresolved follow-up into explicit follow-up ticket lineage actions")
+        if "reconcile:SETUP-001" not in pivot_state["restart_surface_inputs"]["pending_ticket_lineage_actions"]:
+            raise RuntimeError("Pivot restart inputs should expose pending explicit ticket lineage actions")
+        pivot_start_here = (pivot_dest / "START-HERE.md").read_text(encoding="utf-8")
+        pivot_latest_handoff = (pivot_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        pivot_context_snapshot = (pivot_dest / ".opencode" / "state" / "context-snapshot.md").read_text(encoding="utf-8")
+        if "- pivot_in_progress: true" not in pivot_start_here or "- pivot_class: architecture-change" not in pivot_start_here:
+            raise RuntimeError("Pivot planning should republish START-HERE immediately with truthful pivot state")
+        if "- pivot_pending_ticket_lineage_actions: reconcile:SETUP-001, create_follow_up:Reconcile historical tickets that still assume the old monolith execution path." not in pivot_start_here:
+            raise RuntimeError("Pivot planning should republish START-HERE with pending pivot ticket lineage actions")
+        if "- pivot_in_progress: true" not in pivot_latest_handoff:
+            raise RuntimeError("Pivot planning should republish latest-handoff immediately with truthful pivot state")
+        if "- pending_ticket_lineage_actions: reconcile:SETUP-001, create_follow_up:Reconcile historical tickets that still assume the old monolith execution path." not in pivot_context_snapshot:
+            raise RuntimeError("Pivot planning should republish context snapshot immediately with pending pivot ticket lineage actions")
+        restart_surface_publication = pivot_state.get("restart_surface_publication", {})
+        if restart_surface_publication.get("status") != "published":
+            raise RuntimeError("Pivot planning should record restart-surface publication state")
+        regenerate_pivot_payload = run_json(
+            [
+                sys.executable,
+                str(REGENERATE),
+                str(pivot_dest),
+                "--reason",
+                "Repair-side restart regeneration should preserve pivot blockers.",
+                "--source",
+                "scafforge-repair",
+                "--verification-passed",
+            ],
+            ROOT,
+        )
+        if regenerate_pivot_payload["handoff_status"] != "pivot follow-up required" or regenerate_pivot_payload["pivot_in_progress"] is not True:
+            raise RuntimeError("Repair-side restart regeneration should preserve pivot blockers while downstream pivot work remains pending")
+        regenerated_pivot_start_here = (pivot_dest / "START-HERE.md").read_text(encoding="utf-8")
+        regenerated_pivot_latest_handoff = (pivot_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        if "- handoff_status: pivot follow-up required" not in regenerated_pivot_start_here or "- pivot_in_progress: true" not in regenerated_pivot_start_here:
+            raise RuntimeError("Repair-side restart regeneration should not erase pivot state from START-HERE while pivot follow-on remains pending")
+        if "- pivot_in_progress: true" not in regenerated_pivot_latest_handoff:
+            raise RuntimeError("Repair-side restart regeneration should preserve pivot state in latest-handoff while pivot follow-on remains pending")
+        pivot_evidence = pivot_dest / ".opencode" / "state" / "artifacts" / "history" / "pivot-stage-completion.md"
+        pivot_evidence.parent.mkdir(parents=True, exist_ok=True)
+        pivot_evidence.write_text("# Pivot stage completion\n", encoding="utf-8")
+        record_payload = run_json(
+            [
+                sys.executable,
+                str(PIVOT_RECORD),
+                str(pivot_dest),
+                "--stage",
+                "scafforge-repair",
+                "--completed-by",
+                "scafforge-pivot-smoke",
+                "--summary",
+                "Managed workflow refresh completed for the pivot smoke fixture.",
+                "--evidence",
+                ".opencode/state/artifacts/history/pivot-stage-completion.md",
+            ],
+            ROOT,
+        )
+        if "scafforge-repair" not in record_payload["completed_stage_names"]:
+            raise RuntimeError("Pivot stage recording should mark the completed downstream stage")
+        if "scafforge-repair" in record_payload["pending_stage_names"]:
+            raise RuntimeError("Pivot stage recording should remove the completed stage from pending downstream work")
+        if record_payload["restart_surface_inputs"]["pivot_in_progress"] is not True:
+            raise RuntimeError("Pivot stage recording should keep pivot_in_progress true while other downstream stages remain pending")
+        refreshed_pivot_state = json.loads(pivot_state_path.read_text(encoding="utf-8"))
+        repair_stage_record = refreshed_pivot_state["downstream_refresh_state"]["stage_records"]["scafforge-repair"]
+        if repair_stage_record["status"] != "completed" or repair_stage_record["completion_mode"] != "recorded_execution":
+            raise RuntimeError("Pivot stage recording should persist recorded execution for completed stages")
+        if repair_stage_record["completed_by"] != "scafforge-pivot-smoke":
+            raise RuntimeError("Pivot stage recording should persist completed_by provenance")
+        pivot_start_here = (pivot_dest / "START-HERE.md").read_text(encoding="utf-8")
+        pivot_latest_handoff = (pivot_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        pivot_context_snapshot = (pivot_dest / ".opencode" / "state" / "context-snapshot.md").read_text(encoding="utf-8")
+        if "- handoff_status: pivot follow-up required" not in pivot_start_here:
+            raise RuntimeError("Post-pivot handoff should publish pivot follow-up required while downstream pivot work remains")
+        if "- pivot_in_progress: true" not in pivot_start_here or "- pivot_class: architecture-change" not in pivot_start_here:
+            raise RuntimeError("Post-pivot START-HERE should expose truthful pivot state")
+        if "- pivot_pending_stages: project-skill-bootstrap, opencode-team-bootstrap, agent-prompt-engineering, ticket-pack-builder" not in pivot_start_here:
+            raise RuntimeError("Post-pivot START-HERE should list the remaining pivot stages after recorded managed refresh")
+        if "- pivot_pending_ticket_lineage_actions: reconcile:SETUP-001, create_follow_up:Reconcile historical tickets that still assume the old monolith execution path." not in pivot_start_here:
+            raise RuntimeError("Post-pivot START-HERE should expose pending pivot ticket lineage actions")
+        if "- pivot_in_progress: true" not in pivot_latest_handoff:
+            raise RuntimeError("latest-handoff should stay aligned with START-HERE for pivot state")
+        if "- pivot_changed_surfaces: agent_team_and_prompts, canonical_brief_and_truth_docs, managed_workflow_tools_and_prompts, repo_local_skills, restart_surfaces, ticket_graph_and_lineage" not in pivot_context_snapshot:
+            raise RuntimeError("context snapshot should expose the pivot changed surfaces for restart review")
+        if "- pending_ticket_lineage_actions: reconcile:SETUP-001, create_follow_up:Reconcile historical tickets that still assume the old monolith execution path." not in pivot_context_snapshot:
+            raise RuntimeError("context snapshot should expose pending pivot ticket lineage actions for restart review")
+        pivot_provenance = json.loads((pivot_dest / ".opencode" / "meta" / "bootstrap-provenance.json").read_text(encoding="utf-8"))
+        pivot_history = pivot_provenance.get("pivot_history")
+        if not isinstance(pivot_history, list) or not pivot_history or pivot_history[-1]["pivot_class"] != "architecture-change":
+            raise RuntimeError("Pivot orchestration should append pivot history to bootstrap provenance")
+
+        pivot_relative_log_dest = workspace / "pivot-relative-log"
+        shutil.copytree(full_dest, pivot_relative_log_dest)
+        make_stack_skill_non_placeholder(pivot_relative_log_dest)
+        seed_ready_bootstrap(pivot_relative_log_dest)
+        run_generated_tool(
+            pivot_relative_log_dest,
+            ".opencode/tools/handoff_publish.ts",
+            {},
+        )
+        relative_pivot_log = seed_operator_trap_log(pivot_relative_log_dest)
+        relative_pivot_process = subprocess.run(
+            [
+                sys.executable,
+                str(PIVOT),
+                str(pivot_relative_log_dest),
+                "--pivot-class",
+                "workflow-change",
+                "--requested-change",
+                "Exercise repo-root supporting-log resolution during pivot verification.",
+                "--supporting-log",
+                relative_pivot_log.name,
+                "--format",
+                "json",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if relative_pivot_process.returncode != 2:
+            raise RuntimeError(
+                "Pivot verification with a repo-relative supporting log should fail with transcript-backed findings, not path-resolution errors.\n"
+                f"STDOUT:\n{relative_pivot_process.stdout}\nSTDERR:\n{relative_pivot_process.stderr}"
+            )
+        relative_pivot_payload = json.loads(relative_pivot_process.stdout)
+        if "SESSION006" not in set(relative_pivot_payload["verification_status"]["codes"]):
+            raise RuntimeError("Pivot verification should consume repo-relative supporting logs from the pivoted repo root")
+        if relative_pivot_payload["verification_status"]["supporting_logs"] != [str(relative_pivot_log.resolve())]:
+            raise RuntimeError("Pivot verification should record repo-relative supporting logs as paths resolved from the pivoted repo root")
+
+        pivot_lineage_dest = workspace / "pivot-lineage-execution"
+        shutil.copytree(full_dest, pivot_lineage_dest)
+        make_stack_skill_non_placeholder(pivot_lineage_dest)
+        seed_closed_ticket_needing_reconciliation(pivot_lineage_dest)
+        lineage_manifest_path = pivot_lineage_dest / "tickets" / "manifest.json"
+        lineage_workflow_path = pivot_lineage_dest / ".opencode" / "state" / "workflow-state.json"
+        lineage_registry_path = pivot_lineage_dest / ".opencode" / "state" / "artifacts" / "registry.json"
+        lineage_manifest = json.loads(lineage_manifest_path.read_text(encoding="utf-8"))
+        lineage_workflow = json.loads(lineage_workflow_path.read_text(encoding="utf-8"))
+        lineage_registry = json.loads(lineage_registry_path.read_text(encoding="utf-8"))
+        lineage_manifest["tickets"].append(
+            {
+                "id": "EXEC-RECON-SRC",
+                "title": "Synthetic replacement source ticket",
+                "wave": 2,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "implementation",
+                "status": "in_progress",
+                "depends_on": [],
+                "summary": "Replacement source ticket for pivot lineage execution smoke coverage.",
+                "acceptance": ["Replacement source remains active."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "trusted",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        lineage_manifest["tickets"].append(
+            {
+                "id": "EXEC-RECON-TGT",
+                "title": "Synthetic stale follow-up ticket",
+                "wave": 3,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "ready",
+                "depends_on": ["SETUP-001"],
+                "summary": "Follow-up ticket with stale lineage for pivot execution smoke coverage.",
+                "acceptance": ["Reconciliation succeeds."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "post_completion_issue",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        lineage_manifest["tickets"].append(
+            {
+                "id": "EXEC-REOPEN",
+                "title": "Synthetic completed ticket to reopen",
+                "wave": 4,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "closeout",
+                "status": "done",
+                "depends_on": [],
+                "summary": "Completed ticket that the pivot should reopen through the generated tool.",
+                "acceptance": ["Can be reopened through pivot lineage execution."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "done",
+                "verification_state": "trusted",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        setup_ticket = next(ticket for ticket in lineage_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        setup_ticket["follow_up_ticket_ids"] = ["EXEC-RECON-TGT"]
+        reconcile_evidence_rel = ".opencode/state/reviews/setup-001-review-backlog-verification.md"
+        reconcile_evidence_path = pivot_lineage_dest / reconcile_evidence_rel
+        reconcile_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        reconcile_evidence_path.write_text("# Historical Evidence\n\nCurrent evidence is registered.\n", encoding="utf-8")
+        reconcile_evidence_artifact = {
+            "kind": "backlog-verification",
+            "path": reconcile_evidence_rel,
+            "stage": "review",
+            "summary": "Synthetic reconciliation evidence for pivot execution.",
+            "created_at": "2026-03-30T00:00:00Z",
+            "trust_state": "current",
+        }
+        setup_ticket.setdefault("artifacts", []).append(reconcile_evidence_artifact)
+        lineage_registry.setdefault("artifacts", []).append({"ticket_id": "SETUP-001", **reconcile_evidence_artifact})
+        reopen_ticket = next(ticket for ticket in lineage_manifest["tickets"] if ticket["id"] == "EXEC-REOPEN")
+        reopen_evidence_rel = ".opencode/state/reviews/exec-reopen-review.md"
+        reopen_evidence_path = pivot_lineage_dest / reopen_evidence_rel
+        reopen_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        reopen_evidence_path.write_text("# Reopen Evidence\n\nPivot invalidated the prior completion boundary.\n", encoding="utf-8")
+        reopen_ticket.setdefault("artifacts", []).append(
+            {
+                "kind": "review-note",
+                "path": reopen_evidence_rel,
+                "stage": "review",
+                "summary": "Synthetic reopen evidence for pivot execution.",
+                "created_at": "2026-03-30T00:00:00Z",
+                "trust_state": "current",
+            }
+        )
+        lineage_registry.setdefault("artifacts", []).append({"ticket_id": "EXEC-REOPEN", **reopen_ticket["artifacts"][0]})
+        lineage_workflow["ticket_state"]["EXEC-RECON-SRC"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        lineage_workflow["ticket_state"]["EXEC-RECON-TGT"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        lineage_workflow["ticket_state"]["EXEC-REOPEN"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        lineage_manifest_path.write_text(json.dumps(lineage_manifest, indent=2) + "\n", encoding="utf-8")
+        lineage_workflow_path.write_text(json.dumps(lineage_workflow, indent=2) + "\n", encoding="utf-8")
+        lineage_registry_path.write_text(json.dumps(lineage_registry, indent=2) + "\n", encoding="utf-8")
+        pivot_lineage_payload = run_json(
+            [
+                sys.executable,
+                str(PIVOT),
+                str(pivot_lineage_dest),
+                "--pivot-class",
+                "feature-add",
+                "--requested-change",
+                "Rescope follow-up execution around a replacement implementation source and reopen one completed ticket.",
+                "--accepted-decision",
+                "Use a replacement source ticket for the stale follow-up lineage.",
+                "--reconcile-ticket",
+                "EXEC-RECON-TGT",
+                "--reopen-ticket",
+                "EXEC-REOPEN",
+                "--lineage-evidence",
+                f"EXEC-RECON-TGT={reconcile_evidence_rel}",
+                "--replacement-source",
+                "EXEC-RECON-TGT=EXEC-RECON-SRC",
+                "--replacement-source-mode",
+                "EXEC-RECON-TGT=split_scope",
+                "--lineage-evidence",
+                f"EXEC-REOPEN={reopen_evidence_rel}",
+                "--skip-verify",
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        if pivot_lineage_payload["verification_status"]["performed"] is not False:
+            raise RuntimeError("Execution-backed pivot fixtures should be able to defer post-pivot verification until explicit lineage actions run")
+        if pivot_lineage_payload["restart_surface_publication"]["status"] != "published":
+            raise RuntimeError("Pivot planning should publish restart surfaces for execution-backed lineage pivots")
+        pivot_lineage_apply = run_json(
+            [
+                sys.executable,
+                str(PIVOT_APPLY),
+                str(pivot_lineage_dest),
+            ],
+            ROOT,
+        )
+        if {item["label"] for item in pivot_lineage_apply["applied_actions"]} != {"reconcile:EXEC-RECON-TGT", "reopen:EXEC-REOPEN"}:
+            raise RuntimeError("Pivot lineage execution should apply the explicit runtime-ready reconcile and reopen actions")
+        if pivot_lineage_apply["pending_actions"]:
+            raise RuntimeError("Pivot lineage execution should clear pending explicit actions once all runtime-ready actions complete")
+        ticket_pack_builder_stage = pivot_lineage_apply["ticket_pack_builder_stage"]
+        if ticket_pack_builder_stage["status"] != "completed" or ticket_pack_builder_stage["completion_mode"] != "pivot_lineage_execution":
+            raise RuntimeError("Pivot lineage execution should auto-complete ticket-pack-builder when explicit actions satisfy the whole ticket lineage plan")
+        pivot_lineage_state = json.loads((pivot_lineage_dest / ".opencode" / "meta" / "pivot-state.json").read_text(encoding="utf-8"))
+        if set(pivot_lineage_state["ticket_lineage_plan"]["completed_actions"]) != {"reconcile:EXEC-RECON-TGT", "reopen:EXEC-REOPEN"}:
+            raise RuntimeError("Pivot lineage execution should persist completed explicit lineage actions in pivot state")
+        pivot_lineage_start_here = (pivot_lineage_dest / "START-HERE.md").read_text(encoding="utf-8")
+        if "- pivot_pending_ticket_lineage_actions: none" not in pivot_lineage_start_here:
+            raise RuntimeError("Pivot lineage execution should republish START-HERE when no explicit ticket lineage actions remain pending")
+        if (
+            "- pivot_completed_ticket_lineage_actions: reopen:EXEC-REOPEN, reconcile:EXEC-RECON-TGT" not in pivot_lineage_start_here
+            and "- pivot_completed_ticket_lineage_actions: reconcile:EXEC-RECON-TGT, reopen:EXEC-REOPEN" not in pivot_lineage_start_here
+        ):
+            raise RuntimeError("Pivot lineage execution should republish START-HERE with completed explicit ticket lineage actions")
+        updated_lineage_manifest = json.loads(lineage_manifest_path.read_text(encoding="utf-8"))
+        updated_reopen_ticket = next(ticket for ticket in updated_lineage_manifest["tickets"] if ticket["id"] == "EXEC-REOPEN")
+        if updated_reopen_ticket["resolution_state"] != "reopened":
+            raise RuntimeError("Pivot lineage execution should reopen the completed ticket through the generated ticket_reopen tool")
+        updated_reconcile_target = next(ticket for ticket in updated_lineage_manifest["tickets"] if ticket["id"] == "EXEC-RECON-TGT")
+        if updated_reconcile_target["source_ticket_id"] != "EXEC-RECON-SRC" or "SETUP-001" in updated_reconcile_target["depends_on"]:
+            raise RuntimeError("Pivot lineage execution should reconcile stale target lineage through the generated ticket_reconcile tool")
+        post_lineage_audit = run_json(
+            [sys.executable, str(AUDIT), str(pivot_lineage_dest), "--format", "json", "--no-diagnosis-pack"],
+            ROOT,
+        )
+        post_lineage_codes = {finding["code"] for finding in post_lineage_audit.get("findings", [])}
+        if "WFLOW019" in post_lineage_codes:
+            raise RuntimeError("Pivot lineage execution should remove the stale contradictory source/dependency graph for the executed reconciliation target")
         invocation_tracker = (full_dest / ".opencode" / "plugins" / "invocation-tracker.ts").read_text(encoding="utf-8")
         if "agent: input.agent ?? null" not in invocation_tracker:
             raise RuntimeError("Generated invocation-tracker.ts should record agent ownership on command and tool events")
@@ -1970,6 +2151,172 @@ def main() -> int:
         generated_artifact_register = (full_dest / ".opencode" / "tools" / "artifact_register.ts").read_text(encoding="utf-8")
         if "expectedPath = defaultArtifactPath" not in generated_artifact_register or "canonicalizeRepoPath(args.path)" not in generated_artifact_register:
             raise RuntimeError("Generated artifact_register.ts should enforce canonical artifact paths")
+
+        bootstrap_lane_gate = run_json(
+            [
+                sys.executable,
+                str(VERIFY_GENERATED),
+                str(full_dest),
+                "--verification-kind",
+                "bootstrap-lane",
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        if bootstrap_lane_gate.get("findings"):
+            codes = ", ".join(item["code"] for item in bootstrap_lane_gate.get("findings", []))
+            raise RuntimeError(f"A fresh scaffold should preserve one valid bootstrap lane before specialization, but it emitted: {codes}")
+
+        broken_bootstrap_lane_dest = workspace / "greenfield-bootstrap-lane-broken"
+        shutil.copytree(full_dest, broken_bootstrap_lane_dest)
+        broken_start_here = broken_bootstrap_lane_dest / "START-HERE.md"
+        broken_start_here.write_text(
+            broken_start_here.read_text(encoding="utf-8").replace(
+                "Run `environment_bootstrap`, register its proof artifact, rerun `ticket_lookup`, and do not continue lifecycle work until bootstrap is ready.",
+                "Continue with normal ticket lifecycle work.",
+            ),
+            encoding="utf-8",
+        )
+        broken_bootstrap_lane_result = subprocess.run(
+            [
+                sys.executable,
+                str(VERIFY_GENERATED),
+                str(broken_bootstrap_lane_dest),
+                "--verification-kind",
+                "bootstrap-lane",
+                "--format",
+                "json",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        broken_bootstrap_lane_payload = json.loads(broken_bootstrap_lane_result.stdout)
+        broken_bootstrap_lane_codes = {finding["code"] for finding in broken_bootstrap_lane_payload.get("findings", [])}
+        if broken_bootstrap_lane_result.returncode != 2:
+            raise RuntimeError("Bootstrap-lane verifier should fail when the rendered scaffold loses its bootstrap-first route")
+        if "VERIFY106" not in broken_bootstrap_lane_codes:
+            raise RuntimeError("Bootstrap-lane verifier should emit VERIFY106 when the base scaffold loses aligned bootstrap-first routing")
+
+        greenfield_gate_dest = workspace / "greenfield-proof-gate"
+        shutil.copytree(full_dest, greenfield_gate_dest)
+        make_stack_skill_non_placeholder(greenfield_gate_dest)
+        greenfield_gate = run_json([sys.executable, str(VERIFY_GENERATED), str(greenfield_gate_dest), "--format", "json"], ROOT)
+        if greenfield_gate.get("findings"):
+            codes = ", ".join(item["code"] for item in greenfield_gate.get("findings", []))
+            raise RuntimeError(f"A placeholder-free fresh scaffold should pass the shared greenfield continuation verifier, but it emitted: {codes}")
+        manifest = json.loads((ROOT / "skills" / "skill-flow-manifest.json").read_text(encoding="utf-8"))
+        greenfield_sequence = manifest["run_types"]["greenfield"]["sequence"]
+        bootstrap_verifier_step = "repo-scaffold-factory:verify-bootstrap-lane"
+        verifier_step = "repo-scaffold-factory:verify-generated-scaffold"
+        if bootstrap_verifier_step not in greenfield_sequence:
+            raise RuntimeError("Greenfield manifest sequence should include the early bootstrap-lane verification gate")
+        if verifier_step not in greenfield_sequence:
+            raise RuntimeError("Greenfield manifest sequence should include the pre-handoff verification gate")
+        if greenfield_sequence.index(bootstrap_verifier_step) != greenfield_sequence.index("repo-scaffold-factory") + 1:
+            raise RuntimeError("Greenfield manifest sequence should place the bootstrap-lane verifier immediately after repo-scaffold-factory")
+        if greenfield_sequence.index(bootstrap_verifier_step) >= greenfield_sequence.index("project-skill-bootstrap:full-greenfield-pass"):
+            raise RuntimeError("Greenfield manifest sequence should place the bootstrap-lane verifier before project-skill-bootstrap")
+        if greenfield_sequence.index(verifier_step) >= greenfield_sequence.index("handoff-brief"):
+            raise RuntimeError("Greenfield manifest sequence should place the verification gate before handoff-brief")
+
+        corrupt_gate_dest = workspace / "greenfield-proof-gate-corrupt"
+        shutil.copytree(greenfield_gate_dest, corrupt_gate_dest)
+        (corrupt_gate_dest / "tickets" / "manifest.json").write_text("{\n", encoding="utf-8")
+        corrupt_gate_result = subprocess.run(
+            [sys.executable, str(VERIFY_GENERATED), str(corrupt_gate_dest), "--format", "json"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        corrupt_gate_payload = json.loads(corrupt_gate_result.stdout)
+        corrupt_gate_codes = {finding["code"] for finding in corrupt_gate_payload.get("findings", [])}
+        if corrupt_gate_result.returncode != 2:
+            raise RuntimeError("Generated scaffold verifier should fail with exit code 2 when canonical state is corrupt")
+        if "VERIFY001" not in corrupt_gate_codes:
+            raise RuntimeError("Generated scaffold verifier should emit VERIFY001 instead of crashing on corrupt JSON state")
+
+        workflow_contract_drift_dest = workspace / "greenfield-proof-gate-workflow-contract-drift"
+        shutil.copytree(greenfield_gate_dest, workflow_contract_drift_dest)
+        tooling_doc_path = workflow_contract_drift_dest / "docs" / "process" / "tooling.md"
+        tooling_doc = tooling_doc_path.read_text(encoding="utf-8")
+        tooling_doc_path.write_text(
+            tooling_doc.replace("commands are human entrypoints only", "commands may drive the autonomous workflow"),
+            encoding="utf-8",
+        )
+        workflow_contract_gate_result = subprocess.run(
+            [sys.executable, str(VERIFY_GENERATED), str(workflow_contract_drift_dest), "--format", "json"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        workflow_contract_gate = json.loads(workflow_contract_gate_result.stdout)
+        workflow_contract_gate_codes = {finding["code"] for finding in workflow_contract_gate.get("findings", [])}
+        if workflow_contract_gate_result.returncode != 2:
+            raise RuntimeError("Generated scaffold verifier should fail when continuation-critical workflow contract surfaces drift")
+        if "VERIFY008" not in workflow_contract_gate_codes:
+            raise RuntimeError("Generated scaffold verifier should emit VERIFY008 when tooling and execution surfaces drift from the documented greenfield contract")
+
+        repair_scripts_dir = ROOT / "skills" / "scafforge-repair" / "scripts"
+        audit_scripts_dir = ROOT / "skills" / "scafforge-audit" / "scripts"
+        for script_dir in (repair_scripts_dir, audit_scripts_dir):
+            script_dir_str = str(script_dir)
+            if script_dir_str not in sys.path:
+                sys.path.insert(0, script_dir_str)
+        repair_module = load_python_module(REPAIR, "scafforge_smoke_apply_repo_process_repair")
+        regenerate_module = load_python_module(REGENERATE, "scafforge_smoke_regenerate_restart_surfaces")
+        audit_module = load_python_module(AUDIT, "scafforge_smoke_audit_repo_process")
+
+        rendered_block = "\n".join(
+            [
+                "# START HERE",
+                "",
+                "<!-- SCAFFORGE:START_HERE_BLOCK START -->",
+                "fresh managed block",
+                "<!-- SCAFFORGE:START_HERE_BLOCK END -->",
+                "",
+            ]
+        )
+        for merge_fn in (repair_module.merge_start_here, regenerate_module.merge_start_here):
+            partial_start = merge_fn("intro\n<!-- SCAFFORGE:START_HERE_BLOCK START -->\nstale managed block", rendered_block)
+            if "stale managed block" in partial_start or "fresh managed block" not in partial_start:
+                raise RuntimeError("Partial START marker state should be repaired by replacing the stale managed block")
+            partial_end = merge_fn("stale prelude\n<!-- SCAFFORGE:START_HERE_BLOCK END -->\noutro", rendered_block)
+            if "stale prelude" in partial_end or "fresh managed block" not in partial_end or "outro" not in partial_end:
+                raise RuntimeError("Partial END marker state should be repaired by restoring the managed block while preserving trailing unmanaged content")
+
+        env_only_stale_surface_map = repair_module.build_stale_surface_map(
+            ROOT,
+            [],
+            [SimpleNamespace(code="ENV001")],
+            False,
+        )
+        if env_only_stale_surface_map["workflow_tools_and_prompts"]["status"] != "stable":
+            raise RuntimeError("ENV-only findings should not misclassify workflow_tools_and_prompts as managed replacement drift")
+        if env_only_stale_surface_map["workflow_tools_and_prompts"].get("finding_codes"):
+            raise RuntimeError("ENV-only findings should not populate workflow_tools_and_prompts finding codes")
+        if env_only_stale_surface_map["canonical_project_decisions"]["status"] != "stable":
+            raise RuntimeError("Routine public repair should not emit canonical-project human-decision escalation from the stale-surface map")
+
+        windows_venv_dest = workspace / "windows-venv-detection"
+        windows_venv_dest.mkdir(parents=True, exist_ok=True)
+        windows_python = windows_venv_dest / ".venv" / "Scripts" / "python.exe"
+        windows_pytest = windows_venv_dest / ".venv" / "Scripts" / "pytest.exe"
+        write_executable(
+            windows_python,
+            "#!/bin/sh\nif [ \"$1\" = \"-m\" ] && [ \"$2\" = \"pytest\" ] && [ \"$3\" = \"--version\" ]; then exit 0; fi\nif [ \"$1\" = \"--version\" ]; then exit 0; fi\nexit 1\n",
+        )
+        write_executable(windows_pytest, "#!/bin/sh\nexit 0\n")
+        detected_python = audit_module._detect_python(windows_venv_dest)
+        if detected_python != str(windows_python):
+            raise RuntimeError("Audit python detection should recognize repo-local Windows-style .venv/Scripts/python.exe")
+        detected_pytest = audit_module._detect_pytest_command(windows_venv_dest)
+        if detected_pytest != [str(windows_python), "-m", "pytest"]:
+            raise RuntimeError("Audit pytest detection should use Windows-style repo-local python when it is the available executable")
 
         initial_audit = run_json([sys.executable, str(AUDIT), str(full_dest), "--format", "json", "--emit-diagnosis-pack"], ROOT)
         initial_codes = {finding["code"] for finding in initial_audit.get("findings", [])}
@@ -2014,6 +2361,18 @@ def main() -> int:
         bootstrap_guidance_dest = workspace / "bootstrap-guidance-drift"
         shutil.copytree(full_dest, bootstrap_guidance_dest)
         seed_bootstrap_guidance_drift(bootstrap_guidance_dest)
+        make_stack_skill_non_placeholder(bootstrap_guidance_dest)
+        bootstrap_guidance_gate_result = subprocess.run(
+            [sys.executable, str(VERIFY_GENERATED), str(bootstrap_guidance_dest), "--format", "json"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        bootstrap_guidance_gate = json.loads(bootstrap_guidance_gate_result.stdout)
+        bootstrap_guidance_gate_codes = {finding["code"] for finding in bootstrap_guidance_gate.get("findings", [])}
+        if "VERIFY006" not in bootstrap_guidance_gate_codes:
+            raise RuntimeError("A repo whose greenfield bootstrap routing drifted should fail the shared continuation verifier with VERIFY006")
         bootstrap_guidance_audit = run_json([sys.executable, str(AUDIT), str(bootstrap_guidance_dest), "--format", "json", "--no-diagnosis-pack"], ROOT)
         bootstrap_guidance_codes = {finding["code"] for finding in bootstrap_guidance_audit.get("findings", [])}
         if "WFLOW011" not in bootstrap_guidance_codes:
@@ -2169,10 +2528,6 @@ def main() -> int:
                 str(PUBLIC_REPAIR),
                 str(verification_basis_regression_dest),
                 "--skip-deterministic-refresh",
-                "--stage-complete",
-                "ticket-pack-builder",
-                "--stage-complete",
-                "handoff-brief",
             ],
             cwd=ROOT,
             check=False,
@@ -2194,10 +2549,6 @@ def main() -> int:
                 "--skip-deterministic-refresh",
                 "--repair-basis-diagnosis",
                 str(verification_basis_regression_dest / "diagnosis" / "20260327-143940"),
-                "--stage-complete",
-                "ticket-pack-builder",
-                "--stage-complete",
-                "handoff-brief",
             ],
             cwd=ROOT,
             check=False,
@@ -2307,6 +2658,902 @@ def main() -> int:
             raise RuntimeError("A repo that truthfully exposes a clearable pending_process_verification state should not emit WFLOW008")
         if "WFLOW010" in clearable_pending_verification_codes:
             raise RuntimeError("A repo whose restart surfaces correctly collapse done_but_not_fully_trusted to none when the affected set is empty should not emit WFLOW010")
+
+        closed_ticket_dependent_dest = workspace / "closed-ticket-dependent-routing"
+        shutil.copytree(full_dest, closed_ticket_dependent_dest)
+        seed_closed_ticket_with_blocked_dependent(closed_ticket_dependent_dest)
+        run_json([sys.executable, str(REGENERATE), str(closed_ticket_dependent_dest)], ROOT)
+        closed_ticket_start_here = (closed_ticket_dependent_dest / "START-HERE.md").read_text(encoding="utf-8")
+        if "Current ticket is already closed. Activate dependent ticket EXEC-DEP and continue that lane instead of trying to mutate" not in closed_ticket_start_here:
+            raise RuntimeError("Restart regeneration should route a closed current ticket directly to the first blocked dependent lane")
+        closed_ticket_handoff = (closed_ticket_dependent_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        if "Current ticket is already closed. Activate dependent ticket EXEC-DEP and continue that lane instead of trying to mutate" not in closed_ticket_handoff:
+            raise RuntimeError("latest-handoff should stay aligned with START-HERE for closed-ticket dependent continuation")
+
+        explicit_reverification_dest = workspace / "closed-ticket-explicit-reverification"
+        shutil.copytree(full_dest, explicit_reverification_dest)
+        seed_closed_ticket_needing_explicit_reverification(explicit_reverification_dest)
+        run_json([sys.executable, str(REGENERATE), str(explicit_reverification_dest)], ROOT)
+        explicit_reverification_start_here = (explicit_reverification_dest / "START-HERE.md").read_text(encoding="utf-8")
+        if "- handoff_status: workflow verification pending" not in explicit_reverification_start_here:
+            raise RuntimeError("Restart regeneration should keep handoff_status verification-pending when the active closed ticket still needs explicit reverification")
+        if "run ticket_reverify on SETUP-001 instead of trying to reclaim it" not in explicit_reverification_start_here:
+            raise RuntimeError("Restart regeneration should surface ticket_reverify as the next move when the active closed ticket still needs explicit trust restoration")
+        explicit_reverification_handoff = (explicit_reverification_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        if "run ticket_reverify on SETUP-001 instead of trying to reclaim it" not in explicit_reverification_handoff:
+            raise RuntimeError("latest-handoff should stay aligned with START-HERE for explicit closed-ticket trust restoration")
+
+        executed_reverification_dest = workspace / "executed-ticket-reverify"
+        shutil.copytree(full_dest, executed_reverification_dest)
+        seed_closed_ticket_needing_explicit_reverification(executed_reverification_dest)
+        reverification_result = run_generated_tool(
+            executed_reverification_dest,
+            ".opencode/tools/ticket_reverify.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "verification_content": "# Backlog Verification\n\n## Result\n\nPASS\n",
+                "reason": "Synthetic trust restoration proof for smoke coverage.",
+            },
+        )
+        if reverification_result["ticket_id"] != "SETUP-001" or reverification_result["verification_state"] != "reverified":
+            raise RuntimeError("ticket_reverify should return the restored source ticket id and reverified state")
+        reverification_manifest = json.loads((executed_reverification_dest / "tickets" / "manifest.json").read_text(encoding="utf-8"))
+        reverification_ticket = next(ticket for ticket in reverification_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        if reverification_ticket["verification_state"] != "reverified":
+            raise RuntimeError("ticket_reverify should persist reverified verification_state onto the historical source ticket")
+        reverification_workflow = json.loads((executed_reverification_dest / ".opencode" / "state" / "workflow-state.json").read_text(encoding="utf-8"))
+        if reverification_workflow["ticket_state"]["SETUP-001"]["needs_reverification"] is not False:
+            raise RuntimeError("ticket_reverify should clear needs_reverification in workflow-state")
+        reverification_artifact = executed_reverification_dest / str(reverification_result["reverification_artifact"])
+        if not reverification_artifact.exists():
+            raise RuntimeError("ticket_reverify should write the canonical reverification artifact")
+        backlog_verification_path = executed_reverification_dest / ".opencode" / "state" / "reviews" / "setup-001-review-backlog-verification.md"
+        if not backlog_verification_path.exists():
+            raise RuntimeError("ticket_reverify should register inline verification content as backlog-verification evidence before restoring trust")
+
+        explicit_reconciliation_dest = workspace / "closed-ticket-explicit-reconciliation"
+        shutil.copytree(full_dest, explicit_reconciliation_dest)
+        seed_closed_ticket_needing_reconciliation(explicit_reconciliation_dest)
+        run_json([sys.executable, str(REGENERATE), str(explicit_reconciliation_dest)], ROOT)
+        explicit_reconciliation_start_here = (explicit_reconciliation_dest / "START-HERE.md").read_text(encoding="utf-8")
+        if "- handoff_status: workflow verification pending" not in explicit_reconciliation_start_here:
+            raise RuntimeError("Restart regeneration should keep handoff_status verification-pending when the active historical ticket still needs reconciliation")
+        if "Use ticket_reconcile with current registered evidence to repair SETUP-001 instead of trying to reopen or reclaim it" not in explicit_reconciliation_start_here:
+            raise RuntimeError("Restart regeneration should surface ticket_reconcile as the next move when the active historical ticket still has contradictory lineage")
+        explicit_reconciliation_handoff = (explicit_reconciliation_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        if "Use ticket_reconcile with current registered evidence to repair SETUP-001 instead of trying to reopen or reclaim it" not in explicit_reconciliation_handoff:
+            raise RuntimeError("latest-handoff should stay aligned with START-HERE for explicit historical reconciliation routing")
+
+        executed_reconciliation_dest = workspace / "executed-ticket-reconcile"
+        shutil.copytree(full_dest, executed_reconciliation_dest)
+        seed_closed_ticket_needing_reconciliation(executed_reconciliation_dest)
+        reconcile_manifest_path = executed_reconciliation_dest / "tickets" / "manifest.json"
+        reconcile_workflow_path = executed_reconciliation_dest / ".opencode" / "state" / "workflow-state.json"
+        reconcile_registry_path = executed_reconciliation_dest / ".opencode" / "state" / "artifacts" / "registry.json"
+        reconcile_manifest = json.loads(reconcile_manifest_path.read_text(encoding="utf-8"))
+        reconcile_workflow = json.loads(reconcile_workflow_path.read_text(encoding="utf-8"))
+        reconcile_registry = json.loads(reconcile_registry_path.read_text(encoding="utf-8"))
+        reconcile_manifest["tickets"].append(
+            {
+                "id": "EXEC-RECON-SRC",
+                "title": "Synthetic replacement source ticket",
+                "wave": 2,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "implementation",
+                "status": "in_progress",
+                "depends_on": [],
+                "summary": "Replacement source ticket for reconciliation smoke coverage.",
+                "acceptance": ["Replacement source remains active."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "trusted",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        reconcile_manifest["tickets"].append(
+            {
+                "id": "EXEC-RECON-TGT",
+                "title": "Synthetic stale follow-up ticket",
+                "wave": 3,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "ready",
+                "depends_on": ["SETUP-001"],
+                "summary": "Follow-up ticket with stale lineage for reconciliation smoke coverage.",
+                "acceptance": ["Reconciliation succeeds."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "post_completion_issue",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        source_ticket = next(ticket for ticket in reconcile_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        source_ticket["follow_up_ticket_ids"] = ["EXEC-RECON-TGT"]
+        evidence_rel = ".opencode/state/reviews/setup-001-review-backlog-verification.md"
+        evidence_path = executed_reconciliation_dest / evidence_rel
+        evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        evidence_path.write_text("# Historical Evidence\n\nCurrent evidence is registered.\n", encoding="utf-8")
+        evidence_artifact = {
+            "kind": "backlog-verification",
+            "path": evidence_rel,
+            "stage": "review",
+            "summary": "Synthetic reconciliation evidence.",
+            "created_at": "2026-03-30T00:00:00Z",
+            "trust_state": "current",
+        }
+        source_ticket.setdefault("artifacts", []).append(evidence_artifact)
+        reconcile_registry.setdefault("artifacts", []).append({"ticket_id": "SETUP-001", **evidence_artifact})
+        reconcile_workflow["ticket_state"]["EXEC-RECON-SRC"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        reconcile_workflow["ticket_state"]["EXEC-RECON-TGT"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        reconcile_manifest_path.write_text(json.dumps(reconcile_manifest, indent=2) + "\n", encoding="utf-8")
+        reconcile_workflow_path.write_text(json.dumps(reconcile_workflow, indent=2) + "\n", encoding="utf-8")
+        reconcile_registry_path.write_text(json.dumps(reconcile_registry, indent=2) + "\n", encoding="utf-8")
+        reconciliation_result = run_generated_tool(
+            executed_reconciliation_dest,
+            ".opencode/tools/ticket_reconcile.ts",
+            {
+                "source_ticket_id": "SETUP-001",
+                "target_ticket_id": "EXEC-RECON-TGT",
+                "replacement_source_ticket_id": "EXEC-RECON-SRC",
+                "replacement_source_mode": "split_scope",
+                "evidence_artifact_path": evidence_rel,
+                "reason": "Synthetic lineage correction proof for smoke coverage.",
+                "remove_dependency_on_source": True,
+                "activate_source": True,
+            },
+        )
+        if reconciliation_result["replacement_source_ticket_id"] != "EXEC-RECON-SRC" or reconciliation_result["active_ticket"] != "EXEC-RECON-SRC":
+            raise RuntimeError("ticket_reconcile should report and activate the replacement source ticket when requested")
+        reconciled_manifest = json.loads(reconcile_manifest_path.read_text(encoding="utf-8"))
+        reconciled_target = next(ticket for ticket in reconciled_manifest["tickets"] if ticket["id"] == "EXEC-RECON-TGT")
+        if reconciled_target["source_ticket_id"] != "EXEC-RECON-SRC":
+            raise RuntimeError("ticket_reconcile should rewrite the target source_ticket_id to the replacement source")
+        if "SETUP-001" in reconciled_target["depends_on"]:
+            raise RuntimeError("ticket_reconcile should remove contradictory dependencies on the stale canonical source when requested")
+        if reconciled_manifest["active_ticket"] != "EXEC-RECON-SRC":
+            raise RuntimeError("ticket_reconcile should persist the activated replacement source into manifest active_ticket")
+        reconciliation_artifact = executed_reconciliation_dest / str(reconciliation_result["reconciliation_artifact"])
+        if not reconciliation_artifact.exists():
+            raise RuntimeError("ticket_reconcile should write the canonical reconciliation artifact")
+
+        default_dependency_reconcile_dest = workspace / "executed-ticket-reconcile-default-dependency"
+        shutil.copytree(full_dest, default_dependency_reconcile_dest)
+        default_reconcile_manifest_path = default_dependency_reconcile_dest / "tickets" / "manifest.json"
+        default_reconcile_workflow_path = default_dependency_reconcile_dest / ".opencode" / "state" / "workflow-state.json"
+        default_reconcile_registry_path = default_dependency_reconcile_dest / ".opencode" / "state" / "artifacts" / "registry.json"
+        default_reconcile_manifest = json.loads(default_reconcile_manifest_path.read_text(encoding="utf-8"))
+        default_reconcile_workflow = json.loads(default_reconcile_workflow_path.read_text(encoding="utf-8"))
+        default_reconcile_manifest["tickets"].append(
+            {
+                "id": "EXEC-RECON-SRC",
+                "title": "Synthetic replacement source ticket",
+                "wave": 2,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "implementation",
+                "status": "in_progress",
+                "depends_on": [],
+                "summary": "Replacement source ticket for default dependency smoke coverage.",
+                "acceptance": ["Replacement source remains active."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "trusted",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        default_reconcile_manifest["tickets"].append(
+            {
+                "id": "EXEC-RECON-TGT",
+                "title": "Synthetic stale follow-up ticket",
+                "wave": 3,
+                "lane": "implementation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "ready",
+                "depends_on": ["SETUP-001"],
+                "summary": "Follow-up ticket that keeps the stale dependency unless explicitly removed.",
+                "acceptance": ["Reconciliation succeeds without removing dependency by default."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "post_completion_issue",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        default_source_ticket = next(ticket for ticket in default_reconcile_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        default_source_ticket["follow_up_ticket_ids"] = ["EXEC-RECON-TGT"]
+        default_reconcile_workflow["ticket_state"]["EXEC-RECON-SRC"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        default_reconcile_workflow["ticket_state"]["EXEC-RECON-TGT"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        default_reconcile_manifest_path.write_text(json.dumps(default_reconcile_manifest, indent=2) + "\n", encoding="utf-8")
+        default_reconcile_workflow_path.write_text(json.dumps(default_reconcile_workflow, indent=2) + "\n", encoding="utf-8")
+        default_reconcile_registry_path.write_text(json.dumps(json.loads(default_reconcile_registry_path.read_text(encoding="utf-8")), indent=2) + "\n", encoding="utf-8")
+        default_evidence_rel = ".opencode/state/reviews/setup-001-review-default-dependency.md"
+        register_current_ticket_artifact(
+            default_dependency_reconcile_dest,
+            ticket_id="SETUP-001",
+            kind="backlog-verification",
+            stage="review",
+            relative_path=default_evidence_rel,
+            summary="Synthetic reconciliation evidence that should not remove the source dependency by default.",
+            content="# Historical Evidence\n\nCurrent evidence is registered.\n",
+        )
+        run_generated_tool(
+            default_dependency_reconcile_dest,
+            ".opencode/tools/ticket_reconcile.ts",
+            {
+                "source_ticket_id": "SETUP-001",
+                "target_ticket_id": "EXEC-RECON-TGT",
+                "replacement_source_ticket_id": "EXEC-RECON-SRC",
+                "replacement_source_mode": "split_scope",
+                "evidence_artifact_path": default_evidence_rel,
+                "reason": "Synthetic lineage correction without explicit dependency removal.",
+            },
+        )
+        default_reconciled_manifest = json.loads(default_reconcile_manifest_path.read_text(encoding="utf-8"))
+        default_reconciled_target = next(ticket for ticket in default_reconciled_manifest["tickets"] if ticket["id"] == "EXEC-RECON-TGT")
+        if "SETUP-001" not in default_reconciled_target["depends_on"]:
+            raise RuntimeError("ticket_reconcile should leave the source dependency intact unless remove_dependency_on_source is explicitly true")
+
+        unrelated_evidence_reconcile_dest = workspace / "executed-ticket-reconcile-unrelated-evidence"
+        shutil.copytree(full_dest, unrelated_evidence_reconcile_dest)
+        unrelated_reconcile_manifest_path = unrelated_evidence_reconcile_dest / "tickets" / "manifest.json"
+        unrelated_reconcile_workflow_path = unrelated_evidence_reconcile_dest / ".opencode" / "state" / "workflow-state.json"
+        unrelated_reconcile_manifest = json.loads(unrelated_reconcile_manifest_path.read_text(encoding="utf-8"))
+        unrelated_reconcile_workflow = json.loads(unrelated_reconcile_workflow_path.read_text(encoding="utf-8"))
+        unrelated_reconcile_manifest["tickets"].extend(
+            [
+                {
+                    "id": "EXEC-RECON-SRC",
+                    "title": "Synthetic replacement source ticket",
+                    "wave": 2,
+                    "lane": "implementation",
+                    "parallel_safe": True,
+                    "overlap_risk": "low",
+                    "stage": "implementation",
+                    "status": "in_progress",
+                    "depends_on": [],
+                    "summary": "Replacement source ticket for unrelated evidence smoke coverage.",
+                    "acceptance": ["Replacement source remains active."],
+                    "decision_blockers": [],
+                    "artifacts": [],
+                    "resolution_state": "open",
+                    "verification_state": "trusted",
+                    "follow_up_ticket_ids": [],
+                },
+                {
+                    "id": "EXEC-RECON-TGT",
+                    "title": "Synthetic stale follow-up ticket",
+                    "wave": 3,
+                    "lane": "implementation",
+                    "parallel_safe": True,
+                    "overlap_risk": "low",
+                    "stage": "planning",
+                    "status": "ready",
+                    "depends_on": ["SETUP-001"],
+                    "summary": "Follow-up ticket whose evidence must not come from an unrelated ticket.",
+                    "acceptance": ["Reconciliation rejects unrelated evidence."],
+                    "decision_blockers": [],
+                    "artifacts": [],
+                    "resolution_state": "open",
+                    "verification_state": "suspect",
+                    "source_ticket_id": "SETUP-001",
+                    "source_mode": "post_completion_issue",
+                    "follow_up_ticket_ids": [],
+                },
+                {
+                    "id": "EXEC-OTHER-EVIDENCE",
+                    "title": "Synthetic unrelated evidence owner",
+                    "wave": 4,
+                    "lane": "review",
+                    "parallel_safe": True,
+                    "overlap_risk": "low",
+                    "stage": "review",
+                    "status": "done",
+                    "depends_on": [],
+                    "summary": "Owns an unrelated evidence artifact.",
+                    "acceptance": ["Evidence stays unrelated to reconciliation."],
+                    "decision_blockers": [],
+                    "artifacts": [],
+                    "resolution_state": "done",
+                    "verification_state": "reverified",
+                    "follow_up_ticket_ids": [],
+                },
+            ]
+        )
+        unrelated_source_ticket = next(ticket for ticket in unrelated_reconcile_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        unrelated_source_ticket["follow_up_ticket_ids"] = ["EXEC-RECON-TGT"]
+        unrelated_reconcile_workflow["ticket_state"]["EXEC-RECON-SRC"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        unrelated_reconcile_workflow["ticket_state"]["EXEC-RECON-TGT"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        unrelated_reconcile_workflow["ticket_state"]["EXEC-OTHER-EVIDENCE"] = {"approved_plan": False, "reopen_count": 0, "needs_reverification": False}
+        unrelated_reconcile_manifest_path.write_text(json.dumps(unrelated_reconcile_manifest, indent=2) + "\n", encoding="utf-8")
+        unrelated_reconcile_workflow_path.write_text(json.dumps(unrelated_reconcile_workflow, indent=2) + "\n", encoding="utf-8")
+        unrelated_evidence_rel = ".opencode/state/reviews/unrelated-ticket-review.md"
+        register_current_ticket_artifact(
+            unrelated_evidence_reconcile_dest,
+            ticket_id="EXEC-OTHER-EVIDENCE",
+            kind="review-note",
+            stage="review",
+            relative_path=unrelated_evidence_rel,
+            summary="Unrelated evidence should not satisfy reconciliation requirements.",
+            content="# Unrelated Evidence\n\nThis artifact belongs to another ticket.\n",
+        )
+        unrelated_reconcile_error = run_generated_tool_error(
+            unrelated_evidence_reconcile_dest,
+            ".opencode/tools/ticket_reconcile.ts",
+            {
+                "source_ticket_id": "SETUP-001",
+                "target_ticket_id": "EXEC-RECON-TGT",
+                "replacement_source_ticket_id": "EXEC-RECON-SRC",
+                "replacement_source_mode": "split_scope",
+                "evidence_artifact_path": unrelated_evidence_rel,
+                "reason": "Synthetic attempt to use unrelated current registry evidence.",
+            },
+        )
+        if "No current registered evidence artifact exists" not in unrelated_reconcile_error:
+            raise RuntimeError("ticket_reconcile should reject unrelated current registry evidence that does not belong to the source, target, or replacement source ticket")
+
+        executed_split_scope_dest = workspace / "executed-ticket-create-split-scope"
+        shutil.copytree(full_dest, executed_split_scope_dest)
+        split_scope_result = run_generated_tool(
+            executed_split_scope_dest,
+            ".opencode/tools/ticket_create.ts",
+            {
+                "id": "EXEC-SPLIT",
+                "title": "Synthetic split-scope child",
+                "lane": "implementation",
+                "wave": 2,
+                "summary": "Split child created through the generated ticket_create tool.",
+                "acceptance": ["Child scope is tracked independently."],
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "split_scope",
+                "activate": True,
+            },
+        )
+        if split_scope_result["created_ticket"] != "EXEC-SPLIT" or split_scope_result["source_mode"] != "split_scope":
+            raise RuntimeError("ticket_create should report the created split-scope child and its source_mode")
+        split_scope_manifest = json.loads((executed_split_scope_dest / "tickets" / "manifest.json").read_text(encoding="utf-8"))
+        split_source = next(ticket for ticket in split_scope_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        split_child = next(ticket for ticket in split_scope_manifest["tickets"] if ticket["id"] == "EXEC-SPLIT")
+        if split_scope_manifest["active_ticket"] != "EXEC-SPLIT":
+            raise RuntimeError("ticket_create should activate the split-scope child when requested")
+        if split_child["source_ticket_id"] != "SETUP-001" or split_child["source_mode"] != "split_scope":
+            raise RuntimeError("ticket_create should persist split-scope lineage on the created child")
+        if "EXEC-SPLIT" not in split_source["follow_up_ticket_ids"]:
+            raise RuntimeError("ticket_create should append split-scope children to the source follow_up_ticket_ids")
+        if not any("Keep the parent open and non-foreground until the child work lands." in item for item in split_source["decision_blockers"]):
+            raise RuntimeError("ticket_create should record the split-scope parent guidance on the source ticket")
+
+        executed_process_verification_dest = workspace / "executed-ticket-create-process-verification"
+        shutil.copytree(full_dest, executed_process_verification_dest)
+        seed_closed_ticket_needing_explicit_reverification(executed_process_verification_dest)
+        process_manifest_path = executed_process_verification_dest / "tickets" / "manifest.json"
+        process_workflow_path = executed_process_verification_dest / ".opencode" / "state" / "workflow-state.json"
+        process_manifest = json.loads(process_manifest_path.read_text(encoding="utf-8"))
+        process_workflow = json.loads(process_workflow_path.read_text(encoding="utf-8"))
+        process_workflow["pending_process_verification"] = True
+        process_manifest_path.write_text(json.dumps(process_manifest, indent=2) + "\n", encoding="utf-8")
+        process_workflow_path.write_text(json.dumps(process_workflow, indent=2) + "\n", encoding="utf-8")
+        process_evidence_rel = ".opencode/state/reviews/setup-001-review-backlog-verification.md"
+        register_current_ticket_artifact(
+            executed_process_verification_dest,
+            ticket_id="SETUP-001",
+            kind="backlog-verification",
+            stage="review",
+            relative_path=process_evidence_rel,
+            summary="Synthetic process-verification evidence.",
+            content="# Backlog Verification\n\nProcess verification evidence.\n",
+        )
+        process_verification_result = run_generated_tool(
+            executed_process_verification_dest,
+            ".opencode/tools/ticket_create.ts",
+            {
+                "id": "EXEC-PV",
+                "title": "Synthetic process-verification follow-up",
+                "lane": "workflow",
+                "wave": 3,
+                "summary": "Process verification follow-up created through ticket_create.",
+                "acceptance": ["Process verification follow-up is tracked."],
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "process_verification",
+                "evidence_artifact_path": process_evidence_rel,
+                "activate": True,
+            },
+        )
+        if process_verification_result["created_ticket"] != "EXEC-PV" or process_verification_result["source_mode"] != "process_verification":
+            raise RuntimeError("ticket_create should report process_verification follow-up creation correctly")
+        process_verification_manifest = json.loads(process_manifest_path.read_text(encoding="utf-8"))
+        process_follow_up = next(ticket for ticket in process_verification_manifest["tickets"] if ticket["id"] == "EXEC-PV")
+        if process_follow_up["source_ticket_id"] != "SETUP-001" or process_follow_up["source_mode"] != "process_verification":
+            raise RuntimeError("ticket_create should persist process-verification lineage and mode on the created follow-up")
+        if process_verification_manifest["active_ticket"] != "EXEC-PV":
+            raise RuntimeError("ticket_create should activate the process-verification follow-up when requested")
+
+        executed_issue_intake_dest = workspace / "executed-issue-intake"
+        shutil.copytree(full_dest, executed_issue_intake_dest)
+        seed_closed_ticket_needing_explicit_reverification(executed_issue_intake_dest)
+        rollback_evidence_rel = ".opencode/state/reviews/setup-001-review-existing-evidence.md"
+        register_current_ticket_artifact(
+            executed_issue_intake_dest,
+            ticket_id="SETUP-001",
+            kind="backlog-verification",
+            stage="review",
+            relative_path=rollback_evidence_rel,
+            summary="Synthetic issue-intake evidence.",
+            content="# Existing Evidence\n\nRollback-required defect proof.\n",
+        )
+        issue_intake_result = run_generated_tool(
+            executed_issue_intake_dest,
+            ".opencode/tools/issue_intake.ts",
+            {
+                "source_ticket_id": "SETUP-001",
+                "defect_class": "regression",
+                "acceptance_broken": False,
+                "scope_changed": True,
+                "rollback_required": True,
+                "evidence_artifact_path": rollback_evidence_rel,
+                "follow_up_id": "EXEC-ROLLBACK",
+                "follow_up_title": "Synthetic rollback follow-up",
+                "follow_up_lane": "workflow",
+                "follow_up_wave": 4,
+                "follow_up_summary": "Rollback-required follow-up created through issue_intake.",
+                "follow_up_acceptance": ["Rollback work is queued explicitly."],
+            },
+        )
+        if issue_intake_result["outcome"] != "rollback_required" or issue_intake_result["created_ticket_id"] != "EXEC-ROLLBACK":
+            raise RuntimeError("issue_intake should route rollback-required defects into an explicit follow-up ticket")
+        issue_manifest = json.loads((executed_issue_intake_dest / "tickets" / "manifest.json").read_text(encoding="utf-8"))
+        issue_workflow = json.loads((executed_issue_intake_dest / ".opencode" / "state" / "workflow-state.json").read_text(encoding="utf-8"))
+        issue_source = next(ticket for ticket in issue_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        issue_follow_up = next(ticket for ticket in issue_manifest["tickets"] if ticket["id"] == "EXEC-ROLLBACK")
+        if issue_source["verification_state"] != "invalidated":
+            raise RuntimeError("issue_intake should invalidate the source ticket when rollback is required")
+        if issue_workflow["ticket_state"]["SETUP-001"]["needs_reverification"] is not True:
+            raise RuntimeError("issue_intake should mark the source ticket as needing reverification when rollback is required")
+        if issue_manifest["active_ticket"] != "EXEC-ROLLBACK":
+            raise RuntimeError("issue_intake should foreground the created rollback follow-up ticket")
+        if issue_follow_up["source_ticket_id"] != "SETUP-001" or issue_follow_up["source_mode"] != "post_completion_issue":
+            raise RuntimeError("issue_intake should create rollback follow-up tickets with post_completion_issue lineage")
+        issue_artifact = executed_issue_intake_dest / str(issue_intake_result["issue_artifact"])
+        if not issue_artifact.exists():
+            raise RuntimeError("issue_intake should write the canonical issue-discovery artifact")
+
+        executed_lookup_prebootstrap_dest = workspace / "executed-ticket-lookup-prebootstrap"
+        shutil.copytree(full_dest, executed_lookup_prebootstrap_dest)
+        lookup_prebootstrap = run_generated_tool(
+            executed_lookup_prebootstrap_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if lookup_prebootstrap["bootstrap"]["status"] != "missing":
+            raise RuntimeError("ticket_lookup should expose the missing bootstrap state on a fresh scaffold")
+        prebootstrap_guidance = lookup_prebootstrap["transition_guidance"]
+        if prebootstrap_guidance["next_action_tool"] != "environment_bootstrap" or prebootstrap_guidance["next_action_kind"] != "run_tool":
+            raise RuntimeError("ticket_lookup should route fresh scaffolds through environment_bootstrap before lifecycle execution")
+
+        executed_lifecycle_dest = workspace / "executed-ordinary-lifecycle"
+        shutil.copytree(full_dest, executed_lifecycle_dest)
+        seed_ready_bootstrap(executed_lifecycle_dest)
+        lookup_without_plan = run_generated_tool(
+            executed_lifecycle_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if lookup_without_plan["bootstrap"]["status"] != "ready":
+            raise RuntimeError("ticket_lookup should reflect a ready bootstrap state after bootstrap proof is seeded")
+        if lookup_without_plan["transition_guidance"]["next_action_tool"] != "artifact_write":
+            raise RuntimeError("ticket_lookup should require a planning artifact before plan_review on a ready planning ticket")
+        prebootstrap_claim_result = run_generated_tool(
+            executed_lookup_prebootstrap_dest,
+            ".opencode/tools/ticket_claim.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "owner_agent": "smoke-bootstrap",
+                "allowed_paths": ["docs"],
+                "write_lock": True,
+            },
+        )
+        if prebootstrap_claim_result["claimed"] is not True or prebootstrap_claim_result["lease"]["owner_agent"] != "smoke-bootstrap":
+            raise RuntimeError("ticket_claim should allow the wave-0 bootstrap ticket to claim a pre-bootstrap write lease")
+        prebootstrap_release_result = run_generated_tool(
+            executed_lookup_prebootstrap_dest,
+            ".opencode/tools/ticket_release.ts",
+            {"ticket_id": "SETUP-001", "owner_agent": "smoke-bootstrap"},
+        )
+        if prebootstrap_release_result["released"]["ticket_id"] != "SETUP-001":
+            raise RuntimeError("ticket_release should release the bootstrap lease after the pre-bootstrap claim probe")
+        register_current_ticket_artifact(
+            executed_lifecycle_dest,
+            ticket_id="SETUP-001",
+            kind="plan",
+            stage="planning",
+            relative_path=".opencode/state/artifacts/history/setup-001/planning/setup-001-plan.md",
+            summary="Synthetic planning artifact for ordinary lifecycle execution coverage.",
+            content="# Plan\n\nCommand: rg --files\n\nPlanned bootstrap follow-through.\n",
+        )
+        lookup_with_plan = run_generated_tool(
+            executed_lifecycle_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if lookup_with_plan["transition_guidance"]["next_action_tool"] != "ticket_update":
+            raise RuntimeError("ticket_lookup should recommend ticket_update once a planning artifact exists")
+        if lookup_with_plan["transition_guidance"]["recommended_ticket_update"]["stage"] != "plan_review":
+            raise RuntimeError("ticket_lookup should recommend moving a planned ticket into plan_review next")
+        direct_implementation_error = run_generated_tool_error(
+            executed_lifecycle_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "implementation", "activate": True},
+        )
+        if "plan is approved" not in direct_implementation_error and "passes through plan_review" not in direct_implementation_error:
+            raise RuntimeError("ticket_update should block direct jumps into implementation before plan_review approval")
+        plan_review_result = run_generated_tool(
+            executed_lifecycle_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "plan_review", "activate": True},
+        )
+        if plan_review_result["updated_ticket"]["stage"] != "plan_review":
+            raise RuntimeError("ticket_update should move the ticket into plan_review when planning proof exists")
+        combined_approval_error = run_generated_tool_error(
+            executed_lifecycle_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "implementation", "approved_plan": True, "activate": True},
+        )
+        if "Approve SETUP-001 while it remains in plan_review first" not in combined_approval_error:
+            raise RuntimeError("ticket_update should require plan approval and implementation transition as separate calls")
+        approval_result = run_generated_tool(
+            executed_lifecycle_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "approved_plan": True, "activate": True},
+        )
+        if approval_result["workflow"]["ticket_state"]["SETUP-001"]["approved_plan"] is not True:
+            raise RuntimeError("ticket_update should persist approved_plan in workflow-state")
+        lookup_plan_approved = run_generated_tool(
+            executed_lifecycle_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if lookup_plan_approved["transition_guidance"]["recommended_ticket_update"]["stage"] != "implementation":
+            raise RuntimeError("ticket_lookup should recommend implementation once plan_review approval is recorded")
+        implementation_result = run_generated_tool(
+            executed_lifecycle_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "implementation", "activate": True},
+        )
+        if implementation_result["updated_ticket"]["stage"] != "implementation":
+            raise RuntimeError("ticket_update should move an approved ticket into implementation")
+        claim_result = run_generated_tool(
+            executed_lifecycle_dest,
+            ".opencode/tools/ticket_claim.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "owner_agent": "smoke-implementer",
+                "allowed_paths": ["docs", "tickets", ".opencode/state"],
+                "write_lock": True,
+            },
+        )
+        if claim_result["claimed"] is not True or claim_result["lease"]["ticket_id"] != "SETUP-001":
+            raise RuntimeError("ticket_claim should create a write-capable lane lease for the active implementation ticket")
+        if claim_result["lease"]["owner_agent"] != "smoke-implementer":
+            raise RuntimeError("ticket_claim should persist the requesting owner_agent on the created lease")
+        release_result = run_generated_tool(
+            executed_lifecycle_dest,
+            ".opencode/tools/ticket_release.ts",
+            {"ticket_id": "SETUP-001", "owner_agent": "smoke-implementer"},
+        )
+        if release_result["released"]["ticket_id"] != "SETUP-001":
+            raise RuntimeError("ticket_release should release the matching active lease for the ticket")
+        if release_result["active_leases"]:
+            raise RuntimeError("ticket_release should leave no active leases after releasing the only lease")
+
+        executed_artifact_tools_dest = workspace / "executed-artifact-tools"
+        shutil.copytree(full_dest, executed_artifact_tools_dest)
+        seed_ready_bootstrap(executed_artifact_tools_dest)
+        noncanonical_artifact_error = run_generated_tool_error(
+            executed_artifact_tools_dest,
+            ".opencode/tools/artifact_write.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "path": "notes/noncanonical-plan.md",
+                "kind": "plan",
+                "stage": "planning",
+                "content": "# Invalid Plan\n",
+            },
+        )
+        if "Artifact path mismatch" not in noncanonical_artifact_error or ".opencode/state/plans/setup-001-planning-plan.md" not in noncanonical_artifact_error:
+            raise RuntimeError("artifact_write should reject non-canonical artifact paths")
+        plan_artifact_path = ".opencode/state/plans/setup-001-planning-plan.md"
+        artifact_write_result = run_generated_tool(
+            executed_artifact_tools_dest,
+            ".opencode/tools/artifact_write.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "path": plan_artifact_path,
+                "kind": "plan",
+                "stage": "planning",
+                "content": "# Plan\n\nCommand: rg --files\n\nCanonical planning artifact body.\n",
+            },
+        )
+        if artifact_write_result["path"] != plan_artifact_path:
+            raise RuntimeError("artifact_write should persist to the canonical planning artifact path")
+        if not (executed_artifact_tools_dest / plan_artifact_path).exists():
+            raise RuntimeError("artifact_write should create the canonical artifact file on disk")
+        artifact_register_result = run_generated_tool(
+            executed_artifact_tools_dest,
+            ".opencode/tools/artifact_register.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "path": plan_artifact_path,
+                "kind": "plan",
+                "stage": "planning",
+                "summary": "Synthetic registered plan artifact.",
+            },
+        )
+        latest_registered_plan = artifact_register_result["latest_artifact"]
+        if latest_registered_plan["stage"] != "planning" or latest_registered_plan["kind"] != "plan":
+            raise RuntimeError("artifact_register should persist the stage and kind of the registered artifact")
+        if not str(latest_registered_plan["path"]).startswith(".opencode/state/artifacts/history/setup-001/planning/"):
+            raise RuntimeError("artifact_register should snapshot canonical artifacts into history-backed registry storage")
+        stage_gate_reserved_write_error = run_generated_plugin_before_error(
+            executed_artifact_tools_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "artifact_write",
+            {
+                "ticket_id": "SETUP-001",
+                "path": ".opencode/state/smoke-tests/setup-001-smoke-test-smoke-test.md",
+                "kind": "smoke-test",
+                "stage": "smoke-test",
+                "content": "# Synthetic Smoke\n",
+            },
+        )
+        if "Use smoke_test to create smoke-test artifacts." not in stage_gate_reserved_write_error:
+            raise RuntimeError("Stage gate plugin should block generic artifact_write for reserved smoke-test artifacts")
+        stage_gate_reserved_register_error = run_generated_plugin_before_error(
+            executed_artifact_tools_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "artifact_register",
+            {
+                "ticket_id": "SETUP-001",
+                "path": ".opencode/state/smoke-tests/setup-001-smoke-test-smoke-test.md",
+                "kind": "smoke-test",
+                "stage": "smoke-test",
+                "summary": "Synthetic smoke summary.",
+            },
+        )
+        if "Use smoke_test to create smoke-test artifacts." not in stage_gate_reserved_register_error:
+            raise RuntimeError("Stage gate plugin should block generic artifact_register for reserved smoke-test artifacts")
+        stage_gate_missing_lease_error = run_generated_plugin_before_error(
+            executed_artifact_tools_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "artifact_write",
+            {
+                "ticket_id": "SETUP-001",
+                "path": ".opencode/state/implementations/setup-001-implementation-implementation.md",
+                "kind": "implementation",
+                "stage": "implementation",
+                "content": "# Synthetic Implementation\n",
+            },
+        )
+        if "must hold an active write lease" not in stage_gate_missing_lease_error:
+            raise RuntimeError("Stage gate plugin should block implementation artifact writes when no active ticket lease exists")
+        run_generated_tool(
+            executed_artifact_tools_dest,
+            ".opencode/tools/ticket_claim.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "owner_agent": "smoke-stage-gate",
+                "allowed_paths": [".opencode/state"],
+                "write_lock": True,
+            },
+        )
+        run_generated_plugin_before(
+            executed_artifact_tools_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "artifact_write",
+            {
+                "ticket_id": "SETUP-001",
+                "path": ".opencode/state/implementations/setup-001-implementation-implementation.md",
+                "kind": "implementation",
+                "stage": "implementation",
+                "content": "# Synthetic Implementation\n",
+            },
+        )
+        executed_reopen_dest = workspace / "executed-ticket-reopen"
+        shutil.copytree(full_dest, executed_reopen_dest)
+        seed_closed_ticket_needing_explicit_reverification(executed_reopen_dest)
+        reopen_evidence_rel = ".opencode/state/reviews/setup-001-review-reopen-evidence.md"
+        register_current_ticket_artifact(
+            executed_reopen_dest,
+            ticket_id="SETUP-001",
+            kind="backlog-verification",
+            stage="review",
+            relative_path=reopen_evidence_rel,
+            summary="Synthetic reopen evidence.",
+            content="# Reopen Evidence\n\nA newly discovered defect invalidates completion.\n",
+        )
+        reopen_workflow_path = executed_reopen_dest / ".opencode" / "state" / "workflow-state.json"
+        reopen_workflow = json.loads(reopen_workflow_path.read_text(encoding="utf-8"))
+        reopen_workflow["lane_leases"] = [
+            {
+                "ticket_id": "SETUP-001",
+                "lane": "repo-foundation",
+                "owner_agent": "smoke-implementer",
+                "write_lock": True,
+                "claimed_at": "2026-03-30T00:00:00Z",
+                "expires_at": "2099-03-30T00:00:00Z",
+                "allowed_paths": ["."],
+            }
+        ]
+        reopen_workflow_path.write_text(json.dumps(reopen_workflow, indent=2) + "\n", encoding="utf-8")
+        ticket_reopen_result = run_generated_tool(
+            executed_reopen_dest,
+            ".opencode/tools/ticket_reopen.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "reason": "Synthetic reopened scope due to newly discovered defect.",
+                "evidence_artifact_path": reopen_evidence_rel,
+                "activate": True,
+            },
+        )
+        if ticket_reopen_result["reopened_ticket"] != "SETUP-001":
+            raise RuntimeError("ticket_reopen should report the reopened ticket id")
+        reopened_manifest = json.loads((executed_reopen_dest / "tickets" / "manifest.json").read_text(encoding="utf-8"))
+        reopened_workflow = json.loads(reopen_workflow_path.read_text(encoding="utf-8"))
+        reopened_ticket = next(ticket for ticket in reopened_manifest["tickets"] if ticket["id"] == "SETUP-001")
+        if reopened_ticket["stage"] != "planning" or reopened_ticket["status"] != "todo":
+            raise RuntimeError("ticket_reopen should return a completed ticket to planning/todo")
+        if reopened_ticket["resolution_state"] != "reopened" or reopened_ticket["verification_state"] != "invalidated":
+            raise RuntimeError("ticket_reopen should mark the reopened ticket as reopened and invalidated")
+        if reopened_workflow["ticket_state"]["SETUP-001"]["reopen_count"] != 1 or reopened_workflow["ticket_state"]["SETUP-001"]["needs_reverification"] is not True:
+            raise RuntimeError("ticket_reopen should increment reopen_count and require reverification")
+        if reopened_workflow["lane_leases"]:
+            raise RuntimeError("ticket_reopen should release any active lease on the reopened ticket")
+        if not all(artifact["trust_state"] != "current" for artifact in reopened_ticket["artifacts"]):
+            raise RuntimeError("ticket_reopen should mark prior current artifacts historical when reopening a ticket")
+        executed_context_handoff_dest = workspace / "executed-context-and-handoff"
+        shutil.copytree(full_dest, executed_context_handoff_dest)
+        seed_ready_bootstrap(executed_context_handoff_dest)
+        context_snapshot_result = run_generated_tool(
+            executed_context_handoff_dest,
+            ".opencode/tools/context_snapshot.ts",
+            {
+                "note": "Synthetic snapshot note for Phase 5 runtime coverage.",
+            },
+        )
+        context_snapshot_path = Path(context_snapshot_result["path"])
+        context_snapshot_text = context_snapshot_path.read_text(encoding="utf-8")
+        if "## Active Ticket" not in context_snapshot_text or "Synthetic snapshot note for Phase 5 runtime coverage." not in context_snapshot_text:
+            raise RuntimeError("context_snapshot should write the canonical snapshot with the requested note")
+        handoff_publish_result = run_generated_tool(
+            executed_context_handoff_dest,
+            ".opencode/tools/handoff_publish.ts",
+            {
+                "next_action": "Keep SETUP-001 as the foreground ticket and continue its lifecycle from planning.",
+            },
+        )
+        start_here_text = (executed_context_handoff_dest / "START-HERE.md").read_text(encoding="utf-8")
+        latest_handoff_text = (executed_context_handoff_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+        if str(handoff_publish_result["start_here"]) != str(executed_context_handoff_dest / "START-HERE.md"):
+            raise RuntimeError("handoff_publish should report the canonical START-HERE path")
+        if "Keep SETUP-001 as the foreground ticket and continue its lifecycle from planning." not in start_here_text:
+            raise RuntimeError("handoff_publish should publish the requested next_action into START-HERE")
+        if "Keep SETUP-001 as the foreground ticket and continue its lifecycle from planning." not in latest_handoff_text:
+            raise RuntimeError("handoff_publish should publish the requested next_action into the latest handoff copy")
+        invalid_handoff_dest = workspace / "executed-invalid-handoff"
+        shutil.copytree(full_dest, invalid_handoff_dest)
+        seed_truthful_process_verification(invalid_handoff_dest)
+        invalid_handoff_error = run_generated_tool_error(
+            invalid_handoff_dest,
+            ".opencode/tools/handoff_publish.ts",
+            {"next_action": "Repo is clean and fully verified. No follow-up required."},
+        )
+        if "pending_process_verification" not in invalid_handoff_error:
+            raise RuntimeError("handoff_publish should reject clean-state claims while pending_process_verification remains true")
+
+        executed_environment_bootstrap_dest = workspace / "executed-environment-bootstrap"
+        shutil.copytree(full_dest, executed_environment_bootstrap_dest)
+        if host_has_npm:
+            seed_minimal_npm_repo(executed_environment_bootstrap_dest)
+        bootstrap_result = run_generated_tool(
+            executed_environment_bootstrap_dest,
+            ".opencode/tools/environment_bootstrap.ts",
+            {"ticket_id": "SETUP-001"},
+        )
+        if bootstrap_result["bootstrap_status"] != "ready":
+            raise RuntimeError("environment_bootstrap should record a ready bootstrap state when its detected commands succeed")
+        if host_has_npm and not any(command["label"] == "npm ci" and command["exit_code"] == 0 for command in bootstrap_result["commands"]):
+            raise RuntimeError("environment_bootstrap should execute npm ci for a minimal lockfile-backed Node repo")
+        if host_has_npm and bootstrap_result["host_surface_classification"] != "none":
+            raise RuntimeError("environment_bootstrap should not classify a successful bootstrap run as a host-surface failure")
+        bootstrap_proof = executed_environment_bootstrap_dest / str(bootstrap_result["proof_artifact"])
+        if not bootstrap_proof.exists():
+            raise RuntimeError("environment_bootstrap should persist the canonical bootstrap proof artifact")
+        bootstrap_workflow = json.loads((executed_environment_bootstrap_dest / ".opencode" / "state" / "workflow-state.json").read_text(encoding="utf-8"))
+        if bootstrap_workflow["bootstrap"]["status"] != "ready":
+            raise RuntimeError("environment_bootstrap should persist ready bootstrap state into workflow-state")
+
+        executed_smoke_test_dest = workspace / "executed-smoke-test"
+        shutil.copytree(full_dest, executed_smoke_test_dest)
+        seed_ready_bootstrap(executed_smoke_test_dest)
+        register_current_ticket_artifact(
+            executed_smoke_test_dest,
+            ticket_id="SETUP-001",
+            kind="qa",
+            stage="qa",
+            relative_path=".opencode/state/artifacts/setup-001-qa-qa.md",
+            summary="Synthetic QA artifact for smoke_test execution coverage.",
+            content="# QA\n\nCommand: python3 -m py_compile scripts/smoke_test_scafforge.py\n\nQA evidence is current.\n",
+        )
+        write_executable(
+            executed_smoke_test_dest / "scripts" / "mock_smoke.py",
+            "\n".join(
+                [
+                    "#!/usr/bin/env python3",
+                    "import os",
+                    "import sys",
+                    "print(f\"SMOKE_TOKEN={os.environ.get('SMOKE_TOKEN', '')}\")",
+                    "sys.exit(0 if os.environ.get('SMOKE_TOKEN') == 'phase5' else 1)",
+                ]
+            )
+            + "\n",
+        )
+        smoke_test_result = run_generated_tool(
+            executed_smoke_test_dest,
+            ".opencode/tools/smoke_test.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "command_override": ["SMOKE_TOKEN=phase5 python3 scripts/mock_smoke.py"],
+            },
+        )
+        if smoke_test_result["passed"] is not True or smoke_test_result["host_surface_classification"] is not None:
+            raise RuntimeError("smoke_test should pass and avoid host-surface failure classification when its explicit command succeeds")
+        if smoke_test_result["commands"][0]["command"] != "SMOKE_TOKEN=phase5 python3 scripts/mock_smoke.py":
+            raise RuntimeError("smoke_test should preserve shell-style KEY=VALUE command_override parsing in the executed command record")
+        smoke_test_artifact = executed_smoke_test_dest / str(smoke_test_result["smoke_test_artifact"])
+        if not smoke_test_artifact.exists():
+            raise RuntimeError("smoke_test should persist the canonical smoke-test artifact")
+        smoke_test_artifact_body = smoke_test_artifact.read_text(encoding="utf-8")
+        if "Overall Result: PASS" not in smoke_test_artifact_body or "SMOKE_TOKEN=phase5 python3 scripts/mock_smoke.py" not in smoke_test_artifact_body:
+            raise RuntimeError("smoke_test should record the passing result and executed command in the smoke-test artifact")
+
+        executed_smoke_missing_exec_dest = workspace / "executed-smoke-test-missing-exec"
+        shutil.copytree(full_dest, executed_smoke_missing_exec_dest)
+        seed_ready_bootstrap(executed_smoke_missing_exec_dest)
+        register_current_ticket_artifact(
+            executed_smoke_missing_exec_dest,
+            ticket_id="SETUP-001",
+            kind="qa",
+            stage="qa",
+            relative_path=".opencode/state/artifacts/setup-001-qa-qa.md",
+            summary="Synthetic QA artifact for smoke_test failure coverage.",
+            content="# QA\n\nCommand: python3 -m py_compile scripts/smoke_test_scafforge.py\n\nQA evidence is current.\n",
+        )
+        smoke_missing_exec_result = run_generated_tool(
+            executed_smoke_missing_exec_dest,
+            ".opencode/tools/smoke_test.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "command_override": ["definitely-missing-phase5-command"],
+            },
+        )
+        if smoke_missing_exec_result["passed"] is not False:
+            raise RuntimeError("smoke_test should fail when the explicit smoke command executable does not exist")
+        if smoke_missing_exec_result["failure_classification"] != "environment" or smoke_missing_exec_result["host_surface_classification"] != "missing_executable":
+            raise RuntimeError("smoke_test should classify missing explicit smoke executables as an environment host-surface failure")
+        if smoke_missing_exec_result["commands"][0]["missing_executable"] != "definitely-missing-phase5-command":
+            raise RuntimeError("smoke_test should report the missing explicit smoke executable by name")
 
         hidden_clearable_pending_dest = workspace / "hidden-clearable-pending-process-verification"
         shutil.copytree(full_dest, hidden_clearable_pending_dest)
@@ -2423,7 +3670,7 @@ def main() -> int:
         shutil.copytree(full_dest, repair_redirected_output_dest)
         make_stack_skill_non_placeholder(repair_redirected_output_dest)
         repair_redirected_output_dir = workspace / "repair-diagnosis-output"
-        repair_redirected_payload = run_json(
+        repair_redirected_result = subprocess.run(
             [
                 sys.executable,
                 str(PUBLIC_REPAIR),
@@ -2432,8 +3679,18 @@ def main() -> int:
                 "--diagnosis-output-dir",
                 str(repair_redirected_output_dir),
             ],
-            ROOT,
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
         )
+        try:
+            repair_redirected_payload = json.loads(repair_redirected_result.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "Public managed repair runner should emit JSON even when verification finds host-level prerequisites.\n"
+                f"STDOUT:\n{repair_redirected_result.stdout}\nSTDERR:\n{repair_redirected_result.stderr}"
+            ) from exc
         repair_diagnosis_pack_path = repair_redirected_payload.get("diagnosis_pack", {}).get("path", "")
         if repair_diagnosis_pack_path != str(repair_redirected_output_dir):
             raise RuntimeError("Public managed repair runner should honor --diagnosis-output-dir for the post-repair diagnosis pack")
@@ -2713,42 +3970,905 @@ def main() -> int:
         if "validateHandoffNextAction" not in repaired_handoff or repaired_handoff.find("const handoffBlocker = await validateHandoffNextAction") >= repaired_handoff.find("await refreshRestartSurfaces"):
             raise RuntimeError("Repair should restore truthful handoff gating before restart-surface publication")
 
+        invalid_follow_on_stage_dest = workspace / "invalid-follow-on-stage"
+        shutil.copytree(full_dest, invalid_follow_on_stage_dest)
+        make_stack_skill_non_placeholder(invalid_follow_on_stage_dest)
+        invalid_public_stage = subprocess.run(
+            [
+                sys.executable,
+                str(PUBLIC_REPAIR),
+                str(invalid_follow_on_stage_dest),
+                "--skip-deterministic-refresh",
+                "--stage-complete",
+                "not-a-real-stage",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if invalid_public_stage.returncode == 0:
+            raise RuntimeError("Public managed repair runner should reject unknown follow-on stage names instead of silently recording them")
+        if "Unknown repair follow-on stage" not in invalid_public_stage.stderr and "Unknown repair follow-on stage" not in invalid_public_stage.stdout:
+            raise RuntimeError("Public managed repair runner should explain unknown follow-on stage rejection")
+        invalid_record_stage = subprocess.run(
+            [
+                sys.executable,
+                str(RECORD_REPAIR_STAGE),
+                str(invalid_follow_on_stage_dest),
+                "--stage",
+                "not-a-real-stage",
+                "--completed-by",
+                "tester",
+                "--summary",
+                "Invalid stage should fail.",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if invalid_record_stage.returncode == 0:
+            raise RuntimeError("record_repair_stage_completion should reject unknown follow-on stage names instead of silently persisting them")
+        if "Unknown repair follow-on stage" not in invalid_record_stage.stderr and "Unknown repair follow-on stage" not in invalid_record_stage.stdout:
+            raise RuntimeError("record_repair_stage_completion should explain unknown follow-on stage rejection")
+
         source_follow_up_repair_dest = workspace / "source-follow-up-repair"
         shutil.copytree(full_dest, source_follow_up_repair_dest)
         make_stack_skill_non_placeholder(source_follow_up_repair_dest)
         seed_failing_pytest_suite(source_follow_up_repair_dest)
-        source_follow_up_repair = run_json(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(source_follow_up_repair_dest),
-                "--skip-deterministic-refresh",
-                "--stage-complete",
-                "ticket-pack-builder",
-                "--stage-complete",
-                "handoff-brief",
-            ],
-            ROOT,
+        if host_has_uv:
+            invalid_known_stage_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(source_follow_up_repair_dest),
+                    "--skip-deterministic-refresh",
+                    "--stage-complete",
+                    "project-skill-bootstrap",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if invalid_known_stage_process.returncode == 0:
+                raise RuntimeError("Public managed repair runner should reject known follow-on stages that are not part of the current repair cycle")
+            if "not part of the current repair cycle" not in invalid_known_stage_process.stderr and "not part of the current repair cycle" not in invalid_known_stage_process.stdout:
+                raise RuntimeError("Public managed repair runner should explain current-cycle rejection for known but non-required follow-on stages")
+            invalid_known_evidence_rel = ".opencode/state/artifacts/history/repair/non-required-stage.md"
+            invalid_known_evidence_path = source_follow_up_repair_dest / invalid_known_evidence_rel
+            invalid_known_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            invalid_known_evidence_path.write_text("# Non-required stage\n", encoding="utf-8")
+            invalid_known_record_stage = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(source_follow_up_repair_dest),
+                    "--stage",
+                    "project-skill-bootstrap",
+                    "--completed-by",
+                    "tester",
+                    "--summary",
+                    "Known but non-required stage should fail.",
+                    "--evidence",
+                    invalid_known_evidence_rel,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if invalid_known_record_stage.returncode == 0:
+                raise RuntimeError("record_repair_stage_completion should reject known follow-on stages that are not part of the current repair cycle")
+            if "not part of the current repair cycle" not in invalid_known_record_stage.stderr and "not part of the current repair cycle" not in invalid_known_record_stage.stdout:
+                raise RuntimeError("record_repair_stage_completion should explain current-cycle rejection for known but non-required follow-on stages")
+            source_follow_up_initial_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(source_follow_up_repair_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if source_follow_up_initial_process.returncode not in {0, 3}:
+                raise RuntimeError(
+                    "Source follow-up repair probe failed unexpectedly.\n"
+                    f"STDOUT:\n{source_follow_up_initial_process.stdout}\n"
+                    f"STDERR:\n{source_follow_up_initial_process.stderr}"
+                )
+            source_follow_up_initial = json.loads(source_follow_up_initial_process.stdout)
+            if not source_follow_up_initial["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("A source-follow-up repair fixture should remain blocked before any recorded follow-on completion exists")
+            polluted_follow_on_state_dest = workspace / "polluted-follow-on-state"
+            shutil.copytree(full_dest, polluted_follow_on_state_dest)
+            make_stack_skill_non_placeholder(polluted_follow_on_state_dest)
+            seed_failing_pytest_suite(polluted_follow_on_state_dest)
+            polluted_initial_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(polluted_follow_on_state_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            polluted_initial = json.loads(polluted_initial_process.stdout)
+            if not polluted_initial["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("A repair run without any valid follow-on completion should remain blocked before polluted-state pruning is tested")
+            polluted_state_path = polluted_follow_on_state_dest / ".opencode" / "meta" / "repair-follow-on-state.json"
+            polluted_state = json.loads(polluted_state_path.read_text(encoding="utf-8"))
+            polluted_state["required_stages"].append("bogus-stage")
+            polluted_state["stage_records"]["bogus-stage"] = {
+                "stage": "bogus-stage",
+                "status": "completed",
+                "completion_mode": "recorded_execution",
+                "evidence_paths": [".opencode/state/artifacts/history/repair/bogus-stage.md"],
+                "completed_by": "bogus-stage",
+                "last_recorded_at": "2026-03-30T00:00:00Z",
+                "last_checked_at": "2026-03-30T00:00:00Z",
+                "last_updated_at": "2026-03-30T00:00:00Z",
+            }
+            polluted_state["history"].append(
+                {
+                    "recorded_at": "2026-03-30T00:00:00Z",
+                    "stage": "bogus-stage",
+                    "status": "completed",
+                    "completion_mode": "recorded_execution",
+                }
+            )
+            polluted_state_path.write_text(json.dumps(polluted_state, indent=2) + "\n", encoding="utf-8")
+            pruned_follow_on_state_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(polluted_follow_on_state_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if pruned_follow_on_state_process.returncode == 0:
+                raise RuntimeError("Pruning unknown legacy follow-on stage records should not make the repair runner succeed while real ticket follow-up remains")
+            pruned_follow_on_state = json.loads(pruned_follow_on_state_process.stdout)
+            if "bogus-stage" in pruned_follow_on_state["execution_record"]["recorded_completed_stages"]:
+                raise RuntimeError("Managed repair should prune unknown legacy follow-on stage records instead of trusting them as completed")
+            if pruned_follow_on_state["execution_record"]["pruned_unknown_stages"] != ["bogus-stage"]:
+                raise RuntimeError("Managed repair should report which unknown legacy follow-on stages were pruned from polluted state")
+            if "bogus-stage" in pruned_follow_on_state["execution_record"]["follow_on_tracking_state"]["stage_records"]:
+                raise RuntimeError("Managed repair should remove unknown legacy follow-on stage records from the persisted tracking state")
+            prune_history = pruned_follow_on_state["execution_record"]["follow_on_tracking_state"].get("history", [])
+            if not any(item.get("status") == "pruned_unknown_stages" and item.get("pruned_unknown_stages") == ["bogus-stage"] for item in prune_history if isinstance(item, dict)):
+                raise RuntimeError("Managed repair should leave a history event when polluted unknown follow-on stages are pruned")
+            if not pruned_follow_on_state["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("Pruning unknown legacy follow-on stage records should not clear the real ticket follow-up blocker")
+
+            source_follow_on_state_path = source_follow_up_repair_dest / ".opencode" / "meta" / "repair-follow-on-state.json"
+            source_follow_on_state = json.loads(source_follow_on_state_path.read_text(encoding="utf-8"))
+            source_follow_on_cycle = source_follow_on_state["cycle_id"]
+            source_ticket_pack_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+            source_ticket_pack_path = source_follow_up_repair_dest / source_ticket_pack_rel
+            source_ticket_pack_path.parent.mkdir(parents=True, exist_ok=True)
+            source_ticket_pack_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: ticket-pack-builder\n"
+                f"- cycle_id: {source_follow_on_cycle}\n"
+                "- completed_by: ticket-pack-builder\n\n"
+                "## Summary\n\n"
+                "- Routed source follow-up into the ticket system.\n",
+                encoding="utf-8",
+            )
+            source_handoff_rel = ".opencode/state/artifacts/history/repair/handoff-brief-completion.md"
+            source_handoff_path = source_follow_up_repair_dest / source_handoff_rel
+            source_handoff_path.parent.mkdir(parents=True, exist_ok=True)
+            source_handoff_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: handoff-brief\n"
+                f"- cycle_id: {source_follow_on_cycle}\n"
+                "- completed_by: handoff-brief\n\n"
+                "## Summary\n\n"
+                "- Refreshed restart surfaces after converged managed repair.\n",
+                encoding="utf-8",
+            )
+            run_json(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(source_follow_up_repair_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "ticket-pack-builder",
+                    "--summary",
+                    "Routed source follow-up into the ticket system.",
+                    "--evidence",
+                    source_ticket_pack_rel,
+                ],
+                ROOT,
+            )
+            run_json(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(source_follow_up_repair_dest),
+                    "--stage",
+                    "handoff-brief",
+                    "--completed-by",
+                    "handoff-brief",
+                    "--summary",
+                    "Refreshed restart surfaces after converged managed repair.",
+                    "--evidence",
+                    source_handoff_rel,
+                ],
+                ROOT,
+            )
+            source_follow_up_repair = run_json(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(source_follow_up_repair_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                ROOT,
+            )
+            if source_follow_up_repair["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("Source-layer EXEC follow-up alone should not keep managed repair follow-on blocked once the required follow-on stages are complete")
+            if source_follow_up_repair["execution_record"]["verification_status"]["source_follow_up_codes"] != ["EXEC003"]:
+                raise RuntimeError("Public managed repair runner should classify EXEC findings as source follow-up instead of managed repair blockers")
+            required_stage_details = source_follow_up_repair["execution_record"]["required_follow_on_stage_details"]
+            if required_stage_details != [
+                {
+                    "stage": "ticket-pack-builder",
+                    "owner": "ticket-pack-builder",
+                    "category": "ticket_follow_up",
+                    "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
+                }
+            ]:
+                raise RuntimeError("Public managed repair runner should expose machine-readable owner/category metadata for required follow-on stages")
+            if source_follow_up_repair["execution_record"]["verification_status"]["current_state_clean"]:
+                raise RuntimeError("Public managed repair runner should not call EXEC-only residual work current_state_clean")
+            if not source_follow_up_repair["execution_record"]["verification_status"]["causal_regression_verified"]:
+                raise RuntimeError("Public managed repair runner should still mark managed repair verification as satisfied when only source follow-up remains")
+            if source_follow_up_repair["execution_record"]["repair_follow_on_outcome"] != "source_follow_up":
+                raise RuntimeError("Public managed repair runner should classify EXEC-only residual work as source_follow_up")
+            if not source_follow_up_repair["execution_record"]["handoff_allowed"]:
+                raise RuntimeError("Public managed repair runner should allow handoff once only source follow-up remains and the required follow-on stages are complete")
+            source_follow_up_workflow = json.loads((source_follow_up_repair_dest / ".opencode" / "state" / "workflow-state.json").read_text(encoding="utf-8"))
+            if source_follow_up_workflow["repair_follow_on"]["handoff_allowed"] is not True:
+                raise RuntimeError("Managed repair should write a cleared repair_follow_on state when only source-layer follow-up remains")
+            if source_follow_up_workflow["repair_follow_on"]["outcome"] != "source_follow_up":
+                raise RuntimeError("Managed repair should record source_follow_up when only source-layer remediation remains")
+            if source_follow_up_workflow["repair_follow_on"]["current_state_clean"] is not False:
+                raise RuntimeError("Managed repair should not record current_state_clean when source-layer remediation remains")
+            if source_follow_up_workflow["repair_follow_on"]["tracking_mode"] != "persistent_recorded_state":
+                raise RuntimeError("Managed repair should record persistent follow-on tracking mode in workflow state")
+            if source_follow_up_workflow["repair_follow_on"]["required_stage_details"] != required_stage_details:
+                raise RuntimeError("Managed repair should persist machine-readable required stage details into workflow-state")
+            if not source_follow_on_state_path.exists():
+                raise RuntimeError("Managed repair should persist follow-on stage state in repo metadata")
+            follow_on_state = json.loads(source_follow_on_state_path.read_text(encoding="utf-8"))
+            if follow_on_state["tracking_mode"] != "persistent_recorded_state":
+                raise RuntimeError("Persisted follow-on stage state should record persistent tracking mode")
+            if follow_on_state["stage_records"]["ticket-pack-builder"]["status"] != "completed":
+                raise RuntimeError("Persisted follow-on stage state should keep recorded follow-on stage completion")
+            if follow_on_state["stage_records"]["ticket-pack-builder"]["owner"] != "ticket-pack-builder" or follow_on_state["stage_records"]["ticket-pack-builder"]["category"] != "ticket_follow_up":
+                raise RuntimeError("Persisted follow-on stage state should keep machine-readable owner/category metadata for canonical stages")
+            if not any(
+                item.get("status") == "completed"
+                and item.get("stage") == "ticket-pack-builder"
+                and item.get("owner") == "ticket-pack-builder"
+                and item.get("category") == "ticket_follow_up"
+                for item in follow_on_state.get("history", [])
+                if isinstance(item, dict)
+            ):
+                raise RuntimeError("Persisted follow-on history should keep owner/category metadata for recorded stage completion events")
+
+            source_follow_up_repair_reuse = run_json(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(source_follow_up_repair_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                ROOT,
+            )
+            if source_follow_up_repair_reuse["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("Recorded follow-on stage state should let later repair runs reuse prior explicit recorded completion without re-recording the stage")
+            if source_follow_up_repair_reuse["execution_record"]["recorded_completed_stages"] != ["handoff-brief", "ticket-pack-builder"]:
+                raise RuntimeError("Public managed repair runner should expose persisted recorded follow-on completions")
+            if source_follow_up_repair_reuse["execution_record"]["repair_follow_on_outcome"] != "source_follow_up":
+                raise RuntimeError("Reused follow-on stage state should preserve the same source_follow_up outcome")
+            if not source_follow_up_repair_reuse["execution_record"]["handoff_allowed"]:
+                raise RuntimeError("Reused follow-on stage state should still allow handoff when only source follow-up remains")
+            recorded_stage_results = {
+                item["stage"]: item["status"]
+                for item in source_follow_up_repair_reuse["stage_results"]
+                if item.get("status") == "recorded_completed"
+            }
+            if recorded_stage_results != {"handoff-brief": "recorded_completed", "ticket-pack-builder": "recorded_completed"}:
+                raise RuntimeError("Managed repair should expose reused follow-on completions as recorded_completed stage results")
+
+            auto_detected_follow_on_dest = workspace / "auto-detected-follow-on-repair"
+            shutil.copytree(full_dest, auto_detected_follow_on_dest)
+            make_stack_skill_non_placeholder(auto_detected_follow_on_dest)
+            seed_failing_pytest_suite(auto_detected_follow_on_dest)
+            auto_detected_initial_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(auto_detected_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if auto_detected_initial_process.returncode == 0:
+                raise RuntimeError("A repair run with unresolved ticket follow-up should fail closed before any canonical completion artifact exists")
+            auto_detected_initial = json.loads(auto_detected_initial_process.stdout)
+            if not auto_detected_initial["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("A repair run with unresolved ticket follow-up should stay blocked before any canonical completion artifact exists")
+            auto_follow_on_state_path = auto_detected_follow_on_dest / ".opencode" / "meta" / "repair-follow-on-state.json"
+            auto_follow_on_state = json.loads(auto_follow_on_state_path.read_text(encoding="utf-8"))
+            auto_cycle_id = auto_follow_on_state["cycle_id"]
+            auto_evidence_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+            auto_evidence_path = auto_detected_follow_on_dest / auto_evidence_rel
+            auto_handoff_evidence_rel = ".opencode/state/artifacts/history/repair/handoff-brief-completion.md"
+            auto_handoff_evidence_path = auto_detected_follow_on_dest / auto_handoff_evidence_rel
+            auto_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            auto_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: ticket-pack-builder\n"
+                "- cycle_id: stale-cycle\n"
+                "- completed_by: ticket-pack-builder\n\n"
+                "## Summary\n\n"
+                "- Created or updated the canonical repair follow-up tickets required by the current repair cycle.\n",
+                encoding="utf-8",
+            )
+            auto_handoff_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            auto_handoff_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: handoff-brief\n"
+                "- cycle_id: stale-cycle\n"
+                "- completed_by: handoff-brief\n\n"
+                "## Summary\n\n"
+                "- Refreshed START-HERE.md, context-snapshot.md, and latest-handoff.md for the current repair cycle.\n",
+                encoding="utf-8",
+            )
+            wrong_cycle_auto_detect_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(auto_detected_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if wrong_cycle_auto_detect_process.returncode == 0:
+                raise RuntimeError("Managed repair should fail closed when only a stale-cycle canonical completion artifact exists")
+            wrong_cycle_auto_detect = json.loads(wrong_cycle_auto_detect_process.stdout)
+            if wrong_cycle_auto_detect["execution_record"]["auto_detected_recorded_stages"]:
+                raise RuntimeError("Managed repair should not auto-detect canonical stage evidence whose cycle_id does not match the current repair cycle")
+            if not wrong_cycle_auto_detect["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("Managed repair should remain blocked when only a stale-cycle completion artifact exists")
+            wrong_cycle_manual_record = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(auto_detected_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "ticket-pack-builder",
+                    "--summary",
+                    "Stale-cycle canonical evidence should fail.",
+                    "--evidence",
+                    auto_evidence_rel,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if wrong_cycle_manual_record.returncode == 0:
+                raise RuntimeError("record_repair_stage_completion should reject stale-cycle canonical repair evidence instead of trusting it as explicit recorded execution")
+            if "must match the current repair cycle" not in wrong_cycle_manual_record.stderr and "must match the current repair cycle" not in wrong_cycle_manual_record.stdout:
+                raise RuntimeError("record_repair_stage_completion should explain stale-cycle canonical evidence rejection")
+            auto_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: ticket-pack-builder\n"
+                f"- cycle_id: {auto_cycle_id}\n"
+                "- completed_by: ticket-pack-builder\n\n"
+                "## Summary\n\n"
+                "- Created or updated the canonical repair follow-up tickets required by the current repair cycle.\n",
+                encoding="utf-8",
+            )
+            auto_handoff_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: handoff-brief\n"
+                f"- cycle_id: {auto_cycle_id}\n"
+                "- completed_by: handoff-brief\n\n"
+                "## Summary\n\n"
+                "- Refreshed START-HERE.md, context-snapshot.md, and latest-handoff.md for the current repair cycle.\n",
+                encoding="utf-8",
+            )
+            auto_detected_reuse = run_json(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(auto_detected_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                ROOT,
+            )
+            if auto_detected_reuse["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("Managed repair should auto-recognize current-cycle canonical ticket-pack-builder completion evidence without a separate recording command")
+            if auto_detected_reuse["execution_record"]["auto_detected_recorded_stages"] != ["handoff-brief", "ticket-pack-builder"]:
+                raise RuntimeError("Managed repair should report both current-cycle canonical repair artifacts as auto-detected recorded stages")
+            if auto_detected_reuse["execution_record"]["recorded_execution_completed_stages"] != ["handoff-brief", "ticket-pack-builder"]:
+                raise RuntimeError("Auto-detected canonical repair artifacts should count as recorded_execution completion for both stages")
+            auto_detected_state = json.loads(auto_follow_on_state_path.read_text(encoding="utf-8"))
+            if auto_detected_state["stage_records"]["ticket-pack-builder"]["completed_by"] != "ticket-pack-builder:auto-detected":
+                raise RuntimeError("Auto-detected canonical ticket-pack-builder evidence should persist completed_by as ticket-pack-builder:auto-detected")
+            if auto_detected_state["stage_records"]["ticket-pack-builder"]["evidence_paths"] != [auto_evidence_rel]:
+                raise RuntimeError("Auto-detected canonical ticket-pack-builder evidence should preserve the canonical repair artifact path")
+            if auto_detected_state["stage_records"]["handoff-brief"]["completed_by"] != "handoff-brief:auto-detected":
+                raise RuntimeError("Auto-detected canonical handoff-brief evidence should persist completed_by as handoff-brief:auto-detected")
+            if auto_detected_state["stage_records"]["handoff-brief"]["evidence_paths"] != [auto_handoff_evidence_rel]:
+                raise RuntimeError("Auto-detected canonical handoff-brief evidence should preserve the canonical repair artifact path")
+
+            zero_evidence_follow_on_dest = workspace / "zero-evidence-follow-on-repair"
+            shutil.copytree(full_dest, zero_evidence_follow_on_dest)
+            make_stack_skill_non_placeholder(zero_evidence_follow_on_dest)
+            seed_failing_pytest_suite(zero_evidence_follow_on_dest)
+            zero_evidence_initial_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(zero_evidence_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            zero_evidence_initial = json.loads(zero_evidence_initial_process.stdout)
+            if not zero_evidence_initial["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("A repair run without any follow-on completion record should remain blocked before zero-evidence pollution is tested")
+            zero_evidence_state_path = zero_evidence_follow_on_dest / ".opencode" / "meta" / "repair-follow-on-state.json"
+            zero_evidence_state = json.loads(zero_evidence_state_path.read_text(encoding="utf-8"))
+            zero_evidence_state["stage_records"]["ticket-pack-builder"] = {
+                "stage": "ticket-pack-builder",
+                "owner": "ticket-pack-builder",
+                "category": "ticket_follow_up",
+                "status": "completed",
+                "completion_mode": "recorded_execution",
+                "evidence_paths": [],
+                "completed_by": "ticket-pack-builder",
+                "summary": "Polluted zero-evidence completion",
+                "last_recorded_at": "2026-03-30T00:00:00Z",
+                "last_checked_at": "2026-03-30T00:00:00Z",
+                "last_updated_at": "2026-03-30T00:00:00Z",
+            }
+            zero_evidence_state["history"].append(
+                {
+                    "recorded_at": "2026-03-30T00:00:00Z",
+                    "stage": "ticket-pack-builder",
+                    "owner": "ticket-pack-builder",
+                    "category": "ticket_follow_up",
+                    "status": "completed",
+                    "completion_mode": "recorded_execution",
+                    "completed_by": "ticket-pack-builder",
+                    "summary": "Polluted zero-evidence completion",
+                    "evidence_paths": [],
+                    "cycle_id": zero_evidence_state["cycle_id"],
+                }
+            )
+            zero_evidence_state_path.write_text(json.dumps(zero_evidence_state, indent=2) + "\n", encoding="utf-8")
+            zero_evidence_follow_on_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(zero_evidence_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            zero_evidence_follow_on = json.loads(zero_evidence_follow_on_process.stdout)
+            if "ticket-pack-builder" not in zero_evidence_follow_on["execution_record"]["invalidated_recorded_stages"]:
+                raise RuntimeError("Managed repair should invalidate recorded execution state that claims completion with zero evidence paths")
+            if zero_evidence_follow_on["execution_record"]["recorded_execution_completed_stages"]:
+                raise RuntimeError("Managed repair should not report zero-evidence recorded execution as completed work")
+            if not zero_evidence_follow_on["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("Managed repair should block again when polluted zero-evidence recorded execution is invalidated")
+            zero_evidence_follow_on_state = json.loads(zero_evidence_state_path.read_text(encoding="utf-8"))
+            if zero_evidence_follow_on_state["stage_records"]["ticket-pack-builder"]["status"] != "evidence_missing":
+                raise RuntimeError("Follow-on tracking should persist evidence_missing when polluted recorded execution has zero evidence paths")
+            if zero_evidence_follow_on_state["stage_records"]["ticket-pack-builder"].get("evidence_validation_error") != "missing_recorded_evidence":
+                raise RuntimeError("Follow-on tracking should record why zero-evidence recorded execution was invalidated")
+
+            recorded_follow_on_dest = workspace / "recorded-follow-on-repair"
+            shutil.copytree(full_dest, recorded_follow_on_dest)
+            make_stack_skill_non_placeholder(recorded_follow_on_dest)
+            seed_failing_pytest_suite(recorded_follow_on_dest)
+            recorded_follow_on_initial_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(recorded_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            recorded_follow_on_initial = json.loads(recorded_follow_on_initial_process.stdout)
+            if not recorded_follow_on_initial["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("A repair run without any follow-on completion record should remain blocked when ticket follow-up is still required")
+            recorded_follow_on_state_path = recorded_follow_on_dest / ".opencode" / "meta" / "repair-follow-on-state.json"
+            recorded_follow_on_initial_state = json.loads(recorded_follow_on_state_path.read_text(encoding="utf-8"))
+            recorded_cycle_id = recorded_follow_on_initial_state["cycle_id"]
+            no_evidence_record_stage = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "tester",
+                    "--summary",
+                    "Missing evidence should fail.",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if no_evidence_record_stage.returncode == 0:
+                raise RuntimeError("record_repair_stage_completion should reject explicit recorded execution that provides zero evidence paths")
+            if "requires at least one repo-relative evidence path" not in no_evidence_record_stage.stderr and "requires at least one repo-relative evidence path" not in no_evidence_record_stage.stdout:
+                raise RuntimeError("record_repair_stage_completion should explain zero-evidence recorded execution rejection")
+            manual_recorded_evidence_rel = ".opencode/state/artifacts/history/repair/manual-recorded-evidence.md"
+            manual_recorded_evidence_path = recorded_follow_on_dest / manual_recorded_evidence_rel
+            manual_recorded_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            manual_recorded_evidence_path.write_text("# Manual recorded evidence\n", encoding="utf-8")
+            blank_completed_by_record_stage = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "   ",
+                    "--summary",
+                    "Blank completed_by should fail.",
+                    "--evidence",
+                    manual_recorded_evidence_rel,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if blank_completed_by_record_stage.returncode == 0:
+                raise RuntimeError("record_repair_stage_completion should reject explicit recorded execution with a blank completed_by value")
+            if "requires a non-empty completed_by value" not in blank_completed_by_record_stage.stderr and "requires a non-empty completed_by value" not in blank_completed_by_record_stage.stdout:
+                raise RuntimeError("record_repair_stage_completion should explain blank completed_by rejection")
+            blank_summary_record_stage = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "ticket-pack-builder",
+                    "--summary",
+                    "   ",
+                    "--evidence",
+                    manual_recorded_evidence_rel,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if blank_summary_record_stage.returncode == 0:
+                raise RuntimeError("record_repair_stage_completion should reject explicit recorded execution with a blank summary")
+            if "requires a non-empty summary" not in blank_summary_record_stage.stderr and "requires a non-empty summary" not in blank_summary_record_stage.stdout:
+                raise RuntimeError("record_repair_stage_completion should explain blank summary rejection")
+            recorded_evidence_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+            recorded_evidence_path = recorded_follow_on_dest / recorded_evidence_rel
+            recorded_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            recorded_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: ticket-pack-builder\n"
+                f"- cycle_id: {recorded_cycle_id}\n"
+                "- completed_by: ticket-pack-builder\n\n"
+                "## Summary\n\n"
+                "- Refined repair follow-up tickets after managed repair.\n",
+                encoding="utf-8",
+            )
+            recorded_stage_payload = run_json(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "ticket-pack-builder",
+                    "--summary",
+                    "Refined repair follow-up tickets after managed repair.",
+                    "--evidence",
+                    recorded_evidence_rel,
+                ],
+                ROOT,
+            )
+            if recorded_stage_payload["recorded_stage"]["status"] != "completed":
+                raise RuntimeError("record_repair_stage_completion should persist completed status for explicit recorded execution")
+            if recorded_stage_payload["recorded_stage"]["completion_mode"] != "recorded_execution":
+                raise RuntimeError("record_repair_stage_completion should mark explicit stage completion as recorded_execution")
+            if recorded_stage_payload["recorded_stage"]["evidence_paths"] != [recorded_evidence_rel]:
+                raise RuntimeError("record_repair_stage_completion should preserve the recorded evidence paths")
+            recorded_workflow_after_stage = json.loads((recorded_follow_on_dest / ".opencode" / "state" / "workflow-state.json").read_text(encoding="utf-8"))
+            recorded_repair_follow_on = recorded_workflow_after_stage.get("repair_follow_on", {})
+            if recorded_repair_follow_on.get("outcome") != "source_follow_up":
+                raise RuntimeError("record_repair_stage_completion should recompute repair_follow_on.outcome when the last required stage completes")
+            if recorded_repair_follow_on.get("blocking_reasons"):
+                raise RuntimeError("record_repair_stage_completion should clear repair_follow_on.blocking_reasons once the last required stage completes")
+            if recorded_repair_follow_on.get("handoff_allowed") is not True:
+                raise RuntimeError("record_repair_stage_completion should recompute repair_follow_on.handoff_allowed when the last required stage completes")
+            recorded_execution_after_stage = json.loads((recorded_follow_on_dest / ".opencode" / "meta" / "repair-execution.json").read_text(encoding="utf-8"))
+            if recorded_execution_after_stage["execution_record"]["repair_follow_on_outcome"] != "source_follow_up":
+                raise RuntimeError("record_repair_stage_completion should sync repair-execution.json with the recomputed follow-on outcome")
+            if recorded_execution_after_stage["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("record_repair_stage_completion should sync repair-execution.json with the cleared follow-on blockers")
+            recorded_start_here_after_stage = (recorded_follow_on_dest / "START-HERE.md").read_text(encoding="utf-8")
+            recorded_latest_handoff_after_stage = (recorded_follow_on_dest / ".opencode" / "state" / "latest-handoff.md").read_text(encoding="utf-8")
+            if "- handoff_status: repair follow-up required" in recorded_start_here_after_stage or "- handoff_status: repair follow-up required" in recorded_latest_handoff_after_stage:
+                raise RuntimeError("record_repair_stage_completion should immediately republish restart surfaces after the last required repair stage completes")
+            recorded_follow_on_reuse = run_json(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(recorded_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                ROOT,
+            )
+            if recorded_follow_on_reuse["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("A later repair run should reuse explicit recorded stage completion without needing transitional --stage-complete input")
+            if recorded_follow_on_reuse["execution_record"]["recorded_execution_completed_stages"] != ["ticket-pack-builder"]:
+                raise RuntimeError("Managed repair should report explicit recorded_execution completions separately from asserted stages")
+            if recorded_follow_on_reuse["execution_record"]["asserted_completed_stages"]:
+                raise RuntimeError("Explicit recorded_execution follow-on completion should not populate asserted_completed_stages")
+            if recorded_follow_on_reuse["execution_record"]["repair_follow_on_outcome"] != "source_follow_up":
+                raise RuntimeError("Explicit recorded_execution follow-on completion should still converge to source_follow_up when only EXEC findings remain")
+            recorded_follow_on_state = json.loads(recorded_follow_on_state_path.read_text(encoding="utf-8"))
+            if recorded_follow_on_state["stage_records"]["ticket-pack-builder"]["completed_by"] != "ticket-pack-builder":
+                raise RuntimeError("Persisted follow-on tracking should keep completed_by for explicitly recorded execution")
+            if not any(
+                item.get("status") == "completed"
+                and item.get("stage") == "ticket-pack-builder"
+                and item.get("owner") == "ticket-pack-builder"
+                and item.get("category") == "ticket_follow_up"
+                for item in recorded_follow_on_state.get("history", [])
+                if isinstance(item, dict)
+            ):
+                raise RuntimeError("Persisted follow-on history should keep owner/category metadata for recorded execution events")
+            recorded_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: ticket-pack-builder\n"
+                "- cycle_id: stale-cycle\n"
+                "- completed_by: ticket-pack-builder\n\n"
+                "## Summary\n\n"
+                "- Drifted canonical evidence should invalidate reuse.\n",
+                encoding="utf-8",
+            )
+            recorded_follow_on_cycle_mismatch_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(recorded_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            recorded_follow_on_cycle_mismatch = json.loads(recorded_follow_on_cycle_mismatch_process.stdout)
+            if "ticket-pack-builder" not in recorded_follow_on_cycle_mismatch["execution_record"]["invalidated_recorded_stages"]:
+                raise RuntimeError("Managed repair should invalidate recorded execution reuse when canonical repair evidence drifts to a stale cycle")
+            if recorded_follow_on_cycle_mismatch["execution_record"]["recorded_execution_completed_stages"]:
+                raise RuntimeError("Managed repair should stop reporting canonical recorded execution after its cycle markers drift")
+            drifted_evidence_state = json.loads(recorded_follow_on_state_path.read_text(encoding="utf-8"))
+            if drifted_evidence_state["stage_records"]["ticket-pack-builder"].get("evidence_validation_error") != "canonical_evidence_cycle_mismatch":
+                raise RuntimeError("Follow-on tracking should record canonical_evidence_cycle_mismatch when a recorded canonical artifact no longer matches the current cycle")
+            recorded_evidence_path.unlink()
+            recorded_follow_on_missing_evidence_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(recorded_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            recorded_follow_on_missing_evidence = json.loads(recorded_follow_on_missing_evidence_process.stdout)
+            if "ticket-pack-builder" not in recorded_follow_on_missing_evidence["execution_record"]["invalidated_recorded_stages"]:
+                raise RuntimeError("Managed repair should invalidate recorded execution reuse when the supporting evidence path disappears")
+            if recorded_follow_on_missing_evidence["execution_record"]["recorded_execution_completed_stages"]:
+                raise RuntimeError("Managed repair should stop reporting recorded execution completion when its evidence is missing")
+            if not recorded_follow_on_missing_evidence["execution_record"]["blocking_reasons"]:
+                raise RuntimeError("Managed repair should block again when required recorded execution evidence is missing")
+            missing_evidence_state = json.loads((recorded_follow_on_dest / ".opencode" / "meta" / "repair-follow-on-state.json").read_text(encoding="utf-8"))
+            if missing_evidence_state["stage_records"]["ticket-pack-builder"]["status"] != "evidence_missing":
+                raise RuntimeError("Follow-on tracking should persist evidence_missing when recorded execution evidence disappears")
+
+            run_managed_repair_module = load_python_module(PUBLIC_REPAIR, "scafforge_smoke_run_managed_repair")
+            contract_failures = run_managed_repair_module.verification_contract_failures(
+                [SimpleNamespace(code="WFLOW010")],
+                performed=True,
+                current_state_clean=False,
+                pending_process_verification=False,
+                classes={
+                    "managed_blockers": [SimpleNamespace(code="WFLOW010")],
+                    "source_follow_up": [],
+                    "manual_prerequisites": [],
+                    "process_state_only": [],
+                },
+            )
+            if "restart_surface_drift_after_repair" not in contract_failures:
+                raise RuntimeError("Repair verification contract checks should treat WFLOW010 as a hard post-repair consistency failure")
+
+            placeholder_contract_failures = run_managed_repair_module.verification_contract_failures(
+                [SimpleNamespace(code="SKILL001")],
+                performed=True,
+                current_state_clean=False,
+                pending_process_verification=False,
+                classes={
+                    "managed_blockers": [SimpleNamespace(code="SKILL001")],
+                    "source_follow_up": [],
+                    "manual_prerequisites": [],
+                    "process_state_only": [],
+                },
+            )
+            if "placeholder_local_skills_survived_refresh" not in placeholder_contract_failures:
+                raise RuntimeError("Repair verification contract checks should treat SKILL001 as a hard post-repair consistency failure")
+
+            empty_non_clean_contract_failures = run_managed_repair_module.verification_contract_failures(
+                [],
+                performed=True,
+                current_state_clean=False,
+                pending_process_verification=False,
+                classes={
+                    "managed_blockers": [],
+                    "source_follow_up": [],
+                    "manual_prerequisites": [],
+                    "process_state_only": [],
+                },
+            )
+            if "non_clean_without_findings" not in empty_non_clean_contract_failures:
+                raise RuntimeError("Repair verification contract checks should flag zero-finding non-clean states as a repair-contract failure")
+        else:
+            print("Skipping uv-dependent source-follow-up public repair assertions because `uv` is not available on this host.")
+
+        follow_on_tracking_module = load_python_module(
+            ROOT / "skills" / "scafforge-repair" / "scripts" / "follow_on_tracking.py",
+            "scafforge_smoke_follow_on_tracking",
         )
-        if source_follow_up_repair["execution_record"]["blocking_reasons"]:
-            raise RuntimeError("Source-layer EXEC follow-up alone should not keep managed repair follow-on blocked once the required follow-on stages are complete")
-        if source_follow_up_repair["execution_record"]["verification_status"]["source_follow_up_codes"] != ["EXEC003"]:
-            raise RuntimeError("Public managed repair runner should classify EXEC findings as source follow-up instead of managed repair blockers")
-        if source_follow_up_repair["execution_record"]["verification_status"]["current_state_clean"]:
-            raise RuntimeError("Public managed repair runner should not call EXEC-only residual work current_state_clean")
-        if not source_follow_up_repair["execution_record"]["verification_status"]["causal_regression_verified"]:
-            raise RuntimeError("Public managed repair runner should still mark managed repair verification as satisfied when only source follow-up remains")
-        if source_follow_up_repair["execution_record"]["repair_follow_on_outcome"] != "source_follow_up":
-            raise RuntimeError("Public managed repair runner should classify EXEC-only residual work as source_follow_up")
-        if not source_follow_up_repair["execution_record"]["handoff_allowed"]:
-            raise RuntimeError("Public managed repair runner should allow handoff once only source follow-up remains and the required follow-on stages are complete")
-        source_follow_up_workflow = json.loads((source_follow_up_repair_dest / ".opencode" / "state" / "workflow-state.json").read_text(encoding="utf-8"))
-        if source_follow_up_workflow["repair_follow_on"]["handoff_allowed"] is not True:
-            raise RuntimeError("Managed repair should write a cleared repair_follow_on state when only source-layer follow-up remains")
-        if source_follow_up_workflow["repair_follow_on"]["outcome"] != "source_follow_up":
-            raise RuntimeError("Managed repair should record source_follow_up when only source-layer remediation remains")
-        if source_follow_up_workflow["repair_follow_on"]["current_state_clean"] is not False:
-            raise RuntimeError("Managed repair should not record current_state_clean when source-layer remediation remains")
+        repair_module = load_python_module(REPAIR, "scafforge_smoke_apply_repo_process_repair_follow_on_artifacts")
+        artifacted_follow_on_dest = workspace / "artifacted-follow-on-auto-detect"
+        shutil.copytree(full_dest, artifacted_follow_on_dest)
+        repair_module.initialize_follow_on_tracking_state(
+            artifacted_follow_on_dest,
+            process_version=7,
+            change_summary="Synthetic repair follow-on artifact auto-detection coverage.",
+        )
+        artifacted_tracking_path = artifacted_follow_on_dest / ".opencode" / "meta" / "repair-follow-on-state.json"
+        artifacted_tracking_state = json.loads(artifacted_tracking_path.read_text(encoding="utf-8"))
+        required_regeneration_stages = [
+            "project-skill-bootstrap",
+            "opencode-team-bootstrap",
+            "agent-prompt-engineering",
+        ]
+        artifacted_tracking_state["required_stages"] = required_regeneration_stages
+        artifacted_tracking_path.write_text(json.dumps(artifacted_tracking_state, indent=2) + "\n", encoding="utf-8")
+        artifact_cycle_id = artifacted_tracking_state["cycle_id"]
+        artifact_stage_contracts = {
+            "project-skill-bootstrap": {
+                "relative_path": ".opencode/state/artifacts/history/repair/project-skill-bootstrap-completion.md",
+                "completed_by": "project-skill-bootstrap",
+                "summary": "- Regenerated the repo-local skill pack and removed scaffold placeholder or model drift for the current repair cycle.\n",
+            },
+            "opencode-team-bootstrap": {
+                "relative_path": ".opencode/state/artifacts/history/repair/opencode-team-bootstrap-completion.md",
+                "completed_by": "opencode-team-bootstrap",
+                "summary": "- Regenerated the project-specific OpenCode agent team and related command/tool routing for the current repair cycle.\n",
+            },
+            "agent-prompt-engineering": {
+                "relative_path": ".opencode/state/artifacts/history/repair/agent-prompt-engineering-completion.md",
+                "completed_by": "agent-prompt-engineering",
+                "summary": "- Hardened the project-specific prompts and delegation rules for the current repair cycle.\n",
+            },
+        }
+        for stage, contract in artifact_stage_contracts.items():
+            artifact_path = artifacted_follow_on_dest / contract["relative_path"]
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            artifact_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                f"- completed_stage: {stage}\n"
+                "- cycle_id: stale-cycle\n"
+                f"- completed_by: {contract['completed_by']}\n\n"
+                "## Summary\n\n"
+                f"{contract['summary']}",
+                encoding="utf-8",
+            )
+        artifacted_state = follow_on_tracking_module.load_follow_on_tracking_state(artifacted_follow_on_dest)
+        stale_artifact_state, stale_auto_recorded = follow_on_tracking_module.auto_record_stage_completion_from_canonical_evidence(
+            artifacted_follow_on_dest,
+            artifacted_state,
+            required_stage_names=required_regeneration_stages,
+            repair_package_commit=package_commit(),
+        )
+        if stale_auto_recorded:
+            raise RuntimeError("Auto-detection should not trust stale-cycle canonical artifacts for regeneration follow-on stages")
+        if follow_on_tracking_module.recorded_execution_stage_names(stale_artifact_state):
+            raise RuntimeError("Stale-cycle regeneration follow-on artifacts should not be counted as recorded execution")
+        for stage, contract in artifact_stage_contracts.items():
+            artifact_path = artifacted_follow_on_dest / contract["relative_path"]
+            artifact_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                f"- completed_stage: {stage}\n"
+                f"- cycle_id: {artifact_cycle_id}\n"
+                f"- completed_by: {contract['completed_by']}\n\n"
+                "## Summary\n\n"
+                f"{contract['summary']}",
+                encoding="utf-8",
+            )
+        refreshed_artifact_state = follow_on_tracking_module.load_follow_on_tracking_state(artifacted_follow_on_dest)
+        detected_artifact_state, detected_artifact_stages = follow_on_tracking_module.auto_record_stage_completion_from_canonical_evidence(
+            artifacted_follow_on_dest,
+            refreshed_artifact_state,
+            required_stage_names=required_regeneration_stages,
+            repair_package_commit=package_commit(),
+        )
+        if detected_artifact_stages != sorted(required_regeneration_stages):
+            raise RuntimeError("Auto-detection should record all regeneration follow-on stages when current-cycle canonical artifacts exist")
+        if follow_on_tracking_module.recorded_execution_stage_names(detected_artifact_state) != sorted(required_regeneration_stages):
+            raise RuntimeError("Recorded execution stage names should include all regeneration follow-on stages auto-detected from canonical artifacts")
+        persisted_artifact_tracking = json.loads(artifacted_tracking_path.read_text(encoding="utf-8"))
+        for stage, contract in artifact_stage_contracts.items():
+            record = persisted_artifact_tracking["stage_records"].get(stage, {})
+            if record.get("completed_by") != f"{stage}:auto-detected":
+                raise RuntimeError(f"Auto-detected {stage} evidence should persist the stage-specific auto-detected completed_by value")
+            if record.get("evidence_paths") != [contract["relative_path"]]:
+                raise RuntimeError(f"Auto-detected {stage} evidence should preserve its canonical repair artifact path")
 
         print("Scafforge smoke test passed.")
         return 0

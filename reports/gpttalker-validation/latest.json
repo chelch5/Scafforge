@@ -1,0 +1,201 @@
+{
+  "generated_at": "2026-03-31T03:54:00.139516+00:00",
+  "source_repo_path": "/home/rowan/GPTTalker",
+  "source_repo_git_status": "## main...origin/main",
+  "audit": {
+    "finding_count": 2,
+    "codes": [
+      "ENV003",
+      "EXEC001"
+    ],
+    "findings": [
+      {
+        "code": "ENV003",
+        "severity": "warning",
+        "problem": "Git identity is not configured for this host, but the repo's tests or workflow expect commit-producing validation.",
+        "root_cause": "Some repo validations rely on creating commits or reading recent commit history. Without `user.name` and `user.email`, those checks fail for host-environment reasons and can be misread as product regressions.",
+        "files": [
+          "tests/node_agent/test_executor.py"
+        ],
+        "safer_pattern": "Configure git identity on the host used for audit or repair, or mark the affected verification as blocked by environment rather than as a clean or source-level result.",
+        "evidence": [
+          "Repo references git-commit validation in tests/node_agent/test_executor.py.",
+          "`git config --get user.name` -> missing",
+          "`git config --get user.email` -> missing"
+        ],
+        "provenance": "script"
+      },
+      {
+        "code": "EXEC001",
+        "severity": "error",
+        "problem": "One or more Python packages fail to import \u2014 the service cannot start.",
+        "root_cause": "Runtime errors (NameError, FastAPIError, missing dependency, broken DI pattern, etc.) that are invisible to static analysis prevent module load. Common causes: TYPE_CHECKING-guarded names used in runtime annotations, FastAPI dependency functions with non-Pydantic parameter types, circular imports.",
+        "files": [
+          "src"
+        ],
+        "safer_pattern": "Verify every import succeeds: `python -c 'from src.<pkg>.main import app'`. Use string annotations (`-> \"TypeName\"`) for TYPE_CHECKING-only imports. Use `request: Request` (not `app: FastAPI`) in FastAPI dependency functions.",
+        "evidence": [
+          "src.hub: ModuleNotFoundError: No module named 'pydantic'",
+          "src.node_agent: ModuleNotFoundError: No module named 'uvicorn'",
+          "src.shared: ModuleNotFoundError: No module named 'pydantic'"
+        ],
+        "provenance": "script"
+      }
+    ]
+  },
+  "managed_repair": {
+    "repair_package_commit": "9fc2acbf2e99c23bbca8aa91555d08bb70a41343",
+    "repair_basis_path": "diagnosis/20260328-162039",
+    "required_follow_on_stages": [
+      "project-skill-bootstrap",
+      "ticket-pack-builder"
+    ],
+    "required_follow_on_stage_details": [
+      {
+        "stage": "project-skill-bootstrap",
+        "owner": "project-skill-bootstrap",
+        "category": "repo_local_skills",
+        "reason": "Repo-local skills were replaced or still contain generic placeholder/model drift that must be regenerated with project-specific content."
+      },
+      {
+        "stage": "ticket-pack-builder",
+        "owner": "ticket-pack-builder",
+        "category": "ticket_follow_up",
+        "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system."
+      }
+    ],
+    "blocking_reasons": [
+      "project-skill-bootstrap must still run: Repo-local skills were replaced or still contain generic placeholder/model drift that must be regenerated with project-specific content.",
+      "ticket-pack-builder must still run: Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
+      "Post-repair verification failed repair-contract consistency checks: placeholder_local_skills_survived_refresh."
+    ],
+    "repair_follow_on_outcome": "managed_blocked",
+    "handoff_allowed": false,
+    "verification_status": {
+      "performed": true,
+      "finding_count": 3,
+      "error_count": 1,
+      "warning_count": 2,
+      "codes": [
+        "SKILL001",
+        "ENV003",
+        "EXEC001"
+      ],
+      "blocking_codes": [
+        "SKILL001",
+        "ENV003"
+      ],
+      "source_follow_up_codes": [
+        "EXEC001"
+      ],
+      "process_state_codes": [],
+      "pending_process_verification": true,
+      "verification_basis": "transcript_backed",
+      "basis_requires_causal_replay": true,
+      "repair_basis_path": "diagnosis/20260328-162039",
+      "current_state_clean": false,
+      "causal_regression_verified": false,
+      "contract_failures": [
+        "placeholder_local_skills_survived_refresh"
+      ],
+      "contract_passed": false,
+      "verification_passed": false,
+      "supporting_logs": [
+        "session4.md"
+      ]
+    },
+    "stale_surface_map": {
+      "workflow_tools_and_prompts": {
+        "status": "replace",
+        "surfaces": [
+          ".opencode/commands",
+          ".opencode/lib",
+          ".opencode/plugins",
+          ".opencode/tools",
+          "docs/process/git-capability.md",
+          "docs/process/model-matrix.md",
+          "docs/process/tooling.md",
+          "docs/process/workflow.md",
+          "opencode.jsonc"
+        ],
+        "reason": "Managed workflow tools, prompts, and process docs were refreshed or still show workflow drift."
+      },
+      "repo_local_skills": {
+        "status": "regenerate",
+        "surfaces": [
+          ".opencode/skills/stack-standards/SKILL.md",
+          "scaffold-managed .opencode/skills"
+        ],
+        "reason": "Repo-local skills need regeneration when scaffold-managed skills were replaced or placeholder/model drift remains.",
+        "finding_codes": [
+          "SKILL001"
+        ]
+      },
+      "agent_team_and_prompts": {
+        "status": "stable",
+        "surfaces": [],
+        "reason": "Agent-team prompts stay stable unless drift remains after managed repair."
+      },
+      "ticket_graph_and_follow_up": {
+        "status": "ticket_follow_up",
+        "surfaces": [],
+        "reason": "Ticket follow-up is required when source findings still need explicit routing through ticket-pack-builder.",
+        "finding_codes": [
+          "EXEC001"
+        ]
+      },
+      "restart_surfaces": {
+        "status": "replace",
+        "surfaces": [
+          ".opencode/state/context-snapshot.md",
+          ".opencode/state/latest-handoff.md",
+          "START-HERE.md managed block"
+        ],
+        "reason": "Restart surfaces are derived and must be regenerated whenever managed repair changes workflow state."
+      },
+      "canonical_project_decisions": {
+        "status": "stable",
+        "surfaces": [],
+        "reason": "Managed repair preserves accepted project-scope decisions. Intent-changing drift must route outside routine public repair."
+      }
+    },
+    "ticket_recommendations": [
+      {
+        "id": "REMED-001",
+        "title": "One or more Python packages fail to import \u2014 the service cannot start",
+        "source_finding_code": "EXEC001",
+        "severity": "error",
+        "route": "ticket-pack-builder",
+        "repair_class": "generated-repo remediation ticket",
+        "summary": "Verify every import succeeds: `python -c 'from src.<pkg>.main import app'`. Use string annotations (`-> \"TypeName\"`) for TYPE_CHECKING-only imports. Use `request: Request` (not `app: FastAPI`) in FastAPI dependency functions.",
+        "source_files": [
+          "src"
+        ]
+      },
+      {
+        "id": "REMED-002",
+        "title": "Git identity is not configured for this host, but the repo's tests or workflow expect commit-producing validation",
+        "source_finding_code": "ENV003",
+        "severity": "warning",
+        "route": "manual-prerequisite",
+        "repair_class": "host prerequisite or operator follow-up",
+        "summary": "Configure git identity on the host used for audit or repair, or mark the affected verification as blocked by environment rather than as a clean or source-level result.",
+        "source_files": [
+          "tests/node_agent/test_executor.py"
+        ]
+      },
+      {
+        "id": "REMED-003",
+        "title": "One or more repo-local skills still contain generic placeholder text instead of project-specific guidance",
+        "source_finding_code": "SKILL001",
+        "severity": "warning",
+        "route": "scafforge-repair",
+        "repair_class": "safe Scafforge package change",
+        "summary": "Populate every baseline local skill with concrete repo-specific rules and validation commands; generated `.opencode/skills/` files must not retain template filler.",
+        "source_files": [
+          ".opencode/skills/stack-standards/SKILL.md"
+        ]
+      }
+    ]
+  }
+}

@@ -3,12 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from apply_repo_process_repair import (
+    FOLLOW_ON_TRACKING_PATH,
     apply_repair,
+    build_stale_surface_map,
+    detect_agent_prompt_drift,
+    find_placeholder_skills,
     load_metadata,
     load_pending_process_verification,
     repair_basis_requires_causal_replay,
@@ -16,7 +19,17 @@ from apply_repo_process_repair import (
     run_bootstrap_render,
     verification_logs,
 )
-from audit_repo_process import audit_repo, current_package_commit, emit_diagnosis_pack, select_diagnosis_destination
+from audit_repo_process import current_package_commit, emit_diagnosis_pack, select_diagnosis_destination
+from follow_on_tracking import (
+    auto_record_stage_completion_from_canonical_evidence,
+    completed_stage_names,
+    follow_on_stage_metadata,
+    invalidated_recorded_stage_names,
+    normalize_follow_on_stage_names,
+    recorded_execution_stage_names,
+    update_follow_on_tracking_state,
+)
+from shared_verifier import audit_repo
 from regenerate_restart_surfaces import regenerate_restart_surfaces
 
 
@@ -47,7 +60,7 @@ def parse_args() -> argparse.Namespace:
         help="Optional diagnosis pack directory or manifest path that this repair run is based on. Defaults to the latest diagnosis pack in the repo.",
     )
     parser.add_argument("--diagnosis-output-dir", help="Optional writable path for the post-repair diagnosis pack.")
-    parser.add_argument("--stage-complete", action="append", default=[], help="Mark a required follow-on stage as completed by the host skill.")
+    parser.add_argument("--stage-complete", action="append", default=[], help=argparse.SUPPRESS)
     parser.add_argument("--fail-on", choices=("never", "warning", "error"), default="never")
     return parser.parse_args()
 
@@ -59,46 +72,6 @@ def write_json(path: Path, payload: Any) -> None:
 
 def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
-
-
-def load_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8") if path.exists() else ""
-
-
-def current_iso_timestamp() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def find_placeholder_skills(repo_root: Path) -> list[str]:
-    hits: list[str] = []
-    skills_root = repo_root / ".opencode" / "skills"
-    if not skills_root.exists():
-        return hits
-    for path in sorted(skills_root.rglob("SKILL.md")):
-        text = load_text(path)
-        if "Replace this file" in text or "TODO: replace" in text:
-            hits.append(str(path.relative_to(repo_root)))
-    return hits
-
-
-def detect_agent_prompt_drift(repo_root: Path) -> list[str]:
-    hits: list[str] = []
-    agents_root = repo_root / ".opencode" / "agents"
-    if not agents_root.exists():
-        return hits
-
-    team_leader = next(agents_root.glob("*team-leader*.md"), None)
-    if team_leader:
-        text = load_text(team_leader)
-        if "next_action_tool" not in text or "summary-only stopping is invalid" not in text:
-            hits.append(str(team_leader.relative_to(repo_root)))
-
-    for pattern in ("*implementer*.md", "*lane-executor*.md", "*docs-handoff*.md"):
-        for path in agents_root.glob(pattern):
-            text = load_text(path)
-            if "team leader already owns lease claim and release" not in text:
-                hits.append(str(path.relative_to(repo_root)))
-    return sorted(set(hits))
 
 
 def derive_required_follow_on_stages(
@@ -115,6 +88,7 @@ def derive_required_follow_on_stages(
     if placeholder_skills or "scaffold-managed .opencode/skills" in replaced_surfaces or any(code.startswith(("SKILL", "MODEL")) for code in finding_codes):
         required.append(
             {
+                **follow_on_stage_metadata("project-skill-bootstrap"),
                 "stage": "project-skill-bootstrap",
                 "reason": "Repo-local skills were replaced or still contain generic placeholder/model drift that must be regenerated with project-specific content.",
             }
@@ -122,12 +96,14 @@ def derive_required_follow_on_stages(
     if prompt_drift or any(code.startswith("WFLOW") for code in finding_codes):
         required.append(
             {
+                **follow_on_stage_metadata("opencode-team-bootstrap"),
                 "stage": "opencode-team-bootstrap",
                 "reason": "Agent or .opencode prompt surfaces still drift from the current workflow contract and must be regenerated.",
             }
         )
         required.append(
             {
+                **follow_on_stage_metadata("agent-prompt-engineering"),
                 "stage": "agent-prompt-engineering",
                 "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff.",
             }
@@ -135,6 +111,7 @@ def derive_required_follow_on_stages(
     if any(code.startswith("EXEC") for code in finding_codes):
         required.append(
             {
+                **follow_on_stage_metadata("ticket-pack-builder"),
                 "stage": "ticket-pack-builder",
                 "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
             }
@@ -165,6 +142,32 @@ def classify_verification_findings(findings: list[Any]) -> dict[str, list[Any]]:
     }
 
 
+def verification_contract_failures(
+    findings: list[Any],
+    *,
+    performed: bool,
+    current_state_clean: bool,
+    pending_process_verification: bool,
+    classes: dict[str, list[Any]],
+) -> list[str]:
+    codes = {getattr(finding, "code", "") for finding in findings}
+    failures: list[str] = []
+    if (
+        performed
+        and not findings
+        and not current_state_clean
+        and not classes["source_follow_up"]
+        and not classes["process_state_only"]
+        and not pending_process_verification
+    ):
+        failures.append("non_clean_without_findings")
+    if "WFLOW010" in codes:
+        failures.append("restart_surface_drift_after_repair")
+    if "SKILL001" in codes:
+        failures.append("placeholder_local_skills_survived_refresh")
+    return failures
+
+
 def summarize_verification(
     findings: list[Any],
     pending_process_verification: bool,
@@ -184,6 +187,13 @@ def summarize_verification(
         and not pending_process_verification
     )
     causal_regression_verified = managed_repair_verified
+    contract_failures = verification_contract_failures(
+        findings,
+        performed=performed,
+        current_state_clean=current_state_clean,
+        pending_process_verification=pending_process_verification,
+        classes=classes,
+    )
     return {
         "performed": performed,
         "finding_count": len(findings),
@@ -199,7 +209,9 @@ def summarize_verification(
         "repair_basis_path": str(repair_basis_path) if repair_basis_path else None,
         "current_state_clean": current_state_clean,
         "causal_regression_verified": causal_regression_verified,
-        "verification_passed": causal_regression_verified,
+        "contract_failures": contract_failures,
+        "contract_passed": not contract_failures,
+        "verification_passed": causal_regression_verified and not contract_failures,
         "supporting_logs": [str(path) for path in supporting_logs],
     }
 
@@ -208,8 +220,11 @@ def update_repair_follow_on_state(
     repo_root: Path,
     *,
     outcome: str,
+    required_stage_details: list[dict[str, Any]],
     required_stage_names: list[str],
     completed_stage_names: list[str],
+    asserted_stage_names: list[str],
+    tracking_state: dict[str, Any],
     blocking_reasons: list[str],
     verification_passed: bool,
     handoff_allowed: bool,
@@ -223,14 +238,23 @@ def update_repair_follow_on_state(
     process_version = workflow.get("process_version") if isinstance(workflow.get("process_version"), int) and workflow.get("process_version") > 0 else 7
     repair_follow_on = {
         "outcome": outcome,
+        "required_stage_details": required_stage_details,
         "required_stages": required_stage_names,
         "completed_stages": completed_stage_names,
+        "asserted_completed_stages": asserted_stage_names,
+        "legacy_asserted_completed_stages": asserted_stage_names,
+        "stage_completion_mode": "legacy_manual_assertion",
+        "tracking_mode": "persistent_recorded_state",
+        "follow_on_state_path": str(FOLLOW_ON_TRACKING_PATH).replace("\\", "/"),
+        "recorded_stage_state": tracking_state.get("stage_records", {}),
+        "pruned_unknown_stages": tracking_state.get("pruned_unknown_stages", []),
+        "invalidated_recorded_stages": invalidated_recorded_stage_names(tracking_state),
         "blocking_reasons": blocking_reasons,
         "verification_passed": verification_passed,
         "handoff_allowed": handoff_allowed,
         "current_state_clean": current_state_clean,
         "causal_regression_verified": causal_regression_verified,
-        "last_updated_at": current_iso_timestamp(),
+        "last_updated_at": tracking_state.get("last_updated_at"),
         "process_version": process_version,
     }
     workflow["repair_follow_on"] = repair_follow_on
@@ -277,22 +301,74 @@ def main() -> int:
         verification_status["verification_passed"] = False
         verification_status["causal_regression_verified"] = False
 
-    required_follow_on = derive_required_follow_on_stages(repo_root, findings, replaced_surfaces, pending_process_verification)
+    try:
+        required_follow_on = derive_required_follow_on_stages(repo_root, findings, replaced_surfaces, pending_process_verification)
+        required_follow_on = [
+            {
+                **item,
+                "stage": normalize_follow_on_stage_names([item["stage"]])[0],
+            }
+            for item in required_follow_on
+        ]
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     required_stage_names = [item["stage"] for item in required_follow_on]
-    requested_stage_names = sorted(set(args.stage_complete))
-    completed_stage_names = {"deterministic-refresh"} if not args.skip_deterministic_refresh else set()
+    stale_surface_map = build_stale_surface_map(
+        repo_root,
+        replaced_surfaces,
+        findings,
+        pending_process_verification,
+        required_stage_names=set(required_stage_names),
+    )
+    try:
+        requested_stage_names = normalize_follow_on_stage_names(args.stage_complete)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    asserted_stage_names = sorted(set(requested_stage_names))
+    tracking_state = update_follow_on_tracking_state(
+        repo_root,
+        required_follow_on=required_follow_on,
+        asserted_stage_names=asserted_stage_names,
+        repair_basis_path=repair_basis_path,
+        repair_package_commit=current_package_commit(),
+    )
+    tracking_state, auto_detected_recorded_stage_names = auto_record_stage_completion_from_canonical_evidence(
+        repo_root,
+        tracking_state,
+        required_stage_names=required_stage_names,
+        repair_package_commit=current_package_commit(),
+    )
+    persisted_completed_stage_names = completed_stage_names(tracking_state)
+    recorded_execution_stage_list = recorded_execution_stage_names(tracking_state)
+    invalidated_recorded_stage_list = invalidated_recorded_stage_names(tracking_state)
+    completed_stage_name_set = set(persisted_completed_stage_names)
+    if not args.skip_deterministic_refresh:
+        completed_stage_name_set.add("deterministic-refresh")
 
     executed_stages = [{"stage": "deterministic-refresh", "status": "completed"}] if not args.skip_deterministic_refresh else []
     for stage in requested_stage_names:
-        completed_stage_names.add(stage)
-        executed_stages.append({"stage": stage, "status": "completed"})
+        executed_stages.append({"stage": stage, "status": "asserted_completed", "completion_mode": "legacy_manual_assertion"})
+
+    recorded_stage_results = []
+    for stage in persisted_completed_stage_names:
+        if stage in asserted_stage_names:
+            continue
+        record = tracking_state.get("stage_records", {}).get(stage, {})
+        recorded_stage_results.append(
+            {
+                "stage": stage,
+                "status": "recorded_completed",
+                "completion_mode": record.get("completion_mode", "legacy_manual_assertion"),
+                "recorded_at": record.get("last_recorded_at"),
+            }
+        )
 
     skipped_stages = []
     for item in required_follow_on:
         stage = item["stage"]
         if stage == "handoff-brief":
             continue
-        if stage in completed_stage_names:
+        if stage in completed_stage_name_set:
             continue
         skipped_stages.append(
             {
@@ -307,6 +383,12 @@ def main() -> int:
         blocking_reasons.append("Post-repair verification was skipped; rerun scafforge-audit before handoff.")
     elif basis_requires_causal_replay and not logs:
         blocking_reasons.append("Post-repair verification did not inherit the transcript-backed repair basis; rerun the public repair runner with the causal transcript evidence before handoff.")
+    elif verification_status["contract_failures"]:
+        blocking_reasons.append(
+            "Post-repair verification failed repair-contract consistency checks: "
+            + ", ".join(verification_status["contract_failures"])
+            + "."
+        )
     elif finding_classes["managed_blockers"] or finding_classes["manual_prerequisites"]:
         blocking_reasons.append("Post-repair verification still reports managed workflow or environment findings; handoff must remain blocked until they are resolved.")
 
@@ -322,8 +404,11 @@ def main() -> int:
     repair_follow_on_state = update_repair_follow_on_state(
         repo_root,
         outcome=repair_follow_on_outcome,
+        required_stage_details=required_follow_on,
         required_stage_names=required_stage_names,
-        completed_stage_names=sorted(completed_stage_names),
+        completed_stage_names=sorted(completed_stage_name_set),
+        asserted_stage_names=asserted_stage_names,
+        tracking_state=tracking_state,
         blocking_reasons=blocking_reasons,
         verification_passed=verification_status["verification_passed"],
         handoff_allowed=handoff_allowed,
@@ -355,20 +440,34 @@ def main() -> int:
             "repo_root": str(repo_root),
             "required_follow_on_stages": required_follow_on,
             "replaced_surfaces": replaced_surfaces,
+            "stale_surface_map": stale_surface_map,
         },
-        "stage_results": executed_stages + deferred_stages + skipped_stages,
+        "stage_results": executed_stages + recorded_stage_results + deferred_stages + skipped_stages,
         "execution_record": {
             "repo_root": str(repo_root),
             "repair_package_commit": current_package_commit(),
             "repair_basis_path": str(repair_basis_path) if repair_basis_path else None,
             "required_follow_on_stages": required_stage_names,
+            "required_follow_on_stage_details": required_follow_on,
             "executed_stages": executed_stages,
+            "recorded_completed_stages": persisted_completed_stage_names,
+            "recorded_execution_completed_stages": recorded_execution_stage_list,
+            "auto_detected_recorded_stages": auto_detected_recorded_stage_names,
+            "pruned_unknown_stages": tracking_state.get("pruned_unknown_stages", []),
+            "invalidated_recorded_stages": invalidated_recorded_stage_list,
+            "asserted_completed_stages": asserted_stage_names,
+            "legacy_asserted_completed_stages": asserted_stage_names,
+            "stage_completion_mode": "legacy_manual_assertion",
+            "follow_on_tracking_mode": "persistent_recorded_state",
+            "follow_on_state_path": str(FOLLOW_ON_TRACKING_PATH).replace("\\", "/"),
+            "follow_on_tracking_state": tracking_state,
             "deferred_stages": deferred_stages,
             "skipped_stages": skipped_stages,
             "blocking_reasons": blocking_reasons,
             "repair_follow_on_outcome": repair_follow_on_outcome,
             "verification_status": verification_status,
             "handoff_allowed": handoff_allowed,
+            "stale_surface_map": stale_surface_map,
         },
         "repair_follow_on_state": repair_follow_on_state,
     }

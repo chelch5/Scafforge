@@ -14,7 +14,7 @@ Use [../../references/competence-contract.md](../../references/competence-contra
 ## When to use this skill
 
 - The user asks for diagnosis, review, audit, or report generation
-- `scaffold-kickoff` reaches the final verification pass in a greenfield or retrofit flow
+- `scaffold-kickoff` reaches the retrofit audit step or an explicit diagnosis/review flow
 - A managed repo needs a current-state diagnosis before any repair work
 - A PR or review thread has findings that need evidence validation and ticket recommendations
 - A generated repo needs a diagnosis pack that the user will manually carry into the Scafforge dev repo for package work
@@ -52,6 +52,9 @@ If this is a repeat audit, explain why the previous audit-to-repair cycle failed
 ### 2. Run the audit script
 
 The script is evidence extraction, not the whole diagnosis.
+Its rule logic should stay grouped by invariant family in code modules, not keep growing only as prose in references.
+Its report generation and ticket-recommendation assembly should also stay in code modules rather than turning this skill doc into a second implementation surface.
+New smell codes should land with rule implementation plus regression coverage, not just another narrative note.
 For transcript-backed audits, the invoker must do all three steps in order:
 
 1. reconstruct chronology from the supplied logs before running the script

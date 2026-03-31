@@ -94,12 +94,21 @@ After the script generates the base files, you MUST customize them with actual p
 - Keep Phase A deterministic and script-driven.
 - Complete Phase B in the same session as the scaffold render.
 - No generic placeholder text or template filler may remain in any handoff surface by the time generation reaches `handoff-brief`.
+- A fresh scaffold must already expose one legal first move while bootstrap proof is missing: `environment_bootstrap`, then a fresh `ticket_lookup`.
 - Generated process docs and workflow tools must name repo-local versus host-global prerequisites clearly enough that later audit and repair can classify environment blockers instead of silently skipping verification.
 - Generated workflow surfaces must preserve the contract that explicit ticket acceptance smoke commands are canonical smoke scope for `smoke_test`, not optional hints that can be replaced by heuristic pytest selection.
 
 ## After this step
 
-Continue to `../project-skill-bootstrap/SKILL.md` for the full greenfield local-skill pass, then continue through the remaining same-session generation steps.
+Before continuing into project-specific specialization, run the early bootstrap-lane proof:
+
+```sh
+python3 scripts/verify_generated_scaffold.py <repo-root> --verification-kind bootstrap-lane --format both
+```
+
+That early gate must prove one canonical bootstrap ticket, one valid bootstrap status, and one aligned bootstrap-first route across restart, workflow, and tool surfaces before `project-skill-bootstrap` begins.
+
+Then continue to `../project-skill-bootstrap/SKILL.md` for the full greenfield local-skill pass, and later use `scripts/verify_generated_scaffold.py` again with the default verification kind as the final immediate-continuation gate before handoff.
 
 ## References
 

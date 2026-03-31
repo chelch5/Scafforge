@@ -6,11 +6,13 @@ import { join } from "node:path"
 import {
   computeBootstrapFingerprint,
   defaultBootstrapProofPath,
+  findExistingRepoVenvExecutable,
   getTicket,
   loadArtifactRegistry,
   loadManifest,
   loadWorkflowState,
   normalizeRepoPath,
+  repoVenvExecutable,
   registerArtifactSnapshot,
   rootPath,
   saveWorkflowBundle,
@@ -34,6 +36,8 @@ type CommandResult = CommandSpec & {
   stdout: string
   stderr: string
   missing_executable?: string
+  failure_classification?: "missing_executable" | "permission_restriction" | "command_error"
+  blocked_by_permissions?: boolean
 }
 
 type DetectionResult = {
@@ -156,6 +160,9 @@ async function isUvManagedVenv(root: string): Promise<boolean> {
 }
 
 async function detectUvPythonBootstrap(root: string, pyprojectText: string): Promise<DetectionResult> {
+  const repoPython = repoVenvExecutable(root, "python")
+  const repoPytest = repoVenvExecutable(root, "pytest")
+  const repoRuff = repoVenvExecutable(root, "ruff")
   const commands: CommandSpec[] = [
     {
       label: "uv availability",
@@ -172,20 +179,20 @@ async function detectUvPythonBootstrap(root: string, pyprojectText: string): Pro
   })
   commands.push({
     label: "project python ready",
-    argv: [join(root, ".venv", "bin", "python"), "--version"],
+    argv: [repoPython, "--version"],
     reason: "Verify the repo-local Python interpreter is available after bootstrap.",
   })
   if (hasPythonTestSurface(root, pyprojectText)) {
     commands.push({
       label: "project pytest ready",
-      argv: [join(root, ".venv", "bin", "pytest"), "--version"],
+      argv: [repoPytest, "--version"],
       reason: "Verify the repo-local pytest executable is available for validation work.",
     })
   }
   if (hasRuffSurface(root, pyprojectText)) {
     commands.push({
       label: "project ruff ready",
-      argv: [join(root, ".venv", "bin", "ruff"), "--version"],
+      argv: [repoRuff, "--version"],
       reason: "Verify the repo-local ruff executable is still available after bootstrap sync.",
     })
   }
@@ -200,7 +207,9 @@ async function detectPipPythonBootstrap(root: string, pyprojectText: string): Pr
     return { commands: [], missingPrerequisites: ["python"] }
   }
 
-  const venvPython = join(root, ".venv", "bin", "python")
+  const venvPython = (await findExistingRepoVenvExecutable(root, "python")) ?? repoVenvExecutable(root, "python")
+  const venvPytest = (await findExistingRepoVenvExecutable(root, "pytest")) ?? repoVenvExecutable(root, "pytest")
+  const venvRuff = (await findExistingRepoVenvExecutable(root, "ruff")) ?? repoVenvExecutable(root, "ruff")
   if (!(await exists(venvPython))) {
     commands.push({
       label: "create repo virtualenv",
@@ -252,14 +261,14 @@ async function detectPipPythonBootstrap(root: string, pyprojectText: string): Pr
   if (hasPythonTestSurface(root, pyprojectText)) {
     commands.push({
       label: "project pytest ready",
-      argv: [join(root, ".venv", "bin", "pytest"), "--version"],
+      argv: [venvPytest, "--version"],
       reason: "Verify the repo-local pytest executable is available for validation work.",
     })
   }
   if (hasRuffSurface(root, pyprojectText)) {
     commands.push({
       label: "project ruff ready",
-      argv: [join(root, ".venv", "bin", "ruff"), "--version"],
+      argv: [venvRuff, "--version"],
       reason: "Verify the repo-local ruff executable is available for lint/runtime validation work.",
     })
   }
@@ -331,6 +340,10 @@ async function detectCommands(root: string): Promise<DetectionResult> {
   }
 }
 
+function isPermissionRestrictionOutput(output: string): boolean {
+  return /permission denied|operation not permitted|EACCES|EPERM|blocked by permission rules/i.test(output)
+}
+
 async function runCommand(root: string, command: CommandSpec): Promise<CommandResult> {
   return new Promise((resolve) => {
     const startedAt = Date.now()
@@ -346,12 +359,19 @@ async function runCommand(root: string, command: CommandSpec): Promise<CommandRe
         stdio: ["ignore", "pipe", "pipe"],
       })
     } catch (error) {
+      const errorCode = typeof error === "object" && error && "code" in error ? String((error as { code?: string }).code || "") : ""
+      const errorStderr = String(error)
+      const missingExecutable = errorCode === "ENOENT" ? command.argv[0] : undefined
+      const blockedByPermissions = errorCode === "EACCES" || errorCode === "EPERM" || isPermissionRestrictionOutput(errorStderr)
       resolve({
         ...command,
         exit_code: -1,
         duration_ms: Date.now() - startedAt,
         stdout: "",
-        stderr: String(error),
+        stderr: errorStderr,
+        missing_executable: missingExecutable,
+        failure_classification: missingExecutable ? "missing_executable" : blockedByPermissions ? "permission_restriction" : "command_error",
+        blocked_by_permissions: blockedByPermissions || undefined,
       })
       return
     }
@@ -365,27 +385,36 @@ async function runCommand(root: string, command: CommandSpec): Promise<CommandRe
     child.on("error", (error) => {
       if (settled) return
       settled = true
-      const missingExecutable = typeof error === "object" && error && "code" in error && (error as { code?: string }).code === "ENOENT"
-        ? command.argv[0]
-        : undefined
+      const errorCode = typeof error === "object" && error && "code" in error ? String((error as { code?: string }).code || "") : ""
+      const renderedError = `${stderr}\n${String(error)}`.trim()
+      const missingExecutable = errorCode === "ENOENT" ? command.argv[0] : undefined
+      const blockedByPermissions = errorCode === "EACCES" || errorCode === "EPERM" || isPermissionRestrictionOutput(renderedError)
       resolve({
         ...command,
         exit_code: -1,
         duration_ms: Date.now() - startedAt,
         stdout,
-        stderr: `${stderr}\n${String(error)}`.trim(),
+        stderr: renderedError,
         missing_executable: missingExecutable,
+        failure_classification: missingExecutable ? "missing_executable" : blockedByPermissions ? "permission_restriction" : "command_error",
+        blocked_by_permissions: blockedByPermissions || undefined,
       })
     })
     child.on("close", (code) => {
       if (settled) return
       settled = true
+      const renderedStderr = stderr.trim()
+      const missingExecutable = code === 127 || /command not found|ENOENT/i.test(renderedStderr) ? command.argv[0] : undefined
+      const blockedByPermissions = isPermissionRestrictionOutput(`${stdout}\n${stderr}`)
       resolve({
         ...command,
         exit_code: code ?? -1,
         duration_ms: Date.now() - startedAt,
         stdout,
         stderr,
+        missing_executable: missingExecutable,
+        failure_classification: code === 0 ? undefined : missingExecutable ? "missing_executable" : blockedByPermissions ? "permission_restriction" : "command_error",
+        blocked_by_permissions: blockedByPermissions || undefined,
       })
     })
   })
@@ -416,7 +445,7 @@ function renderArtifact(
   const commandSections = commands.length
     ? commands
         .map(
-          (command, index) => `### ${index + 1}. ${command.label}\n\n- reason: ${command.reason}\n- command: \`${command.argv.join(" ")}\`\n- exit_code: ${command.exit_code}\n- duration_ms: ${command.duration_ms}\n- missing_executable: ${command.missing_executable || "none"}\n\n#### stdout\n\n${fence(command.stdout)}\n\n#### stderr\n\n${fence(command.stderr)}`,
+          (command, index) => `### ${index + 1}. ${command.label}\n\n- reason: ${command.reason}\n- command: \`${command.argv.join(" ")}\`\n- exit_code: ${command.exit_code}\n- duration_ms: ${command.duration_ms}\n- missing_executable: ${command.missing_executable || "none"}\n- failure_classification: ${command.failure_classification || "none"}\n- blocked_by_permissions: ${command.blocked_by_permissions ? "true" : "false"}\n\n#### stdout\n\n${fence(command.stdout)}\n\n#### stderr\n\n${fence(command.stderr)}`,
         )
         .join("\n\n")
     : "No installable dependency surfaces were detected in this repo."
@@ -440,11 +469,17 @@ export default tool({
     const commands = detection.commands
     const results: CommandResult[] = []
     const missingPrerequisites = new Set(detection.missingPrerequisites)
+    let hostSurfaceClassification: "none" | "missing_executable" | "permission_restriction" | "command_error" = detection.missingPrerequisites.length > 0
+      ? "missing_executable"
+      : "none"
     let passed = detection.missingPrerequisites.length === 0
 
     for (const command of commands) {
       const result = await runCommand(root, command)
       results.push(result)
+      if (hostSurfaceClassification === "none" && result.failure_classification) {
+        hostSurfaceClassification = result.failure_classification
+      }
       for (const missing of classifyMissingPrerequisites(command, result)) {
         missingPrerequisites.add(missing)
       }
@@ -457,6 +492,8 @@ export default tool({
     const fingerprint = await computeBootstrapFingerprint(root)
     const note = missingPrerequisites.size > 0
       ? `Bootstrap failed because required bootstrap prerequisites are missing: ${[...missingPrerequisites].join(", ")}. Install or seed the missing toolchain pieces, then rerun environment_bootstrap.`
+      : hostSurfaceClassification === "permission_restriction"
+        ? "Bootstrap failed because the host denied a required command or file access path. Fix the permission/tool policy or run bootstrap in a host that allows the managed commands, then rerun environment_bootstrap."
       : passed
         ? args.recovery_mode
           ? "Dependency installation and bootstrap verification completed successfully in bootstrap-recovery mode."
@@ -492,12 +529,15 @@ export default tool({
         recovery_mode: args.recovery_mode === true,
         proof_artifact: artifact.path,
         environment_fingerprint: fingerprint,
+        host_surface_classification: hostSurfaceClassification,
         missing_prerequisites: [...missingPrerequisites],
         commands: results.map((result) => ({
           label: result.label,
           command: result.argv.join(" "),
           exit_code: result.exit_code,
           missing_executable: result.missing_executable || null,
+          failure_classification: result.failure_classification || null,
+          blocked_by_permissions: result.blocked_by_permissions === true,
           duration_ms: result.duration_ms,
         })),
       },

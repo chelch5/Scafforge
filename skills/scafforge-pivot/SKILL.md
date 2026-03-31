@@ -1,0 +1,224 @@
+---
+name: scafforge-pivot
+description: Route a midstream feature, design, architecture, or workflow change through Scafforge's host-side pivot flow. Use when an existing repo needs a controlled contract update that changes canonical truth, ticket lineage, or managed workflow surfaces without collapsing into improvised repair or ad hoc backlog edits.
+---
+
+# Scafforge Pivot
+
+Use this skill when an existing repo needs a midstream change that is larger than routine ticket refinement but is not just workflow repair.
+
+This is the host-side pivot surface. It classifies the requested change, updates canonical truth first, records which surfaces are now stale, routes the required downstream refresh work, and requires a post-pivot verification pass before handoff.
+Use [../../references/competence-contract.md](../../references/competence-contract.md) as the bar for whether the repo still exposes one clear legal next move after the pivot.
+
+Pivot orchestration command:
+
+```sh
+python3 scripts/plan_pivot.py <repo-root> --pivot-class <class> --requested-change "<summary>" --format both
+```
+
+Use this to write the canonical `Pivot History` entry, emit `.opencode/meta/pivot-state.json`, record bounded downstream refresh routing, and run the post-pivot verification pass. Keep it thin: this command plans and records the pivot, then routes follow-on work to the right downstream skills.
+
+Downstream stage recording command:
+
+```sh
+python3 scripts/record_pivot_stage_completion.py <repo-root> --stage <stage> --completed-by <owner> --summary "<summary>" --evidence <repo-relative-path>
+```
+
+Use this to record evidence-backed completion of a routed pivot downstream stage inside `.opencode/meta/pivot-state.json`.
+
+Pivot lineage execution command:
+
+```sh
+python3 scripts/apply_pivot_lineage.py <repo-root>
+```
+
+Use this when the pivot state already contains explicit runtime-ready reopen, reconcile, or supersede actions backed by canonical evidence. This command must execute the generated repo's own ticket tools; it must not mutate `tickets/manifest.json` directly from package-side Python.
+
+Pivot restart publication command:
+
+```sh
+python3 scripts/publish_pivot_surfaces.py <repo-root>
+```
+
+Use this to republish `START-HERE.md`, `.opencode/state/latest-handoff.md`, and `.opencode/state/context-snapshot.md` directly from pivot state when the pivot planner or later pivot execution changes repo truth.
+
+Explicit lineage-routing flags:
+
+- `--supersede-ticket <id>`
+- `--reopen-ticket <id>`
+- `--reconcile-ticket <id>`
+- `--lineage-evidence <ticket-id>=<repo-relative-artifact-path>`
+- `--replacement-source <ticket-id>=<replacement-source-ticket-id>`
+- `--replacement-source-mode <ticket-id>=<mode>`
+
+Use these when the pivot already proves specific ticket lineage actions that must be routed explicitly into the downstream ticket follow-up stage.
+
+## When to use this skill
+
+- `scaffold-kickoff` classifies the request as a pivot
+- the user says to add a feature, expand scope, change the design, change the architecture, or alter the workflow contract midstream
+- the requested change crosses canonical brief truth, ticket lineage, prompts, local skills, agent team design, or managed workflow surfaces
+
+If the repo only needs diagnosis, route to `../scafforge-audit/SKILL.md`.
+If the repo only needs managed workflow repair with no project-truth change, route to `../scafforge-repair/SKILL.md`.
+
+## Pivot classes
+
+- `feature-add`
+- `feature-expand`
+- `design-change`
+- `architecture-change`
+- `workflow-change`
+
+## Procedure
+
+### 1. Classify the pivot and scope impact
+
+Read the current repo truth first:
+
+- `docs/spec/CANONICAL-BRIEF.md`
+- `tickets/manifest.json`
+- `.opencode/state/workflow-state.json`
+- `.opencode/meta/bootstrap-provenance.json`
+- `START-HERE.md`
+
+Classify the pivot before editing anything.
+Record which class applies, what changed, and which current surfaces are now stale.
+
+Do not treat a true design or architecture pivot as ordinary backlog refinement.
+Do not treat a pure managed-surface repair as a pivot when canonical project truth did not change.
+
+### 2. Update canonical truth first
+
+Before refreshing any derived or managed surfaces:
+
+1. update `docs/spec/CANONICAL-BRIEF.md`
+2. append a `Pivot History` entry that records:
+   - pivot class
+   - requested change
+   - accepted decisions
+   - unresolved follow-up
+   - affected contract families
+3. note whether the change alters workflow only, product behavior, architecture, or multiple layers
+
+Do not regenerate tickets, prompts, local skills, or restart surfaces against stale brief truth.
+
+### 3. Emit the stale-surface map
+
+Produce a machine-readable stale-surface map that classifies affected surfaces as:
+
+- `stable`
+- `replace`
+- `regenerate`
+- `ticket_follow_up`
+- `human_decision`
+
+Persist the resulting pivot state at `.opencode/meta/pivot-state.json` so later handoff and review work can inspect the exact pivot classification, stale-surface map, downstream refresh routing, downstream execution-state progress, and post-pivot verification result.
+
+At minimum, classify these families:
+
+- canonical brief and truth docs
+- repo-local skills
+- agent prompts and team layout
+- managed workflow tools and prompts
+- ticket graph and lineage
+- restart surfaces
+
+If workflow surfaces drifted, route the managed refresh through `../scafforge-repair/SKILL.md` instead of open-coding the same repair logic here.
+
+The pivot state should also carry a machine-readable `ticket_lineage_plan` whenever the pivot already proves specific ticket supersede, reopen, reconcile, or follow-up actions.
+
+When the pivot already includes runtime-ready lineage metadata, the plan should capture that too so `apply_pivot_lineage.py` can execute those actions through the generated repo's own `ticket_reopen`, `ticket_reconcile`, or `ticket_create` tools instead of leaving them as prose.
+
+The pivot state must also expose machine-readable restart-surface inputs:
+
+- `pivot_in_progress`
+- `pivot_class`
+- `pivot_changed_surfaces`
+- `pending_downstream_stages`
+- `completed_downstream_stages`
+- `post_pivot_verification_passed`
+
+The pivot state must also record restart-surface publication truthfully:
+
+- whether restart surfaces have been republished
+- when they were republished
+- which publisher performed the refresh
+- the canonical published surface paths
+
+### 4. Refresh only the affected downstream surfaces
+
+Use the stale-surface map to route the smallest coherent follow-on set:
+
+- `../project-skill-bootstrap/SKILL.md` when repo-local skills need regeneration
+- `../opencode-team-bootstrap/SKILL.md` when the agent team, tools, or allowlists need redesign
+- `../agent-prompt-engineering/SKILL.md` when prompt behavior or delegation rules changed
+- `../ticket-pack-builder/SKILL.md` when tickets must be refined, reopened, superseded, or reconciled
+- `../scafforge-repair/SKILL.md` only when managed workflow surfaces drifted and need safe managed refresh
+
+Do not let `scafforge-pivot` become a second scaffold engine or a second repair engine.
+
+### 5. Repair ticket lineage explicitly
+
+When the pivot invalidates existing ticket assumptions:
+
+- supersede tickets whose acceptance no longer matches the new brief
+- reopen tickets that remain valid but are no longer complete under the new design
+- create follow-up or decision tickets when new work is introduced
+- reconcile stale lineage when old source/follow-up relationships no longer reflect the pivot
+
+Do not leave pre-pivot tickets pretending to satisfy the new design. If the specific ticket actions are already known at pivot time, record them explicitly in the pivot state's `ticket_lineage_plan` instead of burying them only in prose.
+
+### 6. Require post-pivot verification
+
+Before handoff, verify that the pivot left the repo continuable:
+
+- one legal next move still exists
+- canonical brief truth and restart surfaces agree
+- stale placeholder local skills were not reintroduced
+- ticket lineage reflects the pivot truthfully
+- managed workflow surfaces still agree on lifecycle semantics
+
+If the pivot included transcript-backed workflow defects, reuse the normal verification basis instead of dropping the original causal evidence.
+
+### 7. Publish a truthful handoff
+
+After pivot work and verification are complete, continue to `../handoff-brief/SKILL.md`.
+
+The handoff must state that a pivot occurred, which surfaces changed, and what follow-up still remains.
+Do not depend on a later generic handoff step to make pivot state visible; the pivot lifecycle must be able to republish restart surfaces immediately after planning or explicit lineage execution changes the repo truth.
+
+## Required outputs
+
+- classified pivot type
+- updated `docs/spec/CANONICAL-BRIEF.md` with `Pivot History`
+- machine-readable stale-surface map
+- `.opencode/meta/pivot-state.json`
+- explicit downstream refresh decisions
+- explicit downstream execution-state progress for routed pivot stages
+- machine-readable ticket lineage plan when ticket actions are already known
+- ticket lineage updates or follow-up routing
+- post-pivot verification result
+- truthful restart surface inputs for handoff
+- restart-surface publication record when pivot planning or execution republishes the derived restart surfaces
+
+## Output contract
+
+Before leaving this skill, confirm all of these are true:
+
+- canonical brief truth was updated before any derived refresh work
+- the stale-surface map exists and matches the requested pivot
+- repair was used only for managed workflow refresh, not for product-truth changes
+- pivot downstream stage progress is recorded with evidence when routed work completes
+- explicit pivot ticket lineage actions are execution-backed through generated repo ticket tools when the pivot already carries enough runtime metadata to run them safely
+- ticket lineage and restart surfaces no longer present stale pre-pivot assumptions
+- post-pivot verification ran before handoff
+
+## Rules
+
+- Update canonical truth before derived surfaces
+- Keep pivot classification explicit
+- Use repair only for managed workflow refresh, not for product-truth changes
+- Do not hide a pivot inside generic ticket refinement
+- Do not leave stale tickets or restart surfaces behind
+- Do not skip post-pivot verification

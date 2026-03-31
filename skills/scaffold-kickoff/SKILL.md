@@ -1,6 +1,6 @@
 ---
 name: scaffold-kickoff
-description: Orchestrate the full Scafforge kickoff flow for greenfield, retrofit, managed-repair, or diagnosis/review work. Use when asked to scaffold a new repo, add the OpenCode operating layer to an existing repo, repair a Scafforge-managed workflow contract, or diagnose an in-progress project. This is the single public entrypoint and routes to the correct downstream skills automatically.
+description: Orchestrate the full Scafforge kickoff flow for greenfield, retrofit, pivot, managed-repair, or diagnosis/review work. Use when asked to scaffold a new repo, add the OpenCode operating layer to an existing repo, apply a midstream feature or design change, repair a Scafforge-managed workflow contract, or diagnose an in-progress project. This is the single public entrypoint and routes to the correct downstream skills automatically.
 ---
 
 # Scaffold Kickoff
@@ -12,11 +12,12 @@ This is the default public entrypoint. When a user asks you to scaffold, retrofi
 Before starting, classify the run type:
 
 1. **Greenfield** — No repo exists yet, or the repo contains only specs, plans, or notes. Follow the full workflow below.
-2. **Retrofit** — A repo with code already exists but is missing the current OpenCode operating layer. Run `spec-pack-normalizer` first if the project lacks a canonical brief, route to `opencode-team-bootstrap` to add or repair `.opencode/`, then run `project-skill-bootstrap`, continue through ticket repair as needed, and finish with `scafforge-audit`.
-3. **Managed repair / update** — A Scafforge-managed or OpenCode-oriented repo already exists but needs workflow-contract repair, upgrade, or managed-surface replacement. Route directly to `scafforge-repair`, let it continue through any required project-specific regeneration or ticket follow-up, and finish with `handoff-brief`.
-4. **Diagnosis / review** — An in-progress or claimed-complete repo needs full non-mutating diagnosis, codebase review, report generation, or evidence validation. Route to `scafforge-audit`.
+2. **Retrofit** — A repo with code already exists but is missing the current OpenCode operating layer. Run `spec-pack-normalizer` first if the project lacks a canonical brief, route to `opencode-team-bootstrap` to add or repair `.opencode/`, then run `project-skill-bootstrap`, continue through ticket repair as needed, finish with `scafforge-audit`, and publish the restart surface with `handoff-brief`.
+3. **Pivot** — A Scafforge-managed or OpenCode-oriented repo needs a midstream feature, design, architecture, or workflow change that updates canonical truth and ticket lineage. Route to `scafforge-pivot`, let it continue through only the affected downstream refresh steps, and finish with `handoff-brief`.
+4. **Managed repair / update** — A Scafforge-managed or OpenCode-oriented repo already exists but needs workflow-contract repair, upgrade, or managed-surface replacement. Route directly to `scafforge-repair`, let it continue through any required project-specific regeneration or ticket follow-up, and finish with `handoff-brief`.
+5. **Diagnosis / review** — An in-progress or claimed-complete repo needs full non-mutating diagnosis, codebase review, report generation, or evidence validation. Route to `scafforge-audit`.
 
-If the repo state and the user's request do not make the run type clear, ask the user before proceeding. Do not silently choose between greenfield, retrofit, managed repair, and diagnosis/review when that choice would materially change scope.
+If the repo state and the user's request do not make the run type clear, ask the user before proceeding. Do not silently choose between greenfield, retrofit, pivot, managed repair, and diagnosis/review when that choice would materially change scope.
 
 ## Full greenfield workflow
 
@@ -54,7 +55,24 @@ This has two phases:
 - Phase A: run the Python script to generate the template file tree with placeholder substitution
 - Phase B: customize the generated files with project-specific content from the canonical brief
 
-### Step 4: Bootstrap project-local skills
+### Step 4: Prove the bootstrap lane before specialization
+
+Before you continue into local-skill generation, run the early greenfield proof layer across the freshly rendered scaffold:
+
+```sh
+python3 ../repo-scaffold-factory/scripts/verify_generated_scaffold.py <repo-root> --verification-kind bootstrap-lane --format both
+```
+
+This early gate is narrower than the final handoff gate. It must prove:
+
+- one canonical bootstrap ticket
+- one valid bootstrap status
+- one bootstrap-first legal move while proof is still missing
+- aligned managed restart, workflow, and tool surfaces for `environment_bootstrap`
+
+Do not continue into project-specific specialization if this bootstrap-lane proof fails.
+
+### Step 5: Bootstrap project-local skills
 
 Read `../project-skill-bootstrap/SKILL.md` and follow its greenfield procedure.
 
@@ -63,7 +81,7 @@ Populate the repo-local skill pack in one pass:
 - create any required synthesized skills from project evidence
 - write the downstream model operating profile skill for the selected model profile
 
-### Step 5: Design and customize the agent team
+### Step 6: Design and customize the agent team
 
 Read `../opencode-team-bootstrap/SKILL.md` and follow its procedure.
 
@@ -73,13 +91,13 @@ The scaffold creates generic agent templates. You must now customize them:
 - keep the topology conservative unless the brief proves disjoint domains
 - reference only repo-local skills that already exist
 
-### Step 6: Harden agent prompts
+### Step 7: Harden agent prompts
 
 Read `../agent-prompt-engineering/SKILL.md` and follow its procedure.
 
 This is a required same-session hardening pass in the standard greenfield scaffold flow.
 
-### Step 7: Build the ticket backlog
+### Step 8: Build the ticket backlog
 
 Read `../ticket-pack-builder/SKILL.md` and follow its procedure in bootstrap mode.
 
@@ -88,13 +106,14 @@ Create implementation-ready tickets only after local skills, team topology, and 
 - keep each ticket small enough for one agent session
 - convert unresolved major decisions into blocked or decision tickets instead of guesses
 
-### Step 8: Write the handoff surface
+### Step 9: Verify immediate continuation before handoff
 
-Read `../handoff-brief/SKILL.md` and follow its procedure.
+Before you begin the handoff step, run one same-session immediate-continuation verification gate across the generated workflow surfaces:
 
-Generate `START-HERE.md` with actual project state so the repo can be resumed by another agent or session.
+```sh
+python3 ../repo-scaffold-factory/scripts/verify_generated_scaffold.py <repo-root> --format both
+```
 
-Before you finish the handoff, run one same-session contract-conformance check across the generated workflow surfaces:
 - `docs/process/workflow.md`
 - `docs/process/tooling.md`
 - `tickets/README.md`
@@ -110,11 +129,18 @@ Confirm that they agree on:
 - `ticket_lookup.transition_guidance` as the canonical next-step explainer
 - `smoke_test` as the only producer of smoke-test artifacts
 - explicit ticket acceptance smoke commands as the canonical smoke scope whenever the ticket already defines an executable smoke command
+- one legal first move while bootstrap proof is still missing: `environment_bootstrap`, then a fresh `ticket_lookup`
 - commands as human entrypoints only, with autonomous work staying inside agents, tools, plugins, and local skills
 
 If these surfaces disagree, fix the contract before handing off the repo.
 
-### Step 9: Done
+### Step 10: Write the handoff surface
+
+Read `../handoff-brief/SKILL.md` and follow its procedure.
+
+Generate `START-HERE.md` with actual project state so the repo can be resumed by another agent or session.
+
+### Step 11: Done
 
 The scaffold is complete when all of these exist:
 - `docs/spec/CANONICAL-BRIEF.md` with real project content
@@ -138,6 +164,16 @@ When the task is diagnosis or review of an existing project:
 6. route to `../scafforge-repair/SKILL.md` only after the required package changes exist and the audit still recommends repair
 7. finish with `../handoff-brief/SKILL.md` when a restart surface or closeout is needed
 
+## Pivot flow
+
+When the task is a midstream feature, design, architecture, or workflow change:
+
+1. read `../scafforge-pivot/SKILL.md`
+2. classify the pivot and update canonical brief truth first
+3. emit the stale-surface map and route only the affected refresh steps
+4. use `../scafforge-repair/SKILL.md` only when managed workflow surfaces also drifted
+5. finish with `../handoff-brief/SKILL.md` after post-pivot verification
+
 ## Required outputs
 
 - a canonical brief that separates facts, assumptions, and open questions
@@ -145,9 +181,10 @@ When the task is diagnosis or review of an existing project:
 - a scaffolded repo with README.md, AGENTS.md, START-HERE.md, docs, and tickets
 - a structured truth hierarchy with clear ownership for facts, queue state, transient workflow state, artifacts, provenance, and handoff
 - the OpenCode agent, command, tool, plugin, and local-skill layer customized for the specific project
+- a pivot classification and stale-surface map when the run type is pivot
 - a diagnosis pack when the run type is diagnosis/review
 - a handoff surface that another machine or session can resume from
-- a same-session workflow-contract conformance check showing docs, tools, prompts, and local workflow skills agree
+- a same-session immediate-continuation verification gate showing docs, tools, prompts, and local workflow skills agree on the first legal move
 
 ## Output contract
 
@@ -157,13 +194,14 @@ Before `scaffold-kickoff` is considered complete, the run must leave all of thes
 - explicit downstream completion or stop status for every required skill in the selected sequence
 - `tickets/manifest.json`, `tickets/BOARD.md`, and `.opencode/state/workflow-state.json` aligned on the same foreground ticket
 - `START-HERE.md` that is valid for immediate continuation without requiring a later audit or repair pass
-- a same-session contract-conformance check across docs, tools, prompts, and workflow skills for the generated repo
+- a same-session immediate-continuation verification gate across docs, tools, prompts, and workflow skills for the generated repo
 
 ## Rules
 
 - Prefer this umbrella flow for greenfield work instead of manually starting with lower-level skills.
 - Keep generated docs and prompts weak-model friendly: short sections, explicit steps, obvious source-of-truth files.
 - Keep `scaffold-kickoff` as the human entrypoint even when the repo already exists; route internally to `opencode-team-bootstrap`, `scafforge-audit`, `scafforge-repair`, or another downstream skill instead of asking the user to pick the lower-level entry.
+- Route midstream feature and design changes through `scafforge-pivot` instead of hiding them inside generic ticket refinement or repair.
 - If a Scafforge-managed repo needs workflow correction or contract upgrade, prefer `scafforge-repair` and let it escalate only intent-changing decisions.
 - When the stack is still unknown, keep the scaffold framework-agnostic and record unresolved choices in the canonical brief.
 - Do not let `ticket-pack-builder` fabricate implementation detail for unresolved major decisions.
