@@ -8,72 +8,45 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
-import smoke_test_scafforge as smoke
+from test_support.gpttalker_fixture_builders import build_fixture_family, fixture_index_by_slug
+from test_support.repo_seeders import make_stack_skill_non_placeholder, read_json, seed_failing_pytest_suite, seed_ready_bootstrap
+from test_support.scafforge_harness import (
+    AUDIT,
+    BOOTSTRAP,
+    PIVOT,
+    PIVOT_PUBLISH,
+    PIVOT_RECORD,
+    PUBLIC_REPAIR,
+    RECORD_REPAIR_STAGE,
+    ROOT,
+    VERIFY_GENERATED,
+    run,
+    run_generated_tool,
+    run_json,
+)
 
 
-ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_INDEX = ROOT / "tests" / "fixtures" / "gpttalker" / "index.json"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run focused end-to-end Scafforge integration coverage for greenfield, repair, and pivot flows."
+        description="Run focused end-to-end Scafforge integration coverage for greenfield, repair, pivot, and GPTTalker fixture families."
     )
     parser.add_argument("--list-fixtures", action="store_true", help="Print the curated GPTTalker fixture slugs and exit.")
     return parser.parse_args()
 
 
-def read_json(path: Path) -> object:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def run_json(command: list[str], cwd: Path, *, allow_returncodes: set[int] | None = None, env: dict[str, str] | None = None) -> dict[str, object]:
-    result = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True, env=env)
-    allowed = allow_returncodes or {0}
-    if result.returncode not in allowed:
-        raise RuntimeError(
-            f"Command failed: {' '.join(command)}\n"
-            f"STDOUT:\n{result.stdout}\n"
-            f"STDERR:\n{result.stderr}"
-        )
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Command did not return valid JSON: {' '.join(command)}\nSTDOUT:\n{result.stdout}") from exc
-
-
-def run(command: list[str], cwd: Path, *, env: dict[str, str] | None = None) -> None:
-    result = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True, env=env)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Command failed: {' '.join(command)}\n"
-            f"STDOUT:\n{result.stdout}\n"
-            f"STDERR:\n{result.stderr}"
-        )
-
-
-def ensure_fixture_index() -> dict[str, dict[str, object]]:
+def ensure_fixture_index() -> dict[str, dict[str, Any]]:
     payload = read_json(FIXTURE_INDEX)
     if not isinstance(payload, dict):
         raise RuntimeError("Fixture index must be a JSON object.")
     families = payload.get("families")
     if not isinstance(families, list):
         raise RuntimeError("Fixture index must contain a families list.")
-    indexed: dict[str, dict[str, object]] = {}
-    for item in families:
-        if not isinstance(item, dict):
-            raise RuntimeError("Fixture family entries must be JSON objects.")
-        slug = item.get("slug")
-        if not isinstance(slug, str) or not slug.strip():
-            raise RuntimeError("Fixture family entries must have a non-empty slug.")
-        notes = item.get("notes")
-        if not isinstance(notes, str) or not notes.strip():
-            raise RuntimeError(f"Fixture family `{slug}` is missing a notes path.")
-        notes_path = FIXTURE_INDEX.parent / notes
-        if not notes_path.exists():
-            raise RuntimeError(f"Fixture family `{slug}` notes file is missing: {notes_path}")
-        indexed[slug] = item
+    indexed = fixture_index_by_slug()
     expected = {
         "bootstrap-dependency-layout-drift",
         "host-tool-or-permission-blockage",
@@ -91,7 +64,7 @@ def bootstrap_full(dest: Path) -> None:
     run(
         [
             sys.executable,
-            str(smoke.BOOTSTRAP),
+            str(BOOTSTRAP),
             "--dest",
             str(dest),
             "--project-name",
@@ -146,15 +119,13 @@ def write_repair_completion_artifact(dest: Path, *, stage: str, cycle_id: str) -
     )
 
 
-def greenfield_integration(fixtures: dict[str, dict[str, object]], workspace: Path) -> None:
-    _ = fixtures["bootstrap-dependency-layout-drift"]
-    _ = fixtures["host-tool-or-permission-blockage"]
+def greenfield_integration(workspace: Path) -> None:
     dest = workspace / "greenfield"
     bootstrap_full(dest)
     bootstrap_lane = run_json(
         [
             sys.executable,
-            str(smoke.VERIFY_GENERATED),
+            str(VERIFY_GENERATED),
             str(dest),
             "--verification-kind",
             "bootstrap-lane",
@@ -167,11 +138,11 @@ def greenfield_integration(fixtures: dict[str, dict[str, object]], workspace: Pa
         raise RuntimeError("Greenfield integration should run the bootstrap-lane verifier before specialization.")
     if bootstrap_lane.get("bootstrap_lane_valid") is not True:
         raise RuntimeError("Greenfield integration should preserve one valid bootstrap lane immediately after scaffold render.")
-    smoke.make_stack_skill_non_placeholder(dest)
+    make_stack_skill_non_placeholder(dest)
     payload = run_json(
         [
             sys.executable,
-            str(smoke.VERIFY_GENERATED),
+            str(VERIFY_GENERATED),
             str(dest),
             "--format",
             "json",
@@ -180,30 +151,25 @@ def greenfield_integration(fixtures: dict[str, dict[str, object]], workspace: Pa
     )
     if payload.get("verification_kind") != "greenfield_continuation":
         raise RuntimeError("Greenfield integration should run the continuation verifier.")
-    if payload.get("immediately_continuable") is not True:
+    if payload.get("immediately_continuable") is not True or payload.get("finding_count") != 0:
         raise RuntimeError("Greenfield integration should prove the generated repo is immediately continuable once placeholder drift is removed.")
-    if payload.get("finding_count") != 0:
-        raise RuntimeError("Greenfield integration should not leave residual verification findings.")
 
 
-def repair_integration(fixtures: dict[str, dict[str, object]], workspace: Path) -> None:
-    _ = fixtures["repeated-lifecycle-contradiction"]
-    _ = fixtures["restart-surface-drift-after-repair"]
-    _ = fixtures["placeholder-skill-after-refresh"]
+def repair_integration(workspace: Path) -> None:
     if shutil.which("uv") is None:
         print("Skipping repair integration because `uv` is not available on this host.")
         return
     dest = workspace / "repair"
     bootstrap_full(dest)
-    smoke.seed_ready_bootstrap(dest)
-    smoke.seed_failing_pytest_suite(dest)
+    seed_ready_bootstrap(dest)
+    seed_failing_pytest_suite(dest)
     team_leader = next((dest / ".opencode" / "agents").glob("*team-leader*.md"))
     original_team_leader = team_leader.read_text(encoding="utf-8")
     seed_prompt_drift(dest)
     initial = run_json(
         [
             sys.executable,
-            str(smoke.PUBLIC_REPAIR),
+            str(PUBLIC_REPAIR),
             str(dest),
             "--skip-deterministic-refresh",
         ],
@@ -235,7 +201,7 @@ def repair_integration(fixtures: dict[str, dict[str, object]], workspace: Path) 
     missing_provenance_record = subprocess.run(
         [
             sys.executable,
-            str(smoke.RECORD_REPAIR_STAGE),
+            str(RECORD_REPAIR_STAGE),
             str(dest),
             "--stage",
             "ticket-pack-builder",
@@ -262,7 +228,7 @@ def repair_integration(fixtures: dict[str, dict[str, object]], workspace: Path) 
     artifact_recorded = run_json(
         [
             sys.executable,
-            str(smoke.PUBLIC_REPAIR),
+            str(PUBLIC_REPAIR),
             str(dest),
             "--skip-deterministic-refresh",
         ],
@@ -274,13 +240,13 @@ def repair_integration(fixtures: dict[str, dict[str, object]], workspace: Path) 
     if recorded_before_fix != expected_recorded:
         raise RuntimeError(f"Repair integration expected recorded completion for {sorted(expected_recorded)}, found {sorted(recorded_before_fix)}")
     if not artifact_recorded["execution_record"]["blocking_reasons"]:
-        raise RuntimeError("Repair integration should stay managed-blocked while placeholder skill and prompt drift still exist, even after canonical follow-on artifacts are recorded.")
-    smoke.make_stack_skill_non_placeholder(dest)
+        raise RuntimeError("Repair integration should stay managed-blocked while placeholder skill and prompt drift still exist.")
+    make_stack_skill_non_placeholder(dest)
     restore_prompt_surface(dest, original_team_leader)
     converged = run_json(
         [
             sys.executable,
-            str(smoke.PUBLIC_REPAIR),
+            str(PUBLIC_REPAIR),
             str(dest),
             "--skip-deterministic-refresh",
         ],
@@ -289,26 +255,24 @@ def repair_integration(fixtures: dict[str, dict[str, object]], workspace: Path) 
     )
     if converged["execution_record"]["blocking_reasons"]:
         raise RuntimeError("Repair integration should converge once current-cycle canonical completion artifacts exist for every routed follow-on stage.")
-    recorded = set(converged["execution_record"]["recorded_execution_completed_stages"])
-    if recorded != expected_recorded:
-        raise RuntimeError(f"Repair integration expected recorded completion for {sorted(expected_recorded)}, found {sorted(recorded)}")
+    if set(converged["execution_record"]["recorded_execution_completed_stages"]) != expected_recorded:
+        raise RuntimeError("Repair integration should preserve recorded completion for all routed follow-on stages.")
     if converged["execution_record"]["repair_follow_on_outcome"] != "source_follow_up":
-        raise RuntimeError("Repair integration should leave only source_follow_up once managed repair follow-on converges on the failing-suite fixture.")
+        raise RuntimeError("Repair integration should leave only source_follow_up once managed repair follow-on converges.")
     if converged["execution_record"]["handoff_allowed"] is not True:
         raise RuntimeError("Repair integration should allow handoff once only source follow-up remains.")
 
 
-def pivot_integration(fixtures: dict[str, dict[str, object]], workspace: Path) -> None:
-    _ = fixtures["split-scope-and-historical-trust-reconciliation"]
+def pivot_integration(workspace: Path) -> None:
     dest = workspace / "pivot"
     bootstrap_full(dest)
-    smoke.make_stack_skill_non_placeholder(dest)
-    smoke.seed_ready_bootstrap(dest)
-    smoke.run_generated_tool(dest, ".opencode/tools/handoff_publish.ts", {})
+    make_stack_skill_non_placeholder(dest)
+    seed_ready_bootstrap(dest)
+    run_generated_tool(dest, ".opencode/tools/handoff_publish.ts", {})
     payload = run_json(
         [
             sys.executable,
-            str(smoke.PIVOT),
+            str(PIVOT),
             str(dest),
             "--pivot-class",
             "architecture-change",
@@ -334,7 +298,7 @@ def pivot_integration(fixtures: dict[str, dict[str, object]], workspace: Path) -
         run_json(
             [
                 sys.executable,
-                str(smoke.PIVOT_RECORD),
+                str(PIVOT_RECORD),
                 str(dest),
                 "--stage",
                 stage,
@@ -350,7 +314,7 @@ def pivot_integration(fixtures: dict[str, dict[str, object]], workspace: Path) -
     published = run_json(
         [
             sys.executable,
-            str(smoke.PIVOT_PUBLISH),
+            str(PIVOT_PUBLISH),
             str(dest),
             "--published-by",
             "integration-test",
@@ -358,15 +322,33 @@ def pivot_integration(fixtures: dict[str, dict[str, object]], workspace: Path) -
         ROOT,
     )
     state = read_json(dest / ".opencode" / "meta" / "pivot-state.json")
-    if not isinstance(state, dict):
-        raise RuntimeError("Pivot integration expected persisted pivot state.")
-    restart_inputs = state.get("restart_surface_inputs")
+    restart_inputs = state.get("restart_surface_inputs") if isinstance(state, dict) else None
     if not isinstance(restart_inputs, dict) or restart_inputs.get("pivot_in_progress") is not False:
         raise RuntimeError("Pivot integration should clear pivot_in_progress once all routed downstream stages are completed.")
     if restart_inputs.get("pending_downstream_stages") not in ([], None):
         raise RuntimeError("Pivot integration should not leave pending downstream stages after all recorded completions.")
     if published["restart_surface_publication"]["status"] != "published":
         raise RuntimeError("Pivot integration should republish restart surfaces after pivot completion.")
+
+
+def fixture_builder_integration(fixtures: dict[str, dict[str, Any]], workspace: Path) -> None:
+    fixture_root = workspace / "gpttalker-fixtures"
+    for slug in sorted(fixtures):
+        dest = fixture_root / slug
+        contract = build_fixture_family(slug, dest)
+        if contract.get("slug") != slug:
+            raise RuntimeError(f"Fixture builder should persist the canonical slug for `{slug}`.")
+        if not isinstance(contract.get("expected_coverage"), list) or not contract["expected_coverage"]:
+            raise RuntimeError(f"Fixture builder should persist expected coverage for `{slug}`.")
+        contract_path = dest / ".opencode" / "meta" / "gpttalker-fixture.json"
+        if not contract_path.exists():
+            raise RuntimeError(f"Fixture builder should emit .opencode/meta/gpttalker-fixture.json for `{slug}`.")
+        audit_payload = run_json(
+            [sys.executable, str(AUDIT), str(dest), "--format", "json", "--no-diagnosis-pack"],
+            ROOT,
+        )
+        if not isinstance(audit_payload.get("findings"), list) or audit_payload.get("finding_count", 0) <= 0:
+            raise RuntimeError(f"Fixture `{slug}` should produce actionable audit findings, not a no-op repo.")
 
 
 def main() -> int:
@@ -377,9 +359,10 @@ def main() -> int:
         return 0
     with tempfile.TemporaryDirectory(prefix="scafforge-integration-") as workspace_root:
         workspace = Path(workspace_root)
-        greenfield_integration(fixtures, workspace)
-        repair_integration(fixtures, workspace)
-        pivot_integration(fixtures, workspace)
+        greenfield_integration(workspace)
+        repair_integration(workspace)
+        pivot_integration(workspace)
+        fixture_builder_integration(fixtures, workspace)
     print("Scafforge integration test passed.")
     return 0
 
