@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-31T00:59:54.451891+00:00",
+  "generated_at": "2026-03-31T03:54:00.139516+00:00",
   "source_repo_path": "/home/rowan/GPTTalker",
   "source_repo_git_status": "## main...origin/main",
   "audit": {
@@ -44,7 +44,7 @@
     ]
   },
   "managed_repair": {
-    "repair_package_commit": "c86609eb846e88b358db9393776ee48020f3153a",
+    "repair_package_commit": "9fc2acbf2e99c23bbca8aa91555d08bb70a41343",
     "repair_basis_path": "diagnosis/20260328-162039",
     "required_follow_on_stages": [
       "project-skill-bootstrap",
