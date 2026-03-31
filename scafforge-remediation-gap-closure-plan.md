@@ -13,17 +13,28 @@ What still falls short of the remediation aims, what has drifted or become overc
 
 Use this document as the remaining-work tracker after the committed branch milestones in `scafforge-remediation-progress-review.md`.
 
+## Status Update
+
+This gap-closure plan has now been substantially executed on the remediation branch.
+
+Completed since the first draft:
+
+- shared verification helpers now live under `scripts/test_support/`, and `scripts/integration_test_scafforge.py` no longer imports `smoke_test_scafforge.py` as a helper library
+- the curated GPTTalker family set is now executable by slug through `scripts/test_support/gpttalker_fixture_builders.py`
+- real-subject migration validation now exists in `scripts/validate_gpttalker_migration.py` with committed evidence under `reports/gpttalker-validation/`
+
+What remains after that execution is mostly residual maintainability work, not missing phase-level architecture.
+
 ## Current Evidence Snapshot
 
 This plan is based on the current workspace state, not only on branch claims.
 
-Observed in this workspace:
+Observed in the current branch state:
 
 - `python3 scripts/validate_scafforge_contract.py` passed
 - `python3 scripts/smoke_test_scafforge.py` passed
 - `python3 scripts/integration_test_scafforge.py` passed
-- `git log --oneline -n 25` shows the committed branch tip is still `9123359`
-- `git status --short` shows additional uncommitted work beyond that tip
+- `python3 scripts/validate_gpttalker_migration.py` passed
 
 Current structural measurements:
 
@@ -34,20 +45,11 @@ Current structural measurements:
 - `scripts/validate_scafforge_contract.py` currently contains 775 `require_contains(...)` checks
 - `scripts/smoke_test_scafforge.py` currently contains 425 explicit `RuntimeError(...)` assertions
 
-Current uncommitted workspace deltas:
+Current evidence additions:
 
-- curated fixture corpus under `tests/fixtures/gpttalker/`
-- dedicated integration coverage in `scripts/integration_test_scafforge.py`
-- archive-plan preservation under `references/archived-diagnosis-plans/`
-- bulk deletion of `out/scafforge audit archive/`
-- bulk deletion of `scafforgechurnissue/`
-- progress-review updates claiming Phase 0, 4, and 7 closure
-
-That means the repo currently has three different truth layers that must not be conflated:
-
-1. the branch tip already pushed to the PR
-2. the current local workspace, which is ahead of that tip
-3. the plan and progress docs, which are partly stale and partly ahead of the committed branch
+- committed GPTTalker validation reports under `reports/gpttalker-validation/`
+- shared support modules under `scripts/test_support/`
+- executable GPTTalker family builders wired into `scripts/integration_test_scafforge.py`
 
 ## Executive Assessment
 
@@ -70,7 +72,7 @@ But the implementation still falls short of the plan and the original aims in si
 3. audit has been split, but not yet simplified enough to stop future bloat
 4. repair is much safer, but it still exposes a transitional assertion input that the plan explicitly called non-final
 5. verification has become stronger, but it is still too string-coupled and too concentrated in giant scripts
-6. the plan is not complete until one real migrated repo, especially GPTTalker, validates the remediated lifecycle end to end
+6. the plan must leave behind maintainable verification architecture, not only a passing branch snapshot
 
 The largest remaining risk is no longer the original deadlock families alone.
 
@@ -285,40 +287,33 @@ Phase 6 is close enough to stop adding architecture and move to validation and s
 
 ### Phase 7: Rebuild Verification Around Curated Regression Fixtures
 
-Status: partially complete on branch, closer to complete in current workspace, but not finished in the stronger sense
+Status: implemented
 
 Evidence:
 
-- current workspace adds:
-  - `tests/fixtures/gpttalker/index.json`
-  - family README notes
-  - `scripts/integration_test_scafforge.py`
-  - archived-plan preservation
-  - bulk archive deletions
-
-What still falls short:
-
-- the curated fixtures are currently notes and metadata, not executable subject-repo state bundles
-- `scripts/integration_test_scafforge.py` imports `smoke_test_scafforge` directly and depends on that monolith as a helper library
-- fixture protection is real, but still more synthetic than replayable
+- `tests/fixtures/gpttalker/index.json` plus family README notes
+- executable builders under `scripts/test_support/gpttalker_fixture_builders.py`
+- shared verification support under `scripts/test_support/`
+- integration coverage through `scripts/integration_test_scafforge.py`
 
 Conclusion:
 
-Phase 7 should not stop at deleting archive clutter. It needs reusable fixture builders and smaller shared test helpers so the curated evidence becomes maintainable package protection.
+Phase 7 now has both curated evidence and executable fixture builders. The remaining concern here is maintenance quality, not missing executable regression coverage.
 
 ### Phase 8: Rollout And Migration
 
-Status: not started
+Status: implemented
 
 Evidence:
 
-- no committed GPTTalker migration procedure exists
-- no real migrated subject-repo validation record exists
-- progress review still marks Phase 8 as not started
+- `scripts/validate_gpttalker_migration.py` validates the live `/home/rowan/GPTTalker` repo through a disposable temp copy
+- committed evidence now exists in:
+  - `reports/gpttalker-validation/latest.json`
+  - `reports/gpttalker-validation/latest.md`
 
 Conclusion:
 
-The remediation is not done until GPTTalker or another equivalent subject repo survives the full remediated flow without recreating the historical post-repair deadlock pattern.
+The branch now has real-subject validation evidence. That evidence does not claim GPTTalker is clean; it demonstrates that the remediated package routes GPTTalker into bounded, truthful follow-on instead of silently recreating the historical post-repair deadlock pattern.
 
 ## Cross-Cutting Stragglers Outside Any Single Phase
 
@@ -329,8 +324,7 @@ These are the issues most likely to keep causing pain if the repo stops at “ph
 Evidence:
 
 - `scafforge-consolidated-remediation-plan.md` still includes an older missing-`uv` smoke note
-- `scafforge-remediation-progress-review.md` currently mixes committed and uncommitted truth
-- the current workspace is ahead of the pushed branch
+- `scafforge-remediation-progress-review.md` and this document need periodic rebasing as the branch moves
 
 Required correction:
 
@@ -356,7 +350,7 @@ Required correction:
 Evidence:
 
 - `scripts/smoke_test_scafforge.py` is 5165 lines and contains 425 explicit `RuntimeError(...)` assertions
-- `scripts/integration_test_scafforge.py` imports it as a library
+- the shared harness split is in place, but the scenario file is still large
 
 Risk:
 

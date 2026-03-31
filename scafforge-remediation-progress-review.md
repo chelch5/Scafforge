@@ -42,7 +42,9 @@ At the current tip of the branch:
 - `python3 scripts/validate_scafforge_contract.py` passes
 - `python3 scripts/smoke_test_scafforge.py` passes on the current host
 - `python3 scripts/integration_test_scafforge.py` passes on the current host
+- `python3 scripts/validate_gpttalker_migration.py` passes on the current host
 - the public repair and verification entrypoints start cleanly
+- the committed GPTTalker validation record now lives under `reports/gpttalker-validation/`
 
 Important clarification:
 
@@ -58,16 +60,16 @@ Important clarification:
 - Phase 2: complete
 - Phase 3: substantially implemented
 - Phase 4: complete
-- Phase 5: complete for the primary generated tool surfaces in the plan
+- Phase 5: complete
 - Phase 6: complete
 - Phase 7: complete
-- Phase 8: not started
+- Phase 8: complete
 
 Important distinction:
 
 - the phase labels above describe the committed branch milestones
-- they do not mean every stricter follow-through item from the gap-closure plan is finished
-- in particular, Phase 2 still lacks the earlier bootstrap-lane proof layer, Phase 3 still needs further simplification, Phase 4 still carries a transitional public assertion path, and Phase 8 has not started
+- they do not mean the repo has no residual maintainability debt
+- in particular, validator literal-coupling and the size of the smoke/audit surfaces are still worth review even though the remaining gap-closure workstreams are now implemented
 
 ## Implemented Work
 
@@ -373,50 +375,36 @@ Additional closeout:
   - greenfield continuation
   - post-repair convergence through canonical follow-on artifacts
   - pivot completion with truthful restart publication
+- shared verification support now lives under `scripts/test_support/` instead of treating `smoke_test_scafforge.py` as a helper library
+- the curated GPTTalker fixture corpus is now executable by slug through `scripts/test_support/gpttalker_fixture_builders.py`
 - the curated GPTTalker fixture corpus records the six deadlock families the plan targeted without keeping the full raw operational dumps in-tree
 
 ### Phase 8: Rollout And Migration
 
 Implemented:
 
-- nothing material yet beyond making the package itself more migration-ready
+- a real-subject migration validator now exists at `scripts/validate_gpttalker_migration.py`
+- the validator runs against the live `/home/rowan/GPTTalker` repo through a disposable temp copy so the package can be exercised without mutating the source repo
+- a committed evidence record now exists under:
+  - `reports/gpttalker-validation/latest.json`
+  - `reports/gpttalker-validation/latest.md`
+- the current validation result is honest and bounded:
+  - GPTTalker does not yet validate cleanly
+  - the current Scafforge package routes it into explicit `project-skill-bootstrap` plus `ticket-pack-builder` follow-on rather than a silent post-repair deadlock
+  - the remaining blockers are concrete and machine-readable: placeholder repo-local skill regeneration, live `EXEC001` follow-up, and host git identity
 
-Not yet done:
+## Residual Review Focus
 
-- process-version rollout
-- migration path publication
-- GPTTalker-first full revalidation
-- post-package migration procedure
+The plan work above is now implemented on the branch. What remains is lower-level review pressure rather than another planned phase rollout.
 
-## Review-Focused Remaining Work
+### 1. Validator Brittleness
 
-The remaining work is best understood in this order.
+- the contract validator still contains a large number of literal snippet locks
+- that is no longer a plan-phase blocker, but it is still a maintenance risk worth reviewing
 
-### 1. Phase 5 Follow-Through: Plugin And Stage-Gate Execution Coverage
+### 2. Smoke And Audit Surface Size
 
-Still needed:
-
-- add direct execution coverage for the remaining restart/plugin enforcement surfaces that still sit outside the current harness
-- broaden execution proof for plugin-enforced write-lease and reserved-artifact behavior if those become active regression sources
-- keep checking that generated mutation tools and routing surfaces stay aligned, not just documented
-
-Why it still matters:
-
-- the core generated tools in the Phase 5 plan are now execution-backed
-- the remaining verification gap is now mainly plugin enforcement breadth and adjacent restart-policy surfaces, not the primary tool lifecycle itself
-
-### 2. Phase 8 Migration And GPTTalker Revalidation
-
-Still needed:
-
-- migrate one real subject repo through the remediated contract
-- use GPTTalker as the first full end-to-end subject
-- confirm the package no longer reproduces the historical post-repair deadlock pattern in practice
-
-Why it still matters:
-
-- the branch is stronger and much better protected than `main`
-- but the plan is not actually done until one real migrated repo validates the new lifecycle end to end
+- `scripts/smoke_test_scafforge.py` and `skills/scafforge-audit/scripts/audit_repo_process.py` are materially better structured than before, but they are still large enough that future simplification work would pay off
 
 ## Recommended PR Review Order
 
