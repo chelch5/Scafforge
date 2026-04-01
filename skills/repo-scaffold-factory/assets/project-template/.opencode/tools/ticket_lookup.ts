@@ -110,6 +110,31 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
     }
   }
 
+  // A blocked ticket must be explicitly re-evaluated and unblocked before lifecycle
+  // routing resumes.  Without this guard, ticket_lookup falls through to the stage
+  // switch and produces misleading "write artifact" guidance for a ticket that has
+  // unresolved decision_blockers — leaving the agent with no legal forward move.
+  if (ticket.status === "blocked") {
+    const unresolvedBlockers: string[] = (ticket as any).decision_blockers ?? []
+    const blockerSummary = unresolvedBlockers.length > 0
+      ? unresolvedBlockers.map((b: string, i: number) => `${i + 1}. ${b}`).join("\n")
+      : "(none recorded — status may have been set manually)"
+    return {
+      ...base,
+      next_allowed_stages: [ticket.stage],
+      required_artifacts: [],
+      next_action_kind: "ticket_update",
+      next_action_tool: "ticket_update",
+      delegate_to_agent: null,
+      required_owner: "team-leader",
+      recommended_action: `Ticket ${ticket.id} is blocked. Re-evaluate each decision_blocker against the current environment. If all blockers are now resolved, call ticket_update with status: "todo" to resume lifecycle execution, then re-run ticket_lookup to get updated stage guidance.\n\nDecision blockers when ticket was created:\n${blockerSummary}`,
+      current_state_blocker: unresolvedBlockers.length > 0
+        ? `Ticket is blocked: ${unresolvedBlockers.join("; ")}`
+        : "Ticket status is blocked with no recorded decision_blockers.",
+      recommended_ticket_update: { ticket_id: ticket.id, status: "todo" },
+    }
+  }
+
   switch (ticket.stage) {
     case "planning":
       if (!hasArtifact(ticket, { stage: "planning" })) {
