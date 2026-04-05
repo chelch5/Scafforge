@@ -1,0 +1,129 @@
+{
+  "tracking_mode": "persistent_recorded_state",
+  "assertion_input_mode": "legacy_manual_assertion",
+  "cycle_id": "2026-04-02T14:09:18Z",
+  "created_at": "2026-04-02T14:09:18Z",
+  "last_updated_at": "2026-04-02T14:46:00Z",
+  "process_version": 7,
+  "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+  "repair_basis_path": "/home/pc/projects/Scafforge/livetesting/glitch/diagnosis/20260402-144245",
+  "pruned_unknown_stages": [],
+  "required_stages": [
+    "opencode-team-bootstrap",
+    "agent-prompt-engineering",
+    "ticket-pack-builder"
+  ],
+  "stage_records": {
+    "project-skill-bootstrap": {
+      "stage": "project-skill-bootstrap",
+      "owner": "project-skill-bootstrap",
+      "category": "repo_local_skills",
+      "status": "required_not_run",
+      "reason": "Repo-local skills still contain generic placeholder/model drift that must be regenerated with project-specific content.",
+      "currently_required": false,
+      "last_checked_at": "2026-04-02T14:09:20Z",
+      "last_updated_at": "2026-04-02T14:09:20Z"
+    },
+    "opencode-team-bootstrap": {
+      "stage": "opencode-team-bootstrap",
+      "owner": "opencode-team-bootstrap",
+      "category": "agent_team",
+      "status": "completed",
+      "reason": "Agent or .opencode prompt surfaces still drift from the current workflow contract and must be regenerated.",
+      "currently_required": true,
+      "last_checked_at": "2026-04-02T14:46:00Z",
+      "last_updated_at": "2026-04-02T14:23:07Z",
+      "completion_mode": "recorded_execution",
+      "completed_by": "opencode-team-bootstrap:auto-detected",
+      "summary": "Auto-detected canonical opencode-team-bootstrap repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+      "evidence_paths": [
+        ".opencode/state/artifacts/history/repair/opencode-team-bootstrap-completion.md"
+      ],
+      "first_recorded_at": "2026-04-02T14:23:07Z",
+      "last_recorded_at": "2026-04-02T14:23:07Z"
+    },
+    "agent-prompt-engineering": {
+      "stage": "agent-prompt-engineering",
+      "owner": "agent-prompt-engineering",
+      "category": "prompt_hardening",
+      "status": "completed",
+      "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff.",
+      "currently_required": true,
+      "last_checked_at": "2026-04-02T14:46:00Z",
+      "last_updated_at": "2026-04-02T14:23:07Z",
+      "completion_mode": "recorded_execution",
+      "completed_by": "agent-prompt-engineering:auto-detected",
+      "summary": "Auto-detected canonical agent-prompt-engineering repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+      "evidence_paths": [
+        ".opencode/state/artifacts/history/repair/agent-prompt-engineering-completion.md"
+      ],
+      "first_recorded_at": "2026-04-02T14:23:07Z",
+      "last_recorded_at": "2026-04-02T14:23:07Z"
+    },
+    "ticket-pack-builder": {
+      "stage": "ticket-pack-builder",
+      "owner": "ticket-pack-builder",
+      "category": "ticket_follow_up",
+      "status": "completed",
+      "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
+      "currently_required": true,
+      "last_checked_at": "2026-04-02T14:46:00Z",
+      "last_updated_at": "2026-04-02T14:23:07Z",
+      "completion_mode": "recorded_execution",
+      "completed_by": "ticket-pack-builder:auto-detected",
+      "summary": "Auto-detected canonical ticket-pack-builder repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+      "evidence_paths": [
+        ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+      ],
+      "first_recorded_at": "2026-04-02T14:23:07Z",
+      "last_recorded_at": "2026-04-02T14:23:07Z"
+    }
+  },
+  "history": [
+    {
+      "recorded_at": "2026-04-02T14:23:07Z",
+      "stage": "agent-prompt-engineering",
+      "owner": "agent-prompt-engineering",
+      "category": "prompt_hardening",
+      "status": "completed",
+      "completion_mode": "recorded_execution",
+      "completed_by": "agent-prompt-engineering:auto-detected",
+      "summary": "Auto-detected canonical agent-prompt-engineering repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+      "evidence_paths": [
+        ".opencode/state/artifacts/history/repair/agent-prompt-engineering-completion.md"
+      ],
+      "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+      "cycle_id": "2026-04-02T14:09:18Z"
+    },
+    {
+      "recorded_at": "2026-04-02T14:23:07Z",
+      "stage": "opencode-team-bootstrap",
+      "owner": "opencode-team-bootstrap",
+      "category": "agent_team",
+      "status": "completed",
+      "completion_mode": "recorded_execution",
+      "completed_by": "opencode-team-bootstrap:auto-detected",
+      "summary": "Auto-detected canonical opencode-team-bootstrap repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+      "evidence_paths": [
+        ".opencode/state/artifacts/history/repair/opencode-team-bootstrap-completion.md"
+      ],
+      "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+      "cycle_id": "2026-04-02T14:09:18Z"
+    },
+    {
+      "recorded_at": "2026-04-02T14:23:07Z",
+      "stage": "ticket-pack-builder",
+      "owner": "ticket-pack-builder",
+      "category": "ticket_follow_up",
+      "status": "completed",
+      "completion_mode": "recorded_execution",
+      "completed_by": "ticket-pack-builder:auto-detected",
+      "summary": "Auto-detected canonical ticket-pack-builder repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+      "evidence_paths": [
+        ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+      ],
+      "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+      "cycle_id": "2026-04-02T14:09:18Z"
+    }
+  ]
+}

@@ -1,0 +1,626 @@
+{
+  "repair_plan": {
+    "repo_root": "/home/pc/projects/Scafforge/livetesting/glitch",
+    "required_follow_on_stages": [
+      {
+        "stage": "opencode-team-bootstrap",
+        "owner": "opencode-team-bootstrap",
+        "category": "agent_team",
+        "reason": "Agent or .opencode prompt surfaces still drift from the current workflow contract and must be regenerated."
+      },
+      {
+        "stage": "agent-prompt-engineering",
+        "owner": "agent-prompt-engineering",
+        "category": "prompt_hardening",
+        "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff."
+      },
+      {
+        "stage": "ticket-pack-builder",
+        "owner": "ticket-pack-builder",
+        "category": "ticket_follow_up",
+        "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system."
+      }
+    ],
+    "replaced_surfaces": [],
+    "diff_summary": {},
+    "backup_path": null,
+    "stale_surface_map": {
+      "workflow_tools_and_prompts": {
+        "status": "stable",
+        "surfaces": [],
+        "reason": "Managed workflow tools, prompts, and process docs were refreshed or still show workflow drift."
+      },
+      "repo_local_skills": {
+        "status": "stable",
+        "surfaces": [],
+        "reason": "Repo-local skills need regeneration when scaffold-managed skills were replaced or placeholder/model drift remains."
+      },
+      "agent_team_and_prompts": {
+        "status": "regenerate",
+        "surfaces": [
+          ".opencode/agents/glitch-docs-handoff.md",
+          ".opencode/agents/glitch-implementer.md",
+          ".opencode/agents/glitch-team-leader.md"
+        ],
+        "reason": "Agent-team prompts stay stable unless drift remains after managed repair."
+      },
+      "ticket_graph_and_follow_up": {
+        "status": "ticket_follow_up",
+        "surfaces": [],
+        "reason": "Ticket follow-up is required when source findings still need explicit routing through ticket-pack-builder.",
+        "finding_codes": [
+          "EXEC-GODOT-004"
+        ]
+      },
+      "restart_surfaces": {
+        "status": "stable",
+        "surfaces": [],
+        "reason": "Restart surfaces are derived and must be regenerated whenever managed repair changes workflow state."
+      },
+      "canonical_project_decisions": {
+        "status": "stable",
+        "surfaces": [],
+        "reason": "Managed repair preserves accepted project-scope decisions. Intent-changing drift must route outside routine public repair."
+      }
+    }
+  },
+  "stage_results": [
+    {
+      "stage": "agent-prompt-engineering",
+      "status": "recorded_completed",
+      "completion_mode": "recorded_execution",
+      "recorded_at": "2026-04-02T14:23:07Z"
+    },
+    {
+      "stage": "opencode-team-bootstrap",
+      "status": "recorded_completed",
+      "completion_mode": "recorded_execution",
+      "recorded_at": "2026-04-02T14:23:07Z"
+    },
+    {
+      "stage": "ticket-pack-builder",
+      "status": "recorded_completed",
+      "completion_mode": "recorded_execution",
+      "recorded_at": "2026-04-02T14:23:07Z"
+    }
+  ],
+  "execution_record": {
+    "repo_root": "/home/pc/projects/Scafforge/livetesting/glitch",
+    "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+    "repair_basis_path": "/home/pc/projects/Scafforge/livetesting/glitch/diagnosis/20260402-144245",
+    "required_follow_on_stages": [
+      "opencode-team-bootstrap",
+      "agent-prompt-engineering",
+      "ticket-pack-builder"
+    ],
+    "required_follow_on_stage_details": [
+      {
+        "stage": "opencode-team-bootstrap",
+        "owner": "opencode-team-bootstrap",
+        "category": "agent_team",
+        "reason": "Agent or .opencode prompt surfaces still drift from the current workflow contract and must be regenerated."
+      },
+      {
+        "stage": "agent-prompt-engineering",
+        "owner": "agent-prompt-engineering",
+        "category": "prompt_hardening",
+        "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff."
+      },
+      {
+        "stage": "ticket-pack-builder",
+        "owner": "ticket-pack-builder",
+        "category": "ticket_follow_up",
+        "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system."
+      }
+    ],
+    "executed_stages": [],
+    "recorded_completed_stages": [
+      "agent-prompt-engineering",
+      "opencode-team-bootstrap",
+      "ticket-pack-builder"
+    ],
+    "recorded_execution_completed_stages": [
+      "agent-prompt-engineering",
+      "opencode-team-bootstrap",
+      "ticket-pack-builder"
+    ],
+    "auto_detected_recorded_stages": [],
+    "pruned_unknown_stages": [],
+    "invalidated_recorded_stages": [],
+    "asserted_completed_stages": [],
+    "legacy_asserted_completed_stages": [],
+    "stage_completion_mode": "legacy_manual_assertion",
+    "follow_on_tracking_mode": "persistent_recorded_state",
+    "follow_on_state_path": ".opencode/meta/repair-follow-on-state.json",
+    "follow_on_tracking_state": {
+      "tracking_mode": "persistent_recorded_state",
+      "assertion_input_mode": "legacy_manual_assertion",
+      "cycle_id": "2026-04-02T14:09:18Z",
+      "created_at": "2026-04-02T14:09:18Z",
+      "last_updated_at": "2026-04-02T14:46:00Z",
+      "process_version": 7,
+      "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+      "repair_basis_path": "/home/pc/projects/Scafforge/livetesting/glitch/diagnosis/20260402-144245",
+      "pruned_unknown_stages": [],
+      "required_stages": [
+        "opencode-team-bootstrap",
+        "agent-prompt-engineering",
+        "ticket-pack-builder"
+      ],
+      "stage_records": {
+        "project-skill-bootstrap": {
+          "stage": "project-skill-bootstrap",
+          "owner": "project-skill-bootstrap",
+          "category": "repo_local_skills",
+          "status": "required_not_run",
+          "reason": "Repo-local skills still contain generic placeholder/model drift that must be regenerated with project-specific content.",
+          "currently_required": false,
+          "last_checked_at": "2026-04-02T14:09:20Z",
+          "last_updated_at": "2026-04-02T14:09:20Z"
+        },
+        "opencode-team-bootstrap": {
+          "stage": "opencode-team-bootstrap",
+          "owner": "opencode-team-bootstrap",
+          "category": "agent_team",
+          "status": "completed",
+          "reason": "Agent or .opencode prompt surfaces still drift from the current workflow contract and must be regenerated.",
+          "currently_required": true,
+          "last_checked_at": "2026-04-02T14:46:00Z",
+          "last_updated_at": "2026-04-02T14:23:07Z",
+          "completion_mode": "recorded_execution",
+          "completed_by": "opencode-team-bootstrap:auto-detected",
+          "summary": "Auto-detected canonical opencode-team-bootstrap repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+          "evidence_paths": [
+            ".opencode/state/artifacts/history/repair/opencode-team-bootstrap-completion.md"
+          ],
+          "first_recorded_at": "2026-04-02T14:23:07Z",
+          "last_recorded_at": "2026-04-02T14:23:07Z"
+        },
+        "agent-prompt-engineering": {
+          "stage": "agent-prompt-engineering",
+          "owner": "agent-prompt-engineering",
+          "category": "prompt_hardening",
+          "status": "completed",
+          "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff.",
+          "currently_required": true,
+          "last_checked_at": "2026-04-02T14:46:00Z",
+          "last_updated_at": "2026-04-02T14:23:07Z",
+          "completion_mode": "recorded_execution",
+          "completed_by": "agent-prompt-engineering:auto-detected",
+          "summary": "Auto-detected canonical agent-prompt-engineering repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+          "evidence_paths": [
+            ".opencode/state/artifacts/history/repair/agent-prompt-engineering-completion.md"
+          ],
+          "first_recorded_at": "2026-04-02T14:23:07Z",
+          "last_recorded_at": "2026-04-02T14:23:07Z"
+        },
+        "ticket-pack-builder": {
+          "stage": "ticket-pack-builder",
+          "owner": "ticket-pack-builder",
+          "category": "ticket_follow_up",
+          "status": "completed",
+          "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
+          "currently_required": true,
+          "last_checked_at": "2026-04-02T14:46:00Z",
+          "last_updated_at": "2026-04-02T14:23:07Z",
+          "completion_mode": "recorded_execution",
+          "completed_by": "ticket-pack-builder:auto-detected",
+          "summary": "Auto-detected canonical ticket-pack-builder repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+          "evidence_paths": [
+            ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+          ],
+          "first_recorded_at": "2026-04-02T14:23:07Z",
+          "last_recorded_at": "2026-04-02T14:23:07Z"
+        }
+      },
+      "history": [
+        {
+          "recorded_at": "2026-04-02T14:23:07Z",
+          "stage": "agent-prompt-engineering",
+          "owner": "agent-prompt-engineering",
+          "category": "prompt_hardening",
+          "status": "completed",
+          "completion_mode": "recorded_execution",
+          "completed_by": "agent-prompt-engineering:auto-detected",
+          "summary": "Auto-detected canonical agent-prompt-engineering repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+          "evidence_paths": [
+            ".opencode/state/artifacts/history/repair/agent-prompt-engineering-completion.md"
+          ],
+          "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+          "cycle_id": "2026-04-02T14:09:18Z"
+        },
+        {
+          "recorded_at": "2026-04-02T14:23:07Z",
+          "stage": "opencode-team-bootstrap",
+          "owner": "opencode-team-bootstrap",
+          "category": "agent_team",
+          "status": "completed",
+          "completion_mode": "recorded_execution",
+          "completed_by": "opencode-team-bootstrap:auto-detected",
+          "summary": "Auto-detected canonical opencode-team-bootstrap repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+          "evidence_paths": [
+            ".opencode/state/artifacts/history/repair/opencode-team-bootstrap-completion.md"
+          ],
+          "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+          "cycle_id": "2026-04-02T14:09:18Z"
+        },
+        {
+          "recorded_at": "2026-04-02T14:23:07Z",
+          "stage": "ticket-pack-builder",
+          "owner": "ticket-pack-builder",
+          "category": "ticket_follow_up",
+          "status": "completed",
+          "completion_mode": "recorded_execution",
+          "completed_by": "ticket-pack-builder:auto-detected",
+          "summary": "Auto-detected canonical ticket-pack-builder repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+          "evidence_paths": [
+            ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+          ],
+          "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+          "cycle_id": "2026-04-02T14:09:18Z"
+        }
+      ]
+    },
+    "deferred_stages": [],
+    "skipped_stages": [],
+    "blocking_reasons": [
+      "Post-repair verification still reports managed workflow or environment findings; handoff must remain blocked until they are resolved."
+    ],
+    "repair_follow_on_outcome": "managed_blocked",
+    "verification_status": {
+      "performed": true,
+      "finding_count": 4,
+      "error_count": 4,
+      "warning_count": 0,
+      "codes": [
+        "EXEC-GODOT-004",
+        "REF-003",
+        "SESSION001",
+        "SESSION003"
+      ],
+      "blocking_codes": [
+        "SESSION001",
+        "SESSION003"
+      ],
+      "source_follow_up_codes": [
+        "EXEC-GODOT-004",
+        "REF-003"
+      ],
+      "process_state_codes": [],
+      "pending_process_verification": true,
+      "verification_basis": "transcript_backed",
+      "basis_requires_causal_replay": true,
+      "repair_basis_path": "/home/pc/projects/Scafforge/livetesting/glitch/diagnosis/20260402-144245",
+      "current_state_clean": false,
+      "causal_regression_verified": false,
+      "source_regression_summary": {
+        "comparison_available": true,
+        "pre_existing_codes": [
+          "EXEC-GODOT-004",
+          "REF-003"
+        ],
+        "persistent_codes": [
+          "EXEC-GODOT-004",
+          "REF-003"
+        ],
+        "resolved_codes": [],
+        "introduced_codes": [],
+        "introduced_critical_codes": []
+      },
+      "contract_failures": [],
+      "contract_passed": true,
+      "verification_passed": false,
+      "supporting_logs": [
+        "/home/pc/projects/Scafforge/livetesting/glitch/glitch1.md"
+      ]
+    },
+    "handoff_allowed": false,
+    "diff_summary": {},
+    "backup_path": null,
+    "repair_escalation_path": ".opencode/state/repair-escalation.json",
+    "remediation_ticket_ids": [
+      "REMED-001",
+      "REMED-002",
+      "REMED-003",
+      "REMED-004",
+      "RELEASE-001"
+    ],
+    "stale_surface_map": {
+      "workflow_tools_and_prompts": {
+        "status": "stable",
+        "surfaces": [],
+        "reason": "Managed workflow tools, prompts, and process docs were refreshed or still show workflow drift."
+      },
+      "repo_local_skills": {
+        "status": "stable",
+        "surfaces": [],
+        "reason": "Repo-local skills need regeneration when scaffold-managed skills were replaced or placeholder/model drift remains."
+      },
+      "agent_team_and_prompts": {
+        "status": "regenerate",
+        "surfaces": [
+          ".opencode/agents/glitch-docs-handoff.md",
+          ".opencode/agents/glitch-implementer.md",
+          ".opencode/agents/glitch-team-leader.md"
+        ],
+        "reason": "Agent-team prompts stay stable unless drift remains after managed repair."
+      },
+      "ticket_graph_and_follow_up": {
+        "status": "ticket_follow_up",
+        "surfaces": [],
+        "reason": "Ticket follow-up is required when source findings still need explicit routing through ticket-pack-builder.",
+        "finding_codes": [
+          "EXEC-GODOT-004"
+        ]
+      },
+      "restart_surfaces": {
+        "status": "stable",
+        "surfaces": [],
+        "reason": "Restart surfaces are derived and must be regenerated whenever managed repair changes workflow state."
+      },
+      "canonical_project_decisions": {
+        "status": "stable",
+        "surfaces": [],
+        "reason": "Managed repair preserves accepted project-scope decisions. Intent-changing drift must route outside routine public repair."
+      }
+    }
+  },
+  "repair_follow_on_state": {
+    "outcome": "managed_blocked",
+    "required_stage_details": [
+      {
+        "stage": "opencode-team-bootstrap",
+        "owner": "opencode-team-bootstrap",
+        "category": "agent_team",
+        "reason": "Agent or .opencode prompt surfaces still drift from the current workflow contract and must be regenerated."
+      },
+      {
+        "stage": "agent-prompt-engineering",
+        "owner": "agent-prompt-engineering",
+        "category": "prompt_hardening",
+        "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff."
+      },
+      {
+        "stage": "ticket-pack-builder",
+        "owner": "ticket-pack-builder",
+        "category": "ticket_follow_up",
+        "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system."
+      }
+    ],
+    "required_stages": [
+      "opencode-team-bootstrap",
+      "agent-prompt-engineering",
+      "ticket-pack-builder"
+    ],
+    "completed_stages": [
+      "agent-prompt-engineering",
+      "opencode-team-bootstrap",
+      "ticket-pack-builder"
+    ],
+    "asserted_completed_stages": [],
+    "legacy_asserted_completed_stages": [],
+    "stage_completion_mode": "legacy_manual_assertion",
+    "tracking_mode": "persistent_recorded_state",
+    "follow_on_state_path": ".opencode/meta/repair-follow-on-state.json",
+    "recorded_stage_state": {
+      "project-skill-bootstrap": {
+        "stage": "project-skill-bootstrap",
+        "owner": "project-skill-bootstrap",
+        "category": "repo_local_skills",
+        "status": "required_not_run",
+        "reason": "Repo-local skills still contain generic placeholder/model drift that must be regenerated with project-specific content.",
+        "currently_required": false,
+        "last_checked_at": "2026-04-02T14:09:20Z",
+        "last_updated_at": "2026-04-02T14:09:20Z"
+      },
+      "opencode-team-bootstrap": {
+        "stage": "opencode-team-bootstrap",
+        "owner": "opencode-team-bootstrap",
+        "category": "agent_team",
+        "status": "completed",
+        "reason": "Agent or .opencode prompt surfaces still drift from the current workflow contract and must be regenerated.",
+        "currently_required": true,
+        "last_checked_at": "2026-04-02T14:46:00Z",
+        "last_updated_at": "2026-04-02T14:23:07Z",
+        "completion_mode": "recorded_execution",
+        "completed_by": "opencode-team-bootstrap:auto-detected",
+        "summary": "Auto-detected canonical opencode-team-bootstrap repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+        "evidence_paths": [
+          ".opencode/state/artifacts/history/repair/opencode-team-bootstrap-completion.md"
+        ],
+        "first_recorded_at": "2026-04-02T14:23:07Z",
+        "last_recorded_at": "2026-04-02T14:23:07Z"
+      },
+      "agent-prompt-engineering": {
+        "stage": "agent-prompt-engineering",
+        "owner": "agent-prompt-engineering",
+        "category": "prompt_hardening",
+        "status": "completed",
+        "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff.",
+        "currently_required": true,
+        "last_checked_at": "2026-04-02T14:46:00Z",
+        "last_updated_at": "2026-04-02T14:23:07Z",
+        "completion_mode": "recorded_execution",
+        "completed_by": "agent-prompt-engineering:auto-detected",
+        "summary": "Auto-detected canonical agent-prompt-engineering repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+        "evidence_paths": [
+          ".opencode/state/artifacts/history/repair/agent-prompt-engineering-completion.md"
+        ],
+        "first_recorded_at": "2026-04-02T14:23:07Z",
+        "last_recorded_at": "2026-04-02T14:23:07Z"
+      },
+      "ticket-pack-builder": {
+        "stage": "ticket-pack-builder",
+        "owner": "ticket-pack-builder",
+        "category": "ticket_follow_up",
+        "status": "completed",
+        "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
+        "currently_required": true,
+        "last_checked_at": "2026-04-02T14:46:00Z",
+        "last_updated_at": "2026-04-02T14:23:07Z",
+        "completion_mode": "recorded_execution",
+        "completed_by": "ticket-pack-builder:auto-detected",
+        "summary": "Auto-detected canonical ticket-pack-builder repair follow-on completion for cycle 2026-04-02T14:09:18Z.",
+        "evidence_paths": [
+          ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+        ],
+        "first_recorded_at": "2026-04-02T14:23:07Z",
+        "last_recorded_at": "2026-04-02T14:23:07Z"
+      }
+    },
+    "pruned_unknown_stages": [],
+    "invalidated_recorded_stages": [],
+    "blocking_reasons": [
+      "Post-repair verification still reports managed workflow or environment findings; handoff must remain blocked until they are resolved."
+    ],
+    "verification_passed": false,
+    "handoff_allowed": false,
+    "current_state_clean": false,
+    "causal_regression_verified": false,
+    "last_updated_at": "2026-04-02T14:46:00Z",
+    "process_version": 7
+  },
+  "diagnosis_pack": {
+    "path": "/home/pc/projects/Scafforge/livetesting/glitch/diagnosis/20260402-144600",
+    "report_count": 4,
+    "manifest": {
+      "generated_at": "2026-04-02T14:46:00Z",
+      "repo_root": "/home/pc/projects/Scafforge/livetesting/glitch",
+      "finding_count": 4,
+      "finding_codes": [
+        "EXEC-GODOT-004",
+        "REF-003",
+        "SESSION001",
+        "SESSION003"
+      ],
+      "source_findings": [
+        {
+          "code": "EXEC-GODOT-004",
+          "severity": "error"
+        },
+        {
+          "code": "REF-003",
+          "severity": "error"
+        }
+      ],
+      "result_state": "validated failures found",
+      "diagnosis_kind": "post_repair_verification",
+      "evidence_mode": "transcript_backed",
+      "audit_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+      "report_files": {
+        "report_1": "01-initial-codebase-review.md",
+        "report_2": "02-scafforge-process-failures.md",
+        "report_3": "03-scafforge-prevention-actions.md",
+        "report_4": "04-live-repo-repair-plan.md"
+      },
+      "ticket_recommendations": [
+        {
+          "id": "REMED-001",
+          "title": "Godot headless validation fails",
+          "description": "Remediate EXEC-GODOT-004 by correcting the validated issue and rerunning the relevant quality checks.",
+          "affected_files": [
+            "project.godot"
+          ],
+          "suggested_fix_approach": "Run a deterministic `godot --headless --path . --quit` validation during audit and keep the repo blocked until it succeeds or returns an explicit environment blocker instead.",
+          "assignee": "implementer",
+          "source_finding_code": "EXEC-GODOT-004",
+          "source_finding_codes": [
+            "EXEC-GODOT-004"
+          ],
+          "severity": "error",
+          "route": "ticket-pack-builder",
+          "repair_class": "generated-repo remediation ticket",
+          "summary": "Run a deterministic `godot --headless --path . --quit` validation during audit and keep the repo blocked until it succeeds or returns an explicit environment blocker instead.",
+          "source_files": [
+            "project.godot"
+          ]
+        },
+        {
+          "id": "REMED-002",
+          "title": "Source imports reference missing local modules",
+          "description": "Remediate REF-003 by correcting the validated issue and rerunning the relevant quality checks.",
+          "affected_files": [
+            ".opencode/node_modules/zod/src/index.ts"
+          ],
+          "suggested_fix_approach": "Audit local relative import paths and fail when the referenced module file is missing.",
+          "assignee": "implementer",
+          "source_finding_code": "REF-003",
+          "source_finding_codes": [
+            "REF-003"
+          ],
+          "severity": "error",
+          "route": "ticket-pack-builder",
+          "repair_class": "generated-repo remediation ticket",
+          "summary": "Audit local relative import paths and fail when the referenced module file is missing.",
+          "source_files": [
+            ".opencode/node_modules/zod/src/index.ts"
+          ]
+        },
+        {
+          "id": "REMED-003",
+          "title": "The supplied session transcript shows a later reasoning failure that current-state-only diagnosis would miss",
+          "description": "Remediate SESSION001 by correcting the validated issue and rerunning the relevant quality checks.",
+          "affected_files": [
+            "glitch1.md"
+          ],
+          "suggested_fix_approach": "When session logs are supplied, audit chronology first: separate stale resume state from later evidence, then explain any final summary that outruns the executed commands before reconciling current repo state.",
+          "assignee": "implementer",
+          "source_finding_code": "SESSION001",
+          "source_finding_codes": [
+            "SESSION001"
+          ],
+          "severity": "error",
+          "route": "ticket-pack-builder",
+          "repair_class": "generated-repo remediation ticket",
+          "summary": "When session logs are supplied, audit chronology first: separate stale resume state from later evidence, then explain any final summary that outruns the executed commands before reconciling current repo state.",
+          "source_files": [
+            "glitch1.md"
+          ]
+        },
+        {
+          "id": "REMED-004",
+          "title": "The supplied session transcript shows the agent searching for workflow bypasses or soft dependency overrides instead of following the lifecycle contract",
+          "description": "Remediate SESSION003 by correcting the validated issue and rerunning the relevant quality checks.",
+          "affected_files": [
+            "glitch1.md"
+          ],
+          "suggested_fix_approach": "Reject unsupported stages and dependency overrides up front, tell the coordinator not to probe alternate transitions or close blocked tickets anyway, and return the contract contradiction as a blocker when the required proof is missing.",
+          "assignee": "implementer",
+          "source_finding_code": "SESSION003",
+          "source_finding_codes": [
+            "SESSION003"
+          ],
+          "severity": "error",
+          "route": "ticket-pack-builder",
+          "repair_class": "generated-repo remediation ticket",
+          "summary": "Reject unsupported stages and dependency overrides up front, tell the coordinator not to probe alternate transitions or close blocked tickets anyway, and return the contract contradiction as a blocker when the required proof is missing.",
+          "source_files": [
+            "glitch1.md"
+          ]
+        }
+      ],
+      "package_work_required_first": false,
+      "recommended_next_step": "subject_repo_source_follow_up",
+      "supporting_logs": [
+        "glitch1.md"
+      ],
+      "verification_kind": "post_repair",
+      "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+      "repair_basis_path": "/home/pc/projects/Scafforge/livetesting/glitch/diagnosis/20260402-144245",
+      "current_state_clean": false,
+      "causal_regression_verified": false,
+      "verification_basis": "transcript_backed",
+      "recommended_ticket_payload": "recommended-ticket-payload.json"
+    }
+  },
+  "remediation_follow_up": {
+    "created_tickets": [
+      "REMED-001",
+      "REMED-002",
+      "REMED-003",
+      "REMED-004",
+      "RELEASE-001"
+    ],
+    "diagnosis_manifest": "diagnosis/20260402-144600/manifest.json"
+  }
+}

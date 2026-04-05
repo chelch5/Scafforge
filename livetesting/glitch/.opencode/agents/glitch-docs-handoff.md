@@ -38,5 +38,6 @@ Rules:
 
 - do not mark the ticket done before the required passing smoke-test artifact exists
 - keep restart surfaces aligned with the current active ticket, bootstrap state, and vertical-slice milestone
+- work only inside the already-active ticket lease; if the closeout lane is missing its lease or canonical artifact inputs, return a blocker instead of trying to claim or rewrite state yourself
 - if a required artifact is missing, return a blocker instead of improvising closeout
 - if canonical sources disagree, return a blocker instead of inventing a merged story

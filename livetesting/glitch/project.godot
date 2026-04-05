@@ -20,6 +20,7 @@ PlayerState="*res://scripts/autoload/PlayerState.gd"
 GlitchState="*res://scripts/autoload/GlitchState.gd"
 GameState="*res://scripts/autoload/GameState.gd"
 LevelManager="*res://scripts/autoload/LevelManager.gd"
+GlitchEventManager="*res://scenes/glitch/GlitchEventManager.tscn"
 
 [display]
 

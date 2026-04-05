@@ -1,10 +1,10 @@
 ---
-description: Verify and refresh Glitch bootstrap readiness for the current repo
+description: Verify and refresh environment bootstrap readiness for the current repo
 agent: glitch-team-leader
 model: minimax-coding-plan/MiniMax-M2.7
 ---
 
-Resolve the current workflow state, inspect bootstrap readiness, and route the environment bootstrap lane if Godot, Android, or verification prerequisites are missing or stale.
+Resolve the current workflow state, inspect bootstrap readiness, and route the environment bootstrap lane if runtime, dependency, or verification prerequisites are missing or stale.
 
 Rules:
 

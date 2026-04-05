@@ -9,6 +9,16 @@ import tempfile
 from typing import Any, Callable
 
 from shared_verifier_types import Finding
+from target_completion import (
+    debug_apk_path,
+    declares_godot_android_target,
+    expected_android_debug_apk_relpath,
+    has_android_export_preset,
+    has_android_support_surfaces,
+    load_manifest,
+    release_lane_started_or_done,
+    repo_claims_completion,
+)
 
 
 @dataclass(frozen=True)
@@ -792,6 +802,60 @@ def audit_godot_execution(root: Path, findings: list[Finding], ctx: ExecutionSur
         rc, output = ctx.run_command([godot_cmd, "--headless", "--path", ".", "--quit"], root, 120)
         if rc != 0:
             _add_execution_finding(findings, ctx, code="EXEC-GODOT-004", severity="error", problem="Godot headless validation fails.", root_cause="The project cannot complete a deterministic headless Godot load pass on the current host, indicating broken project configuration or scripts.", files=[project_file], safer_pattern="Run a deterministic `godot --headless --path . --quit` validation during audit and keep the repo blocked until it succeeds or returns an explicit environment blocker instead.", evidence=_collect_first_error_lines(output), root=root)
+
+    manifest = load_manifest(root)
+    if not declares_godot_android_target(root):
+        return
+    if not (release_lane_started_or_done(manifest) or repo_claims_completion(manifest)):
+        return
+
+    missing_surfaces: list[str] = []
+    if not has_android_export_preset(root):
+        missing_surfaces.append("export_presets.cfg Android preset")
+    if not has_android_support_surfaces(root):
+        missing_surfaces.append("repo-local android support surfaces")
+    apk_path = debug_apk_path(root)
+    if apk_path is None:
+        missing_surfaces.append(f"debug APK proof at {expected_android_debug_apk_relpath(root)}")
+    if not missing_surfaces:
+        return
+
+    manifest_tickets = manifest.get("tickets") if isinstance(manifest.get("tickets"), list) else []
+    open_ticket_count = sum(
+        1
+        for ticket in manifest_tickets
+        if isinstance(ticket, dict)
+        and str(ticket.get("resolution_state", "open")).strip() in {"open", "reopened"}
+        and str(ticket.get("status", "")).strip() != "done"
+    )
+    files = [ctx.normalize_path(project_file, root)]
+    export_presets = root / "export_presets.cfg"
+    if export_presets.exists():
+        files.append(ctx.normalize_path(export_presets, root))
+    android_dir = root / "android"
+    if android_dir.exists():
+        files.append(ctx.normalize_path(android_dir, root))
+    build_dir = root / "build" / "android"
+    if build_dir.exists():
+        files.append(ctx.normalize_path(build_dir, root))
+    ctx.add_finding(
+        findings,
+        Finding(
+            code="EXEC-GODOT-005",
+            severity="error",
+            problem="Android-targeted Godot repo still lacks export surfaces or debug APK proof while the repo claims release progress or completion.",
+            root_cause="The repo treats Android delivery as complete enough to close or advance release-facing work, but the canonical export preset, repo-local Android support surfaces, or debug APK artifact proof are still missing.",
+            files=list(dict.fromkeys(files)),
+            safer_pattern="Keep Godot Android repos blocked on explicit export surfaces plus debug APK proof. Once release work starts or the repo claims completion, require `export_presets.cfg`, non-placeholder `android/` support surfaces, and a debug APK at the canonical build path.",
+            evidence=[
+                f"open_ticket_count = {open_ticket_count}",
+                f"release_lane_started_or_done = {release_lane_started_or_done(manifest)}",
+                f"repo_claims_completion = {repo_claims_completion(manifest)}",
+                f"missing Android delivery surfaces: {', '.join(missing_surfaces)}",
+            ],
+            provenance="script",
+        ),
+    )
 
 
 def audit_java_android_execution(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:

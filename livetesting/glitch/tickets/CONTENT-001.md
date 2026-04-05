@@ -29,6 +29,7 @@ todo
 
 - resolution_state: open
 - verification_state: suspect
+- finding_source: None
 - source_ticket_id: None
 - source_mode: None
 

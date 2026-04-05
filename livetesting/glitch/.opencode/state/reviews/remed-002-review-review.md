@@ -1,0 +1,137 @@
+# REMED-002 Code Review Artifact
+
+## Ticket
+- **ID**: REMED-002
+- **Title**: Godot headless validation fails
+- **Stage**: review
+- **Status**: review
+- **Finding source**: EXEC-GODOT-004 (headless validation failure)
+- **Source ticket**: CORE-002 (QA FAIL — 3 blockers)
+
+---
+
+## Review Summary
+
+**Verdict**: PASS — All 3 CORE-002 QA blockers resolved, WARNING gone from headless output, no new correctness issues or regressions introduced.
+
+---
+
+## Files Reviewed
+
+| File | Path |
+|------|------|
+| project.godot | `/home/pc/projects/Scafforge/livetesting/glitch/project.godot` |
+| HUD.gd | `/home/pc/projects/Scafforge/livetesting/glitch/scripts/ui/HUD.gd` |
+| HUD.tscn | `/home/pc/projects/Scafforge/livetesting/glitch/scenes/ui/HUD.tscn` |
+| TelegraphEffect.tscn | `/home/pc/projects/Scafforge/livetesting/glitch/scenes/glitch/TelegraphEffect.tscn` |
+| GlitchEventManager.tscn | `/home/pc/projects/Scafforge/livetesting/glitch/scenes/glitch/GlitchEventManager.tscn` |
+| PlayerController.gd | `/home/pc/projects/Scafforge/livetesting/glitch/scripts/player/PlayerController.gd` |
+| Implementation artifact | `.opencode/state/artifacts/history/remed-002/implementation/2026-04-02T10-14-35-378Z-implementation.md` |
+
+---
+
+## Validation Evidence
+
+**Command**: `godot --headless --log-file /tmp/glitch-godot-headless.log --path . --quit`
+
+**Output**:
+```
+[PlayerState] Initialized - Health: 3
+[GlitchState] Initialized - Corruption level: 0
+[GameState] Initialized - Current level: 
+[LevelManager] Initialized
+[GlitchPhysicsModifier] Initialized
+[GlitchHazardModifier] Initialized
+[GlitchRoomModifier] Initialized
+[GlitchEventManager] Initialized
+[GlitchEventManager] Connected to GlitchState signals
+[PlayerController] Connected to GlitchPhysicsModifier
+[HUD] Connecting to GlitchState.glitch_warning
+[HUD] Successfully connected to glitch_warning signal
+```
+
+**Pre-fix WARNING**: `WARNING: [PlayerController] GlitchPhysicsModifier not found - physics glitches will have no effect` — **NO LONGER PRESENT**
+
+---
+
+## CORE-002 QA Blocker Resolution
+
+### Blocker 1: GlitchEventManager never initialized
+**Status**: ✅ FIXED
+
+- `project.godot` now registers `GlitchEventManager="*res://scenes/glitch/GlitchEventManager.tscn"` as autoload (line 23)
+- Headless output confirms: `[GlitchEventManager] Initialized`
+- `GlitchEventManager` also confirms signal connection: `[GlitchEventManager] Connected to GlitchState signals`
+
+### Blocker 2: GlitchPhysicsModifier not accessible at runtime
+**Status**: ✅ FIXED (via fallback chain)
+
+- `PlayerController` uses a fallback chain: first tries `/root/GlitchPhysicsModifier`, then falls back to `/root/GlitchEventManager.get_physics_modifier()`
+- With GlitchEventManager registered as a scene autoload, the scene tree is properly instantiated and `get_physics_modifier()` returns the modifier via `$PhysicsModifier`
+- Headless output confirms: `[PlayerController] Connected to GlitchPhysicsModifier`
+- **Note**: Direct path `/root/GlitchPhysicsModifier` is still null (node is a child of GlitchEventManager scene, not a root autoload), but the fallback path via `GlitchEventManager.get_physics_modifier()` works correctly. This is a pre-existing design pattern in PlayerController, not a new issue introduced by this fix.
+
+### Blocker 3: Telegraph UI not connected to glitch_warning signal
+**Status**: ✅ FIXED
+
+- `HUD.gd` `_ready()` correctly connects to `GlitchState.connect("glitch_warning", Callable(self, "_on_glitch_warning"))` using Godot 4 `Callable()` syntax
+- `_on_glitch_warning(event_id: String)` properly instances `TelegraphEffect.tscn` (which exists and has a `WarningLabel` child), sets 2-second timer cleanup, and handles the node lifecycle
+- Headless output confirms: `[HUD] Successfully connected to glitch_warning signal`
+
+---
+
+## Correctness Analysis
+
+### project.godot
+- `GlitchEventManager` autoload registration is correctly placed after `LevelManager` in the `[autoload]` section
+- Scene path format `*res://scenes/glitch/GlitchEventManager.tscn` is correct for Godot 4.x scene autoloads
+- No duplicate autoload entries
+
+### HUD.gd
+- Uses Godot 4 `Callable()` syntax for signal connection — correct
+- Uses `timer.timeout.connect(_on_telegraph_timeout.bind(telegraph))` for deferred cleanup — correct Godot 4 pattern
+- `TelegraphEffect.tscn` is correctly preloaded and has a `WarningLabel` child node at the expected path
+- `is_instance_valid(telegraph)` guard in `_on_telegraph_timeout` prevents double-free — good defensive coding
+- Signal handler parameter is typed as `String` matching `GlitchState.glitch_warning` signal signature
+
+### HUD.tscn
+- `script = ExtResource("1")` correctly attaches `HUD.gd`
+- Format 2 scene is valid for Godot 4.x (downward compatible)
+
+### Architectural Observation
+- GlitchEventManager changed from script autoload to scene autoload, properly instantiating its child modifier nodes
+- PlayerController fallback path was already designed to handle this pattern; the fix makes it functional
+
+---
+
+## Findings
+
+### Finding: Latent fragility in PlayerController modifier access path
+**Severity**: Low (not a blocker)
+**Location**: `scripts/player/PlayerController.gd`, line 56
+**Detail**: Direct path `/root/GlitchPhysicsModifier` returns null because the modifier is a child of GlitchEventManager scene. PlayerController's fallback chain correctly handles this via `GlitchEventManager.get_physics_modifier()`. However, if that fallback were removed, the issue would regress silently. This is pre-existing architecture, not introduced by this fix.
+
+---
+
+## Regression Risks
+
+**Low**: The change converts GlitchEventManager from a bare script to a scene with child nodes. This is a standard Godot pattern and the scene structure is minimal (one root node + 3 modifier child nodes). No other autoloads depend on GlitchEventManager's internal structure in a way that could break.
+
+---
+
+## Validation Gaps
+
+None significant. The telegraph UI is structurally connected; whether it fires correctly at gameplay runtime depends on GlitchEventManager actually emitting the glitch_warning signal when events trigger — this is a CONTENT-001 concern, not a REMED-002 scope concern. Headless validation confirms the signal connection is wired correctly.
+
+---
+
+## Blocker or Approval Signal
+
+**Approval Signal**: PASS — all CORE-002 QA blockers resolved, WARNING gone from headless output, no new correctness issues introduced, autoload registration correct for Godot 4.x, HUD signal wiring correct.
+
+**Recommendation**: Move REMED-002 to `qa` stage for QA validation, then `smoke-test` and `closeout`.
+
+---
+
+*Review artifact generated: 2026-04-02*
+*Reviewer: glitch-reviewer-code*

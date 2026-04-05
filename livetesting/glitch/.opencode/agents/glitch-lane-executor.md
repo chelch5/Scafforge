@@ -32,22 +32,16 @@ permission:
     "pwd": allow
     "ls *": allow
     "find *": allow
+    "rg *": allow
     "cat *": allow
     "head *": allow
     "tail *": allow
     "git status*": allow
     "git diff*": allow
-    "npm *": allow
-    "pnpm *": allow
-    "yarn *": allow
-    "bun *": allow
-    "node *": allow
-    "python *": allow
-    "pytest *": allow
+    "godot *": allow
     "uv *": allow
-    "cargo *": allow
-    "go *": allow
-    "make *": allow
+    "python3 *": allow
+    "unzip *": allow
     "rm *": deny
     "git reset *": deny
     "git clean *": deny
@@ -72,11 +66,12 @@ Rules:
 - confirm the assigned ticket's `approved_plan` is already true in workflow-state before implementation begins
 - if the assigned ticket is the bootstrap/setup lane, use `environment_bootstrap` for prerequisite installation and verification
 - write the full implementation artifact with `artifact_write` and then register it with `artifact_register` before handing work to review
-- before creating the implementation artifact, run at minimum:
-  - a compile or syntax check on all new or modified source files
-  - an import check for the primary module
-  - the project test suite if it exists
+- before creating the implementation artifact, run the smallest Godot command that proves the touched surface still works:
+  - gameplay, scene, autoload, or config edits: `godot --headless --log-file /tmp/glitch-godot-headless.log --path . --quit`
+  - import-sensitive resource or reference edits: `godot --headless --log-file /tmp/glitch-godot-import.log --path . --import`
+  - Android export or release-readiness tickets: the exact ticket-scoped export command plus `unzip -l` proof when an APK is expected
 - include the command output in the implementation artifact
 - do not create an implementation artifact for code that fails these checks
+- if Android export work is blocked on missing SDK, templates, or signing prerequisites, record that blocker explicitly instead of swapping to unrelated generic test commands
 - stop when you hit a blocker instead of improvising around missing requirements
 - do not advance ticket stage or release the lane yourself; return evidence to the team leader for workflow transitions

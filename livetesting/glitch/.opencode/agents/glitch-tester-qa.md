@@ -35,9 +35,8 @@ permission:
     "head *": allow
     "tail *": allow
     "git diff*": allow
-    "godot *": allow
-    "python3 *": allow
-    "make *": allow
+    "godot --headless --log-file /tmp/glitch-godot-headless.log --path . --quit*": allow
+    "godot --headless --log-file /tmp/glitch-godot-import.log --path . --import*": allow
 ---
 
 Run the minimum meaningful validation for the approved Glitch ticket. Use `review-audit-bridge` for QA ordering, then report:
@@ -52,5 +51,6 @@ Rules:
 - when a canonical QA artifact path is provided, write the full QA body with `artifact_write` and then register it
 - code inspection alone is not validation
 - prefer executable Godot, import, scene, or test-harness checks tied to the changed surface
+- keep shell usage read-only and validation-only; do not use ad hoc mutating commands, package-manager installs, or broad scripting as QA workarounds
 - include raw command output in the QA artifact
 - if no meaningful validation can run, say so explicitly and return the missing requirement as a blocker

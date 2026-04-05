@@ -70,6 +70,7 @@ const SMOKE_COMMAND_PATTERNS = [
   /\byarn\s+(?:test|check)\b/i,
   /\bbun\s+run\s+(?:test|check)\b/i,
   /\bgodot(?:4)?\s+--headless\b/i,
+  // Gradle smoke detection includes `(?:\./gradlew|gradle)\s+test`.
   /\b(?:\.\/gradlew|gradle)\s+test\b/i,
   /\bmvn\s+test\b/i,
   /\bdotnet\s+test\b/i,

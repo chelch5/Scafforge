@@ -58,8 +58,8 @@ This repository is the scaffolded operating framework for building that game. It
 
 Once the Godot project exists, tickets should converge on commands in this family:
 
-- `godot --headless --path . --quit`
-- `godot --headless --path . --import`
+- `godot --headless --log-file /tmp/glitch-godot-headless.log --path . --quit`
+- `godot --headless --log-file /tmp/glitch-godot-import.log --path . --import`
 - repo-local smoke commands for specific scenes, systems, or test harnesses when a ticket defines them
 
 Until the engine project is created, missing runtime prerequisites should be surfaced as blockers rather than worked around with fabricated PASS artifacts.

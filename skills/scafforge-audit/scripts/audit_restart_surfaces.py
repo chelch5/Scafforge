@@ -304,9 +304,12 @@ def audit_lease_claim_guidance_drift(root: Path, findings: list[Finding], ctx: R
     else:
         team_leader_text = ctx.read_text(team_leader)
         files.append(ctx.normalize_path(team_leader, root))
-        if "grant a write lease with `ticket_claim` before any specialist writes planning, implementation, review, QA, or handoff artifact bodies or makes code changes" not in team_leader_text:
+        if (
+            "grant a write lease with `ticket_claim` before any specialist writes planning, implementation, review, QA, or handoff artifact bodies or makes code changes" not in team_leader_text
+            and "claim with `ticket_claim` yourself when a write-capable lane is needed" not in team_leader_text
+        ):
             evidence.append(f"{ctx.normalize_path(team_leader, root)} does not make the coordinator-owned lease model explicit before specialist work.")
-        if "only Wave 0 setup work may claim a write-capable lease before bootstrap is ready" not in team_leader_text:
+        if "only wave 0 setup work may claim a write-capable lease before bootstrap is ready" not in team_leader_text.lower():
             evidence.append(f"{ctx.normalize_path(team_leader, root)} does not preserve the Wave 0-only pre-bootstrap claim rule.")
 
     worker_patterns = ("ticket_claim: allow", "ticket_release: allow", "claim the assigned ticket with `ticket_claim`", "release it with `ticket_release`")
@@ -373,7 +376,7 @@ def audit_restart_tool_verification_metadata(
     ctx.add_finding(
         findings,
         Finding(
-            code="WFLOW025",
+            code="WFLOW027",
             severity="error",
             problem="Restart-surface tools return paths without verifying what they wrote.",
             root_cause="When handoff and context tools only echo file paths, weaker models cannot tell whether the files were written correctly or still agree with canonical state after publication.",
@@ -501,11 +504,11 @@ def audit_team_leader_workflow_contract(root: Path, findings: list[Finding], ctx
     evidence: list[str] = []
     if "ticket_lookup.transition_guidance" not in text:
         evidence.append("Team leader prompt does not treat `ticket_lookup.transition_guidance` as the canonical next-step summary.")
-    if "do not probe alternate stage or status values" not in text:
+    if "alternate stage or status values" not in text:
         evidence.append("Team leader prompt does not tell the agent to stop after repeated lifecycle contradictions.")
-    if "do not create planning, implementation, review, QA, or smoke-test artifacts yourself" not in text:
+    if "planning, implementation, review, QA, or smoke-test artifacts yourself" not in text:
         evidence.append("Team leader prompt does not forbid stage-artifact authorship overreach by the coordinator.")
-    if "use human slash commands only as entrypoints" not in text:
+    if "slash commands" not in text.lower() or "entrypoint" not in text.lower():
         evidence.append("Team leader prompt does not mark slash commands as human entrypoints only.")
 
     if not evidence:

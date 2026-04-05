@@ -1,6 +1,6 @@
 ---
 name: model-operating-profile
-description: Apply the MiniMax 2.7 operating profile selected for Glitch when shaping prompts, delegation packets, and evidence requests.
+description: Apply the `Weak-tier evidence-first profile` operating profile for the selected downstream models. Use when shaping prompts, delegation briefs, review asks, or evidence requests for this repo.
 ---
 
 # Model Operating Profile
@@ -37,12 +37,12 @@ Required rules:
 - keep each ask focused on one bounded goal at a time
 - stop on blockers instead of guessing or silently filling gaps
 
-Preferred output shape:
+When ambiguity is likely, prefer a concrete output shape such as:
 
 ```text
 Goal
 Constraints
-Required evidence
-Expected artifact
+Expected output
+Evidence required
 Blockers
 ```

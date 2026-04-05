@@ -455,6 +455,9 @@ async function readText(path: string, fallback = ""): Promise<string> { try { re
 export async function writeJson(path: string, value: unknown): Promise<void> { await mkdir(dirname(path), { recursive: true }); await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf-8") }
 export async function appendJsonl(path: string, value: unknown): Promise<void> { await mkdir(dirname(path), { recursive: true }); await appendFile(path, `${JSON.stringify(value)}\n`, "utf-8") }
 export async function writeText(path: string, value: string): Promise<void> { await mkdir(dirname(path), { recursive: true }); await writeFile(path, value, "utf-8") }
+// Canonical bootstrap-first examples:
+// - tickets/manifest.json not found. Run bootstrap first.
+// - .opencode/state/workflow-state.json not found. Run bootstrap first.
 export async function ensureRequiredFile(path: string, label: string): Promise<void> {
   try {
     await stat(path)
@@ -876,7 +879,7 @@ export function extractArtifactVerdict(content: string): ArtifactVerdictInspecti
   for (const line of lines) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    const labeled = trimmed.match(/^(?:overall(?:\s+result)?|verdict|result|approval\s+signal)\s*:\s*(?:\*\*)?\s*(pass|fail|reject|approved?|blocked?|blocker)\b/i)
+    const labeled = trimmed.match(/^(?:[-*]\s*)?(?:\*\*|__)?(?:overall(?:\s+result)?|verdict|result|approval\s+signal)(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s*(pass|fail|reject|approved?|blocked?|blocker)(?:\*\*|__)?\b/i)
     if (labeled) {
       const verdict = normalizeArtifactVerdictToken(labeled[1] || "")
       if (verdict) return { verdict, verdict_unclear: false, matched_line: trimmed }
@@ -1129,7 +1132,7 @@ export function markTicketReopened(ticket: Ticket, workflow: WorkflowState, reas
   ticket.status = "todo"
   ticket.stage = "planning"
   ticket.resolution_state = "reopened"
-  ticket.verification_state = "suspect"
+  ticket.verification_state = "invalidated"
   const state = ensureTicketWorkflowState(workflow, ticket.id)
   state.reopen_count += 1
   state.needs_reverification = true

@@ -1,6 +1,6 @@
 ---
 name: project-context
-description: Load the Glitch product brief, workflow contract, and current queue state before planning, implementation, review, or handoff work.
+description: Load the local source-of-truth docs for this repo. Use when an OpenCode agent needs the project mission, canonical brief, workflow, ticket state, or current operating status before planning, implementing, reviewing, or handing off work.
 ---
 
 # Project Context
@@ -14,12 +14,13 @@ Read these first:
 3. `docs/spec/CANONICAL-BRIEF.md`
 4. `docs/process/workflow.md`
 5. `docs/process/agent-catalog.md`
-6. `tickets/manifest.json`
-7. `tickets/BOARD.md`
+6. `docs/process/model-matrix.md`
+7. `tickets/README.md`
+8. `tickets/manifest.json`
+9. `tickets/BOARD.md`
 
-Keep these facts in mind:
+Project focus:
 
-- Glitch is a Godot Android 2D action-platformer.
-- The first product milestone is a playable Startup Sector vertical slice.
-- Fair, readable glitch telegraphing is a core requirement, not optional polish.
-- Bootstrap readiness is still missing until `environment_bootstrap` proves the toolchain.
+- This repo is a Godot Android 2D platformer focused on a readable, fair first playable vertical slice.
+- Treat movement feel, glitch telegraphing, checkpoint flow, and touch readability as correctness-critical, not polish.
+- Treat `docs/spec/CANONICAL-BRIEF.md`, `tickets/manifest.json`, and `.opencode/state/workflow-state.json` as the canonical truth hierarchy before using any derived restart prose.

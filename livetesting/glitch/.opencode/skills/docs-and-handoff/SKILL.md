@@ -1,6 +1,6 @@
 ---
 name: docs-and-handoff
-description: Maintain Glitch restart surfaces, board views, and closeout-facing docs so the repo stays immediately continuable.
+description: Maintain START-HERE, context snapshots, and closeout artifacts for this repo. Use when a ticket changes state, a session is ending, or autonomous work needs a concise human and agent resume surface.
 ---
 
 # Docs And Handoff
@@ -11,12 +11,5 @@ Keep these artifacts fresh:
 
 - `START-HERE.md`
 - `.opencode/state/context-snapshot.md`
-- `.opencode/state/latest-handoff.md`
 - `tickets/BOARD.md`
 - `tickets/manifest.json`
-
-Rules:
-
-- derive handoff state from canonical manifest and workflow-state, not memory
-- keep the read order stable and truthful
-- when Glitch scope changes, make sure the handoff still points to the current vertical-slice target and active dependency chain

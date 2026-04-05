@@ -37,6 +37,7 @@ Read:
 Identify:
 - What features/capabilities need to be built
 - What infrastructure/setup is required
+- What declared target platforms require dedicated export or release-proof lanes
 - What the acceptance criteria are
 - Which areas are blocked on unresolved decisions
 - The backlog readiness signal
@@ -98,6 +99,29 @@ Wave 0 must always include one bootstrap/setup ticket that covers:
 - initial canonical brief and scaffold sanity checks
 
 Treat that ticket as the default first active ticket unless the canonical brief proves a different setup sequence is required.
+
+### Mandatory target-completion tickets for declared Tier 1 release targets
+
+If the canonical brief or bootstrap provenance declares a Tier 1 release target, create dedicated tickets for the target-completion path instead of burying that work inside generic polish.
+
+For Godot Android repos, always create:
+
+- `ANDROID-001` in lane `android-export`
+- `RELEASE-001` in lane `release-readiness`
+
+`ANDROID-001` acceptance must cover:
+
+- `export_presets.cfg` exists with an Android preset
+- repo-local `android/` support surfaces exist and are non-placeholder
+- the canonical Android export command is recorded in the ticket and repo-local skills
+
+`RELEASE-001` acceptance must cover:
+
+- `godot --headless --path . --export-debug Android build/android/<project-slug>-debug.apk` or the exact resolved Godot-binary equivalent succeeds
+- the APK exists at `build/android/<project-slug>-debug.apk`
+- `unzip -l` confirms Android manifest plus compiled classes or resources content
+
+Do not let a generic `POLISH-001`, UX, or validation ticket stand in for Android export or release proof ownership.
 
 ### Handling unresolved decisions
 
@@ -165,6 +189,7 @@ Before leaving this skill, confirm all of these are true:
 - `tickets/BOARD.md` exists and is clearly derived from the manifest instead of carrying extra machine state
 - every `tickets/<id>.md` file exists for the manifest entries created or changed in this run
 - `.opencode/state/workflow-state.json` names the foreground ticket from the manifest and seeds `bootstrap.status: "missing"` on fresh scaffolds until bootstrap proof exists
+- any declared Tier 1 target platform has its canonical export or release-proof lane present in the manifest before handoff
 - follow-up tickets preserve `source_ticket_id`, `follow_up_ticket_ids`, and `source_mode` linkage when the work came from diagnosis, repair, or reverification evidence
 - remediation tickets preserve `finding_source` so downstream review, QA, and closeout can rerun the original failing check
 

@@ -29,6 +29,7 @@ qa
 
 - resolution_state: open
 - verification_state: suspect
+- finding_source: None
 - source_ticket_id: None
 - source_mode: None
 
@@ -38,7 +39,9 @@ SETUP-001, SYSTEM-001, CORE-001
 
 ## Follow-up Tickets
 
-None
+- REMED-002
+- REMED-003
+- REMED-001
 
 ## Decision Blockers
 

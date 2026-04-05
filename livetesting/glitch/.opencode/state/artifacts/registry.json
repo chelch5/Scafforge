@@ -207,6 +207,60 @@
       "summary": "QA artifact for CORE-002: Validation checks completed. FAIL - GlitchEventManager never initialized, GlitchPhysicsModifier not accessible at runtime, telegraph UI not connected.",
       "created_at": "2026-04-01T21:23:54.304Z",
       "trust_state": "current"
+    },
+    {
+      "ticket_id": "REMED-002",
+      "kind": "plan",
+      "path": ".opencode/state/artifacts/history/remed-002/planning/2026-04-02T10-06-06-149Z-plan.md",
+      "stage": "planning",
+      "summary": "Plan for REMED-002: Register GlitchEventManager as autoload in project.godot, wire GlitchState.glitch_warning signal to TelegraphEffect in HUD, verify modifier access paths. Fixes EXEC-GODOT-004 by making GlitchPhysicsModifier accessible at runtime.",
+      "created_at": "2026-04-02T10:06:06.149Z",
+      "trust_state": "current"
+    },
+    {
+      "ticket_id": "REMED-002",
+      "kind": "review",
+      "path": ".opencode/state/artifacts/history/remed-002/plan-review/2026-04-02T10-10-32-025Z-review.md",
+      "stage": "plan_review",
+      "summary": "Plan review PASS — all three CORE-002 QA blockers addressed with concrete steps. Autoload registration approach is sound for Godot 4.x. One validation gap noted: HUD.gd must be created during implementation for telegraph wiring.",
+      "created_at": "2026-04-02T10:10:32.025Z",
+      "trust_state": "current"
+    },
+    {
+      "ticket_id": "REMED-002",
+      "kind": "implementation",
+      "path": ".opencode/state/artifacts/history/remed-002/implementation/2026-04-02T10-14-35-378Z-implementation.md",
+      "stage": "implementation",
+      "summary": "Implementation of REMED-002: Added GlitchEventManager autoload, created HUD.gd with telegraph signal handler, attached HUD.gd to HUD.tscn. WARNING no longer appears in headless validation.",
+      "created_at": "2026-04-02T10:14:35.378Z",
+      "trust_state": "current"
+    },
+    {
+      "ticket_id": "REMED-002",
+      "kind": "review",
+      "path": ".opencode/state/artifacts/history/remed-002/review/2026-04-02T10-22-50-708Z-review.md",
+      "stage": "review",
+      "summary": "Code review PASS — all 3 CORE-002 QA blockers resolved, WARNING gone from headless output",
+      "created_at": "2026-04-02T10:22:50.708Z",
+      "trust_state": "current"
+    },
+    {
+      "ticket_id": "REMED-002",
+      "kind": "review",
+      "path": ".opencode/state/artifacts/history/remed-002/review/2026-04-02T10-26-44-234Z-review.md",
+      "stage": "review",
+      "summary": "Verdict: PASS — All 3 CORE-002 QA blockers resolved, WARNING gone from headless output, no new correctness issues or regressions introduced.",
+      "created_at": "2026-04-02T10:26:44.234Z",
+      "trust_state": "current"
+    },
+    {
+      "ticket_id": "ANDROID-001",
+      "kind": "plan",
+      "path": ".opencode/state/artifacts/history/android-001/planning/2026-04-02T15-00-22-444Z-plan.md",
+      "stage": "planning",
+      "summary": "Planning artifact for ANDROID-001: Creates export_presets.cfg, repo-local android/ surfaces, and canonical export command. Raises explicit godot-lib.aar availability blocker before QA can complete.",
+      "created_at": "2026-04-02T15:00:22.444Z",
+      "trust_state": "current"
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "version": 3,
   "project": "Glitch",
-  "active_ticket": "CORE-002",
+  "active_ticket": "ANDROID-001",
   "tickets": [
     {
       "id": "SETUP-001",
@@ -300,7 +300,11 @@
       ],
       "resolution_state": "open",
       "verification_state": "suspect",
-      "follow_up_ticket_ids": []
+      "follow_up_ticket_ids": [
+        "REMED-002",
+        "REMED-003",
+        "REMED-001"
+      ]
     },
     {
       "id": "CORE-003",
@@ -406,6 +410,217 @@
       "resolution_state": "open",
       "verification_state": "suspect",
       "follow_up_ticket_ids": []
+    },
+    {
+      "id": "REMED-002",
+      "title": "Godot headless validation fails",
+      "wave": 4,
+      "lane": "remediation",
+      "parallel_safe": false,
+      "overlap_risk": "low",
+      "stage": "review",
+      "status": "review",
+      "depends_on": [],
+      "summary": "BLOCKER: ticket_update tool cannot extract verdict from review artifact despite PASS being clearly stated. Manual verification confirms PASS. Review artifact at .opencode/state/reviews/remed-002-review-review.md has \"**Verdict**: PASS\" in Review Summary section. Tool reports \"verdict_unclear: true\" even with labeled verdict field. Requires team-lead intervention to advance.",
+      "acceptance": [
+        "The validated finding `EXEC-GODOT-004` no longer reproduces.",
+        "Current quality checks rerun with evidence tied to the fix approach: Run a deterministic `godot --headless --path . --quit` validation during audit and keep the repo blocked until it succeeds or returns an explicit environment blocker instead."
+      ],
+      "decision_blockers": [
+        "Split scope delegated to follow-up ticket ANDROID-001. Keep the parent open and non-foreground until the child work lands.",
+        "Split scope delegated to follow-up ticket REMED-004. Keep the parent open and non-foreground until the child work lands."
+      ],
+      "artifacts": [
+        {
+          "kind": "plan",
+          "path": ".opencode/state/artifacts/history/remed-002/planning/2026-04-02T10-06-06-149Z-plan.md",
+          "stage": "planning",
+          "summary": "Plan for REMED-002: Register GlitchEventManager as autoload in project.godot, wire GlitchState.glitch_warning signal to TelegraphEffect in HUD, verify modifier access paths. Fixes EXEC-GODOT-004 by making GlitchPhysicsModifier accessible at runtime.",
+          "created_at": "2026-04-02T10:06:06.149Z",
+          "trust_state": "current"
+        },
+        {
+          "kind": "review",
+          "path": ".opencode/state/artifacts/history/remed-002/plan-review/2026-04-02T10-10-32-025Z-review.md",
+          "stage": "plan_review",
+          "summary": "Plan review PASS — all three CORE-002 QA blockers addressed with concrete steps. Autoload registration approach is sound for Godot 4.x. One validation gap noted: HUD.gd must be created during implementation for telegraph wiring.",
+          "created_at": "2026-04-02T10:10:32.025Z",
+          "trust_state": "current"
+        },
+        {
+          "kind": "implementation",
+          "path": ".opencode/state/artifacts/history/remed-002/implementation/2026-04-02T10-14-35-378Z-implementation.md",
+          "stage": "implementation",
+          "summary": "Implementation of REMED-002: Added GlitchEventManager autoload, created HUD.gd with telegraph signal handler, attached HUD.gd to HUD.tscn. WARNING no longer appears in headless validation.",
+          "created_at": "2026-04-02T10:14:35.378Z",
+          "trust_state": "current"
+        },
+        {
+          "kind": "review",
+          "path": ".opencode/state/artifacts/history/remed-002/review/2026-04-02T10-22-50-708Z-review.md",
+          "stage": "review",
+          "summary": "Code review PASS — all 3 CORE-002 QA blockers resolved, WARNING gone from headless output",
+          "created_at": "2026-04-02T10:22:50.708Z",
+          "trust_state": "superseded",
+          "superseded_at": "2026-04-02T10:26:44.234Z",
+          "superseded_by": ".opencode/state/artifacts/history/remed-002/review/2026-04-02T10-26-44-234Z-review.md",
+          "supersession_reason": "Replaced by newer review/review artifact."
+        },
+        {
+          "kind": "review",
+          "path": ".opencode/state/artifacts/history/remed-002/review/2026-04-02T10-26-44-234Z-review.md",
+          "stage": "review",
+          "summary": "Verdict: PASS — All 3 CORE-002 QA blockers resolved, WARNING gone from headless output, no new correctness issues or regressions introduced.",
+          "created_at": "2026-04-02T10:26:44.234Z",
+          "trust_state": "current"
+        }
+      ],
+      "resolution_state": "open",
+      "verification_state": "suspect",
+      "finding_source": "EXEC-GODOT-004",
+      "source_ticket_id": "CORE-002",
+      "follow_up_ticket_ids": [
+        "ANDROID-001",
+        "REMED-004"
+      ],
+      "source_mode": "split_scope"
+    },
+    {
+      "id": "REMED-003",
+      "title": "Source imports reference missing local modules",
+      "wave": 4,
+      "lane": "remediation",
+      "parallel_safe": false,
+      "overlap_risk": "low",
+      "stage": "planning",
+      "status": "todo",
+      "depends_on": [],
+      "summary": "Remediate REF-003 by correcting the validated issue and rerunning the relevant quality checks. Affected surfaces: .opencode/node_modules/zod/src/index.ts.",
+      "acceptance": [
+        "The validated finding `REF-003` no longer reproduces.",
+        "Current quality checks rerun with evidence tied to the fix approach: Audit local relative import paths and fail when the referenced module file is missing."
+      ],
+      "decision_blockers": [],
+      "artifacts": [],
+      "resolution_state": "open",
+      "verification_state": "suspect",
+      "finding_source": "REF-003",
+      "source_ticket_id": "CORE-002",
+      "follow_up_ticket_ids": [],
+      "source_mode": "split_scope"
+    },
+    {
+      "id": "REMED-001",
+      "title": "Godot headless validation fails",
+      "wave": 5,
+      "lane": "remediation",
+      "parallel_safe": false,
+      "overlap_risk": "low",
+      "stage": "planning",
+      "status": "todo",
+      "depends_on": [],
+      "summary": "Remediate EXEC-GODOT-004 by correcting the validated issue and rerunning the relevant quality checks. Affected surfaces: project.godot.",
+      "acceptance": [
+        "The validated finding `EXEC-GODOT-004` no longer reproduces.",
+        "Current quality checks rerun with evidence tied to the fix approach: Run a deterministic `godot --headless --path . --quit` validation during audit and keep the repo blocked until it succeeds or returns an explicit environment blocker instead."
+      ],
+      "decision_blockers": [],
+      "artifacts": [],
+      "resolution_state": "open",
+      "verification_state": "suspect",
+      "finding_source": "EXEC-GODOT-004",
+      "source_ticket_id": "CORE-002",
+      "follow_up_ticket_ids": [],
+      "source_mode": "split_scope"
+    },
+    {
+      "id": "ANDROID-001",
+      "title": "Create Android export surfaces",
+      "wave": 21,
+      "lane": "android-export",
+      "parallel_safe": false,
+      "overlap_risk": "medium",
+      "stage": "planning",
+      "status": "todo",
+      "depends_on": [],
+      "summary": "Create and validate the repo-local Android export surfaces for this Godot Android target. This includes an Android preset in `export_presets.cfg`, non-placeholder repo-local `android/` support surfaces, and a recorded canonical export command for downstream release work.",
+      "acceptance": [
+        "`export_presets.cfg` exists and defines an Android export preset.",
+        "The repo-local `android/` support surfaces exist and are non-placeholder.",
+        "The canonical Android export command is recorded in this ticket and the repo-local skill pack."
+      ],
+      "decision_blockers": [
+        "Split scope delegated to follow-up ticket RELEASE-001. Keep the parent open and non-foreground until the child work lands."
+      ],
+      "artifacts": [
+        {
+          "kind": "plan",
+          "path": ".opencode/state/artifacts/history/android-001/planning/2026-04-02T15-00-22-444Z-plan.md",
+          "stage": "planning",
+          "summary": "Planning artifact for ANDROID-001: Creates export_presets.cfg, repo-local android/ surfaces, and canonical export command. Raises explicit godot-lib.aar availability blocker before QA can complete.",
+          "created_at": "2026-04-02T15:00:22.444Z",
+          "trust_state": "current"
+        }
+      ],
+      "resolution_state": "open",
+      "verification_state": "suspect",
+      "finding_source": "WFLOW025",
+      "source_ticket_id": "REMED-002",
+      "follow_up_ticket_ids": [
+        "RELEASE-001"
+      ],
+      "source_mode": "split_scope"
+    },
+    {
+      "id": "RELEASE-001",
+      "title": "Build Android debug APK",
+      "wave": 24,
+      "lane": "release-readiness",
+      "parallel_safe": false,
+      "overlap_risk": "medium",
+      "stage": "planning",
+      "status": "todo",
+      "depends_on": [
+        "ANDROID-001"
+      ],
+      "summary": "Produce and validate the canonical debug APK for this Android target at `build/android/glitch-debug.apk` using the repo's resolved Godot binary and Android export pipeline.",
+      "acceptance": [
+        "`godot --headless --path . --export-debug Android build/android/glitch-debug.apk` succeeds or the exact resolved Godot binary equivalent is recorded with the same arguments.",
+        "The APK exists at `build/android/glitch-debug.apk`.",
+        "`unzip -l build/android/glitch-debug.apk` shows Android manifest and classes/resources content."
+      ],
+      "decision_blockers": [],
+      "artifacts": [],
+      "resolution_state": "open",
+      "verification_state": "suspect",
+      "finding_source": "WFLOW025",
+      "source_ticket_id": "ANDROID-001",
+      "follow_up_ticket_ids": [],
+      "source_mode": "split_scope"
+    },
+    {
+      "id": "REMED-004",
+      "title": "The supplied session transcript shows the agent searching for workflow bypasses or soft dependency overrides instead of following the lifecycle contract",
+      "wave": 10,
+      "lane": "remediation",
+      "parallel_safe": false,
+      "overlap_risk": "low",
+      "stage": "planning",
+      "status": "todo",
+      "depends_on": [],
+      "summary": "Remediate SESSION003 by correcting the validated issue and rerunning the relevant quality checks. Affected surfaces: glitch1.md.",
+      "acceptance": [
+        "The validated finding `SESSION003` no longer reproduces.",
+        "Current quality checks rerun with evidence tied to the fix approach: Reject unsupported stages and dependency overrides up front, tell the coordinator not to probe alternate transitions or close blocked tickets anyway, and return the contract contradiction as a blocker when the required proof is missing."
+      ],
+      "decision_blockers": [],
+      "artifacts": [],
+      "resolution_state": "open",
+      "verification_state": "suspect",
+      "finding_source": "SESSION003",
+      "source_ticket_id": "REMED-002",
+      "follow_up_ticket_ids": [],
+      "source_mode": "split_scope"
     }
   ]
 }

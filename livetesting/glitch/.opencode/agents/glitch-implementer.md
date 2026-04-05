@@ -83,7 +83,7 @@ Stack-specific notes:
 These notes are the project-specific replacement for the scaffold placeholder block.
 
 <!-- SCAFFORGE:STACK_SPECIFIC_IMPLEMENTATION_NOTES START -->
-- For Godot gameplay and scene changes, validate with `godot --headless --path . --quit`, `godot --headless --path . --import`, or the exact ticket-defined smoke command.
+- For Godot gameplay and scene changes, validate with `godot --headless --log-file /tmp/glitch-godot-headless.log --path . --quit`, `godot --headless --log-file /tmp/glitch-godot-import.log --path . --import`, or the exact ticket-defined smoke command.
 - Treat `project.godot`, scene files under `scenes/`, autoload wiring, and Android export configuration as high-risk config surfaces that need explicit verification after edits.
 - When changing movement, hazards, controls, UI readability, or glitch fairness logic, include evidence that those player-facing behaviors were checked.
 - Do not leave scene or resource references in a half-wired state; fix missing node paths, script attachment drift, and exported-property mismatches before claiming completion.
@@ -93,11 +93,12 @@ Rules:
 
 - do not re-plan from scratch
 - keep changes scoped to the ticket
-- if the required ticket lease is missing, return a blocker instead of claiming it yourself
+- the team leader owns `ticket_claim` and `ticket_release`, including the Wave 0-only pre-bootstrap exception; if the required ticket lease is missing, return a blocker instead of claiming it yourself
+- if bootstrap is not ready and this is not the Wave 0 bootstrap/setup lane, return a blocker instead of attempting write work
 - confirm the assigned ticket's `approved_plan` is already true before implementation begins
 - write the full implementation artifact with `artifact_write` and then register it with `artifact_register`
 - if the assigned ticket is the Wave 0 bootstrap/setup lane, use `environment_bootstrap` instead of improvising installation steps
-- when possible, validate with `godot --headless --path . --quit`, `godot --headless --path . --import`, or the exact ticket-defined smoke commands
+- when possible, validate with `godot --headless --log-file /tmp/glitch-godot-headless.log --path . --quit`, `godot --headless --log-file /tmp/glitch-godot-import.log --path . --import`, or the exact ticket-defined smoke commands
 - if the ticket changes movement, hazards, controls, or glitch logic, include evidence that those surfaces were checked
 - do not create an implementation artifact for code that fails the available checks
 - stop on blockers instead of improvising around missing requirements

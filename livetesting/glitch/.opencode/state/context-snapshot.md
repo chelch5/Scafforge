@@ -6,36 +6,37 @@ Glitch
 
 ## Active Ticket
 
-- ID: CORE-002
-- Title: Build the glitch event system with fairness guardrails
-- Stage: qa
-- Status: qa
+- ID: ANDROID-001
+- Title: Create Android export surfaces
+- Stage: planning
+- Status: todo
 - Resolution: open
 - Verification: suspect
-- Approved plan: yes
+- Approved plan: no
 - Needs reverification: no
-- Open split children: none
+- Open split children: RELEASE-001
 
 ## Bootstrap
 
 - status: ready
 - last_verified_at: 2026-04-01T19:46:00.276Z
 - proof_artifact: .opencode/state/artifacts/history/setup-001/bootstrap/2026-04-01T19-46-00-274Z-environment-bootstrap.md
+- blockers: none
 
 ## Process State
 
 - process_version: 7
-- pending_process_verification: false
+- pending_process_verification: true
 - parallel_mode: sequential
-- state_revision: 97
+- state_revision: 105
 
 ## Repair Follow-On
 
-- outcome: clean
-- required: no
+- outcome: managed_blocked
+- required: yes
 - next_required_stage: none
-- verification_passed: true
-- last_updated_at: Not yet recorded.
+- verification_passed: false
+- last_updated_at: 2026-04-02T14:46:00Z
 
 ## Pivot State
 
@@ -52,12 +53,8 @@ Glitch
 
 ## Lane Leases
 
-- CORE-002: glitch-team-leader (gameplay-systems)
+- ANDROID-001: glitch-team-leader (android-export)
 
 ## Recent Artifacts
 
-- plan: .opencode/state/artifacts/history/core-002/planning/2026-04-01T20-53-20-558Z-plan.md (planning) - Planning artifact for CORE-002: Defines three glitch event categories (Physics/Hazard/Room Logic), two-phase telegraph system (warning + active), layered warning surfaces, modifier overlay pattern for separation of concerns, curated room-tagged glitch pools, integration with existing GlitchState autoload via signals, and validation plan covering headless startup, resource load, and modifier separation.
-- implementation: .opencode/state/artifacts/history/core-002/implementation/2026-04-01T21-01-24-030Z-implementation.md (implementation) - Implemented glitch event system with telegraph phase, modifier overlay pattern, and 11 example events across 3 categories (PHYSICS/HAZARD/ROOM_LOGIC). All classes registered successfully with Godot.
-- review: .opencode/state/artifacts/history/core-002/review/2026-04-01T21-06-05-655Z-review.md (review) [superseded] - Review for CORE-002: Two blockers found - modifier integration gap (PlayerController never queries modifiers) and GlitchState.glitch_warning signal never emitted. Implementation creates structure but does not affect gameplay or warn players.
-- review: .opencode/state/artifacts/history/core-002/review/2026-04-01T21-18-36-460Z-review.md (review) - Updated review for CORE-002: Both blockers resolved. Physics modifier queries verified (25 refs), emit_warning() signal chain complete. PASS.
-- qa: .opencode/state/artifacts/history/core-002/qa/2026-04-01T21-23-54-304Z-qa.md (qa) - QA artifact for CORE-002: Validation checks completed. FAIL - GlitchEventManager never initialized, GlitchPhysicsModifier not accessible at runtime, telegraph UI not connected.
+- plan: .opencode/state/artifacts/history/android-001/planning/2026-04-02T15-00-22-444Z-plan.md (planning) - Planning artifact for ANDROID-001: Creates export_presets.cfg, repo-local android/ surfaces, and canonical export command. Raises explicit godot-lib.aar availability blocker before QA can complete.

@@ -1,6 +1,6 @@
 ---
 name: review-audit-bridge
-description: Keep Glitch code review, security review, and QA passes evidence-based, gameplay-aware, and stage-safe.
+description: Keep code review, security review, and QA passes evidence-based and stage-aware for this repo. Use when a ticket already has an approved plan and implementation evidence and a review lane needs structured findings.
 ---
 
 # Review Audit Bridge
@@ -8,22 +8,15 @@ description: Keep Glitch code review, security review, and QA passes evidence-ba
 Before starting a code review, security review, or QA pass, call `skill_ping` with `skill_id: "review-audit-bridge"` and `scope: "project"`.
 
 Use this skill after implementation exists. It bridges the review and QA lanes so they return evidence-backed findings instead of vague commentary.
+This is a generated repo-local skill. It may recommend remediation or reverification follow-up, but it does not become the canonical ticket owner by itself.
 
 Prioritize findings in this order:
 
 1. correctness bugs
-2. gameplay regressions
+2. behavior regressions
 3. security or trust issues
 4. missing tests or validation gaps
 5. maintainability concerns
-
-Glitch-specific review focus:
-
-- movement-feel regressions
-- glitch telegraphing gaps
-- unreadable hazard or platform states
-- mobile control usability issues
-- scene/script coupling that will make later zone expansion brittle
 
 Return:
 
@@ -41,8 +34,16 @@ Return:
 Rules:
 
 - findings come first; do not open with praise or a summary
-- reference exact files, commands, or artifact paths
-- if the approved plan, implementation artifact, diff context, or required validation is missing, return a blocker instead of inferring correctness
+- reference exact files, diffs, commands, or artifact paths
+- if the approved plan, implementation artifact, or required validation context is missing, return a blocker instead of inferring correctness
 - use `ticket-execution` for lifecycle order and `project-context` for canonical repo docs
-- recommend follow-up tickets only when current evidence justifies them
+- run the repo's build command, lint or type-check command, and reference-integrity checks when those quality gates exist for the active stack; include the raw command output in the review or QA artifact
+- if any required build, lint, type-check, or reference-integrity command fails, the verdict must be FAIL and the artifact must name the failing command plus the concrete error
+- when reviewing or validating a remediation ticket with `finding_source`, rerun the original finding-producing command first, confirm the specific failure is gone, then check that adjacent quality gates still pass
+- write any workflow-failure explanation or review retrospective to the repo-local process-log path described in `references/review-contract.md`
+- recommend follow-up tickets only when current evidence justifies them, and route canonical ticket creation through the repo's guarded ticket workflow
 - do not claim that repo files changed
+
+## References
+
+- `references/review-contract.md`

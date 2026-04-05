@@ -1,8 +1,9 @@
 {
-  "active_ticket": "CORE-002",
-  "stage": "qa",
-  "status": "qa",
-  "approved_plan": true,
+  "active_ticket": "ANDROID-001",
+  "stage": "planning",
+  "status": "todo",
+  "approved_plan": false,
+  "bootstrap_blockers": [],
   "ticket_state": {
     "SETUP-001": {
       "approved_plan": true,
@@ -23,21 +24,61 @@
       "approved_plan": true,
       "reopen_count": 0,
       "needs_reverification": false
+    },
+    "REMED-002": {
+      "approved_plan": true,
+      "reopen_count": 0,
+      "needs_reverification": false
+    },
+    "REMED-003": {
+      "approved_plan": false,
+      "reopen_count": 0,
+      "needs_reverification": false
+    },
+    "REMED-001": {
+      "approved_plan": false,
+      "reopen_count": 0,
+      "needs_reverification": false
+    },
+    "ANDROID-001": {
+      "approved_plan": false,
+      "reopen_count": 0,
+      "needs_reverification": false
+    },
+    "RELEASE-001": {
+      "approved_plan": false,
+      "reopen_count": 0,
+      "needs_reverification": false
+    },
+    "REMED-004": {
+      "approved_plan": false,
+      "reopen_count": 0,
+      "needs_reverification": false
     }
   },
   "process_version": 7,
-  "process_last_changed_at": null,
-  "process_last_change_summary": null,
-  "pending_process_verification": false,
+  "process_last_changed_at": "2026-04-02T14:09:18Z",
+  "process_last_change_summary": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+  "pending_process_verification": true,
   "parallel_mode": "sequential",
   "repair_follow_on": {
-    "outcome": "clean",
-    "required_stages": [],
-    "completed_stages": [],
-    "blocking_reasons": [],
-    "verification_passed": true,
-    "handoff_allowed": true,
-    "last_updated_at": null,
+    "outcome": "managed_blocked",
+    "required_stages": [
+      "opencode-team-bootstrap",
+      "agent-prompt-engineering",
+      "ticket-pack-builder"
+    ],
+    "completed_stages": [
+      "agent-prompt-engineering",
+      "opencode-team-bootstrap",
+      "ticket-pack-builder"
+    ],
+    "blocking_reasons": [
+      "Post-repair verification still reports managed workflow or environment findings; handoff must remain blocked until they are resolved."
+    ],
+    "verification_passed": false,
+    "handoff_allowed": false,
+    "last_updated_at": "2026-04-02T14:46:00Z",
     "process_version": 7
   },
   "bootstrap": {
@@ -48,22 +89,14 @@
   },
   "lane_leases": [
     {
-      "ticket_id": "CORE-002",
-      "lane": "gameplay-systems",
+      "ticket_id": "ANDROID-001",
+      "lane": "android-export",
       "owner_agent": "glitch-team-leader",
       "write_lock": true,
-      "claimed_at": "2026-04-01T21:17:07.205Z",
-      "expires_at": "2026-04-01T23:17:07.205Z",
-      "allowed_paths": [
-        ".opencode/state/",
-        "tickets/",
-        "project.godot",
-        "scenes/",
-        "scripts/",
-        "resources/",
-        "assets/"
-      ]
+      "claimed_at": "2026-04-02T14:57:45.391Z",
+      "expires_at": "2026-04-02T16:57:45.391Z",
+      "allowed_paths": []
     }
   ],
-  "state_revision": 97
+  "state_revision": 105
 }

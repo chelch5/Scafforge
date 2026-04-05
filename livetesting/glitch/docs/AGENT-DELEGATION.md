@@ -24,12 +24,20 @@ It should match the actual agent files in `.opencode/agents/` and the current wo
 7. `glitch-team-leader` runs `smoke_test`, advances lifecycle state, and routes closeout
 8. `glitch-docs-handoff` synchronizes restart surfaces when closeout is ready
 
+Implementation proof expectations:
+
+- gameplay, scene, autoload, and project-config lanes should use canonical Godot headless validation before review
+- Android export ownership belongs to `ANDROID-001`; debug APK proof belongs to `RELEASE-001`
+- release-readiness work should use the repo's canonical export command and `unzip -l` proof rather than generic test-suite substitutes
+
 ## Ownership Rules
 
 - only the team leader advances ticket lifecycle state
+- only the team leader owns `ticket_claim` and `ticket_release`
 - only the owning specialist or tool writes the stage artifact body
 - read-only specialists return findings, blockers, or evidence; they do not mutate repo-tracked files
 - write-capable specialists work only inside a claimed lease and only for the bounded lane they were assigned
+- when `ticket_lookup.transition_guidance.recovery_action` is present, the team leader follows that recovery path before any normal forward stage transition
 
 ## Escalation Path
 
@@ -40,6 +48,12 @@ Stop and escalate to the operator when:
 - the same ticket advance fails three times with the same blocker or error signature
 - a dependency ticket is blocked and prevents the active ticket from moving
 - no single legal next move can be resolved from `ticket_lookup.transition_guidance` and the canonical artifacts
+
+Failure routing:
+
+- review or QA failure returns the ticket to implementation with the failing artifact evidence
+- smoke-test failures caused by host/runtime setup route back through `environment_bootstrap` before product-code diagnosis continues
+- bootstrap failures with repeated identical command traces escalate as managed workflow defects instead of raw shell workarounds
 
 ## Restart Procedure
 

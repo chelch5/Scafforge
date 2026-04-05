@@ -1,25 +1,33 @@
 import { tool } from "@opencode-ai/plugin"
 import {
   describeAllowedStatusesForStage,
+  ensureRequiredFile,
+  extractArtifactVerdict,
   getTicket,
   hasArtifact,
   hasPendingRepairFollowOn,
   hasReviewArtifact,
   isPlanApprovedForTicket,
+  isBlockingArtifactVerdict,
   loadManifest,
   loadWorkflowState,
+  latestArtifact,
   markTicketDone,
   nextRepairFollowOnStage,
   repairFollowOnBlockingReason,
+  readArtifactContent,
   resolveRequestedTicketProgress,
   saveWorkflowBundle,
   setPlanApprovedForTicket,
   syncWorkflowSelection,
+  ticketsManifestPath,
   ticketsNeedingProcessVerification,
   validateLifecycleStageStatus,
   validateImplementationArtifactEvidence,
   validateQaArtifactEvidence,
   validateSmokeTestArtifactEvidence,
+  workflowStatePath,
+  rootPath,
 } from "../lib/workflow"
 
 export default tool({
@@ -34,6 +42,9 @@ export default tool({
     pending_process_verification: tool.schema.boolean().describe("Whether post-migration backlog verification is still pending.").optional(),
   },
   async execute(args) {
+    // Lifecycle contract: do not route a ticket to implementation before it passes through plan_review.
+    await ensureRequiredFile(ticketsManifestPath(rootPath()), "tickets/manifest.json")
+    await ensureRequiredFile(workflowStatePath(rootPath()), ".opencode/state/workflow-state.json")
     const manifest = await loadManifest()
     const workflow = await loadWorkflowState()
     if (hasPendingRepairFollowOn(workflow)) {
@@ -78,7 +89,29 @@ export default tool({
     }
 
     if (targetStage === "implementation" && ticket.stage !== "plan_review") {
-      throw new Error(`Cannot move ${ticket.id} to implementation before it passes through plan_review.`)
+      if (ticket.stage !== "review" && ticket.stage !== "qa") {
+        throw new Error(
+          `Cannot move ${ticket.id} to implementation from ${ticket.stage}. Allowed source stages: plan_review (normal path), review or qa (on FAIL verdict only).`,
+        )
+      }
+      const backwardStage = ticket.stage as "review" | "qa"
+      if (!hasArtifact(ticket, { stage: backwardStage })) {
+        throw new Error(
+          `Cannot route ${ticket.id} back to implementation from ${backwardStage} — no ${backwardStage} artifact exists. Produce an artifact with a blocking verdict before routing backward.`,
+        )
+      }
+      const latestBackwardArtifact = latestArtifact(ticket, { stage: backwardStage, trust_state: "current" })
+      const backwardVerdict = extractArtifactVerdict(await readArtifactContent(latestBackwardArtifact))
+      if (backwardVerdict.verdict_unclear) {
+        throw new Error(
+          `Cannot route ${ticket.id} back to implementation from ${backwardStage} — artifact verdict is unclear. Inspect the artifact manually before routing backward.`,
+        )
+      }
+      if (!isBlockingArtifactVerdict(backwardVerdict.verdict)) {
+        throw new Error(
+          `Cannot route ${ticket.id} back to implementation from ${backwardStage} — latest artifact verdict is ${backwardVerdict.verdict}, not a blocking verdict. Only FAIL verdicts permit backward routing.`,
+        )
+      }
     }
 
     if (targetStage === "review") {
@@ -92,10 +125,29 @@ export default tool({
       throw new Error("Cannot move to qa before at least one review artifact exists.")
     }
 
+    if (targetStage === "qa") {
+      const latestReview = latestArtifact(ticket, { stage: "review", trust_state: "current" })
+      const reviewVerdict = extractArtifactVerdict(await readArtifactContent(latestReview))
+      if (reviewVerdict.verdict_unclear) {
+        throw new Error("Cannot advance past review — latest artifact verdict is unclear. Inspect the review artifact manually before advancing.")
+      }
+      if (isBlockingArtifactVerdict(reviewVerdict.verdict)) {
+        throw new Error("Cannot advance past review — latest artifact shows FAIL verdict. Route back to implementation.")
+      }
+    }
+
     if (targetStage === "smoke-test") {
       const qaBlocker = await validateQaArtifactEvidence(ticket)
       if (qaBlocker) {
         throw new Error(qaBlocker)
+      }
+      const latestQaArtifact = latestArtifact(ticket, { stage: "qa", trust_state: "current" })
+      const qaVerdict = extractArtifactVerdict(await readArtifactContent(latestQaArtifact))
+      if (qaVerdict.verdict_unclear) {
+        throw new Error("Cannot advance past qa — latest artifact verdict is unclear. Inspect the QA artifact manually before advancing.")
+      }
+      if (isBlockingArtifactVerdict(qaVerdict.verdict)) {
+        throw new Error("Cannot advance past qa — latest artifact shows FAIL verdict. Route back to implementation.")
       }
     }
 
@@ -114,6 +166,9 @@ export default tool({
     }
     if (args.summary) ticket.summary = args.summary
     if (args.activate) manifest.active_ticket = ticket.id
+    if (targetStage === "implementation" && ticket.verification_state !== "invalidated") {
+      ticket.verification_state = "suspect"
+    }
 
     if (typeof args.approved_plan === "boolean") {
       setPlanApprovedForTicket(workflow, ticket.id, args.approved_plan)

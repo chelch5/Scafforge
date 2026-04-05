@@ -29,6 +29,7 @@ done
 
 - resolution_state: done
 - verification_state: trusted
+- finding_source: None
 - source_ticket_id: None
 - source_mode: None
 

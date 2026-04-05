@@ -1,0 +1,23 @@
+[
+  {
+    "id": "REMED-001",
+    "title": "The supplied session transcript shows the coordinator writing specialist stage artifacts directly instead of routing those outputs through the owning lane or deterministic tool",
+    "description": "Remediate SESSION005 by correcting the validated issue and rerunning the relevant quality checks.",
+    "affected_files": [
+      "spinnerapk1.md"
+    ],
+    "suggested_fix_approach": "Keep the coordinator on routing and stage transitions only: specialist lanes own planning, implementation, review, and QA artifacts, while `smoke_test` alone owns smoke-test proof.",
+    "assignee": "implementer",
+    "source_finding_code": "SESSION005",
+    "source_finding_codes": [
+      "SESSION005"
+    ],
+    "severity": "error",
+    "route": "ticket-pack-builder",
+    "repair_class": "generated-repo remediation ticket",
+    "summary": "Keep the coordinator on routing and stage transitions only: specialist lanes own planning, implementation, review, and QA artifacts, while `smoke_test` alone owns smoke-test proof.",
+    "source_files": [
+      "spinnerapk1.md"
+    ]
+  }
+]

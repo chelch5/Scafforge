@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-04-02T12:39:07Z",
+  "repo_root": "/home/pc/projects/spinner",
+  "finding_count": 1,
+  "finding_codes": [
+    "SESSION005"
+  ],
+  "source_findings": [],
+  "result_state": "validated failures found",
+  "diagnosis_kind": "initial_diagnosis",
+  "evidence_mode": "transcript_backed",
+  "audit_package_commit": "missing_provenance",
+  "report_files": {
+    "report_1": "01-initial-codebase-review.md",
+    "report_2": "02-scafforge-process-failures.md",
+    "report_3": "03-scafforge-prevention-actions.md",
+    "report_4": "04-live-repo-repair-plan.md"
+  },
+  "ticket_recommendations": [
+    {
+      "id": "REMED-001",
+      "title": "The supplied session transcript shows the coordinator writing specialist stage artifacts directly instead of routing those outputs through the owning lane or deterministic tool",
+      "description": "Remediate SESSION005 by correcting the validated issue and rerunning the relevant quality checks.",
+      "affected_files": [
+        "spinnerapk1.md"
+      ],
+      "suggested_fix_approach": "Keep the coordinator on routing and stage transitions only: specialist lanes own planning, implementation, review, and QA artifacts, while `smoke_test` alone owns smoke-test proof.",
+      "assignee": "implementer",
+      "source_finding_code": "SESSION005",
+      "source_finding_codes": [
+        "SESSION005"
+      ],
+      "severity": "error",
+      "route": "ticket-pack-builder",
+      "repair_class": "generated-repo remediation ticket",
+      "summary": "Keep the coordinator on routing and stage transitions only: specialist lanes own planning, implementation, review, and QA artifacts, while `smoke_test` alone owns smoke-test proof.",
+      "source_files": [
+        "spinnerapk1.md"
+      ]
+    }
+  ],
+  "package_work_required_first": false,
+  "recommended_next_step": "subject_repo_source_follow_up",
+  "supporting_logs": [
+    "spinnerapk1.md"
+  ],
+  "recommended_ticket_payload": "recommended-ticket-payload.json"
+}

@@ -1,6 +1,12 @@
 {
-  "managed_repo": "/home/pc/.codex",
-  "template_commit": "missing_provenance",
+  "managed_repo": "/home/pc/projects/Scafforge",
+  "template_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+  "template_commit_result": {
+    "success": true,
+    "commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+    "reason": null,
+    "detail": null
+  },
   "template_asset_root": "skills/repo-scaffold-factory/assets/project-template",
   "project_name": "Glitch",
   "project_slug": "glitch",
@@ -13,6 +19,7 @@
     "implementer": "MiniMax-M2.7",
     "utility": "MiniMax-M2.7"
   },
+  "stack_label": "godot-android-2d",
   "bootstrap_steps": [
     "repo-scaffold-factory/render-full-scaffold"
   ],
@@ -67,5 +74,675 @@
       ".opencode/state/handoffs"
     ]
   },
-  "repair_history": []
+  "repair_history": [
+    {
+      "repair_id": "2026-04-02T08:06:57Z",
+      "repaired_at": "2026-04-02T08:06:57Z",
+      "repair_type": "managed-surface-replacement",
+      "repair_kind": "deterministic-workflow-engine-replacement",
+      "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+      "summary": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "surfaces_replaced": [
+        "opencode.jsonc",
+        ".opencode/tools",
+        ".opencode/lib",
+        ".opencode/plugins",
+        ".opencode/commands",
+        "scaffold-managed .opencode/skills",
+        "docs/process/workflow.md",
+        "docs/process/tooling.md",
+        "docs/process/model-matrix.md",
+        "docs/process/git-capability.md",
+        "START-HERE.md managed block"
+      ],
+      "replaced_surfaces": [
+        "opencode.jsonc",
+        ".opencode/tools",
+        ".opencode/lib",
+        ".opencode/plugins",
+        ".opencode/commands",
+        "scaffold-managed .opencode/skills",
+        "docs/process/workflow.md",
+        "docs/process/tooling.md",
+        "docs/process/model-matrix.md",
+        "docs/process/git-capability.md",
+        "START-HERE.md managed block"
+      ],
+      "diff_summary": {
+        "files_added": [],
+        "files_removed": [],
+        "files_modified": [
+          ".opencode/commands/bootstrap-check.md",
+          ".opencode/commands/kickoff.md",
+          ".opencode/commands/resume.md",
+          ".opencode/lib/workflow.ts",
+          ".opencode/plugins/invocation-tracker.ts",
+          ".opencode/plugins/session-compactor.ts",
+          ".opencode/plugins/stage-gate-enforcer.ts",
+          ".opencode/plugins/ticket-sync.ts",
+          ".opencode/skills/docs-and-handoff/SKILL.md",
+          ".opencode/skills/local-git-specialist/SKILL.md",
+          ".opencode/skills/model-operating-profile/SKILL.md",
+          ".opencode/skills/project-context/SKILL.md",
+          ".opencode/skills/repo-navigation/SKILL.md",
+          ".opencode/skills/review-audit-bridge/SKILL.md",
+          ".opencode/skills/stack-standards/SKILL.md",
+          ".opencode/skills/ticket-execution/SKILL.md",
+          ".opencode/tools/context_snapshot.ts",
+          ".opencode/tools/environment_bootstrap.ts",
+          ".opencode/tools/handoff_publish.ts",
+          ".opencode/tools/smoke_test.ts",
+          ".opencode/tools/ticket_claim.ts",
+          ".opencode/tools/ticket_create.ts",
+          ".opencode/tools/ticket_lookup.ts",
+          ".opencode/tools/ticket_update.ts",
+          "START-HERE.md",
+          "docs/process/model-matrix.md",
+          "docs/process/workflow.md"
+        ]
+      },
+      "audit_findings_addressed": [
+        "WFLOW006",
+        "WFLOW012",
+        "WFLOW013",
+        "read-only-shell-mutation-loophole"
+      ],
+      "verification_passed": false,
+      "verification_findings": [
+        "WFLOW024",
+        "read-only-shell-mutation-loophole",
+        "SKILL001",
+        "CYCLE001",
+        "EXEC-GODOT-004",
+        "REF-003",
+        "WFLOW012",
+        "WFLOW006"
+      ],
+      "remediation_ticket_ids": [
+        "REMED-002",
+        "REMED-003"
+      ],
+      "process_version_before": 7,
+      "process_version_after": 7,
+      "backup_path": null,
+      "project_specific_follow_up": [
+        ".opencode/skills",
+        ".opencode/agents",
+        "docs/process/agent-catalog.md"
+      ],
+      "verification_summary": {
+        "performed": true,
+        "finding_count": 8,
+        "error_count": 6,
+        "warning_count": 2,
+        "codes": [
+          "WFLOW024",
+          "read-only-shell-mutation-loophole",
+          "SKILL001",
+          "CYCLE001",
+          "EXEC-GODOT-004",
+          "REF-003",
+          "WFLOW012",
+          "WFLOW006"
+        ],
+        "blocking_codes": [
+          "WFLOW024",
+          "read-only-shell-mutation-loophole",
+          "SKILL001",
+          "CYCLE001",
+          "WFLOW012",
+          "WFLOW006"
+        ],
+        "source_follow_up_codes": [
+          "EXEC-GODOT-004",
+          "REF-003"
+        ],
+        "process_state_codes": [],
+        "pending_process_verification": true,
+        "verification_basis": "current_state_only",
+        "basis_requires_causal_replay": false,
+        "repair_basis_path": "/home/pc/projects/Scafforge/livetesting/glitch/diagnosis/20260401-215051",
+        "current_state_clean": false,
+        "causal_regression_verified": false,
+        "source_regression_summary": {
+          "comparison_available": false,
+          "pre_existing_codes": [],
+          "persistent_codes": [],
+          "resolved_codes": [],
+          "introduced_codes": [
+            "EXEC-GODOT-004",
+            "REF-003"
+          ],
+          "introduced_critical_codes": []
+        },
+        "contract_failures": [
+          "placeholder_local_skills_survived_refresh"
+        ],
+        "contract_passed": false,
+        "verification_passed": false,
+        "supporting_logs": []
+      }
+    },
+    {
+      "repair_id": "2026-04-02T09:40:35Z",
+      "repaired_at": "2026-04-02T09:40:35Z",
+      "repair_type": "managed-surface-replacement",
+      "repair_kind": "deterministic-workflow-engine-replacement",
+      "repair_package_commit": "missing_provenance",
+      "summary": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "surfaces_replaced": [
+        "opencode.jsonc",
+        ".opencode/tools",
+        ".opencode/lib",
+        ".opencode/plugins",
+        ".opencode/commands",
+        "scaffold-managed .opencode/skills",
+        "docs/process/workflow.md",
+        "docs/process/tooling.md",
+        "docs/process/model-matrix.md",
+        "docs/process/git-capability.md",
+        "START-HERE.md managed block"
+      ],
+      "replaced_surfaces": [
+        "opencode.jsonc",
+        ".opencode/tools",
+        ".opencode/lib",
+        ".opencode/plugins",
+        ".opencode/commands",
+        "scaffold-managed .opencode/skills",
+        "docs/process/workflow.md",
+        "docs/process/tooling.md",
+        "docs/process/model-matrix.md",
+        "docs/process/git-capability.md",
+        "START-HERE.md managed block"
+      ],
+      "diff_summary": {
+        "files_added": [
+          ".opencode/commands/bootstrap-check.md:Zone.Identifier",
+          ".opencode/commands/issue-triage.md:Zone.Identifier",
+          ".opencode/commands/join-lanes.md:Zone.Identifier",
+          ".opencode/commands/kickoff.md:Zone.Identifier",
+          ".opencode/commands/plan-wave.md:Zone.Identifier",
+          ".opencode/commands/resume.md:Zone.Identifier",
+          ".opencode/commands/reverify-ticket.md:Zone.Identifier",
+          ".opencode/commands/run-lane.md:Zone.Identifier",
+          ".opencode/lib/workflow.ts:Zone.Identifier",
+          ".opencode/plugins/invocation-tracker.ts:Zone.Identifier",
+          ".opencode/plugins/session-compactor.ts:Zone.Identifier",
+          ".opencode/plugins/stage-gate-enforcer.ts:Zone.Identifier",
+          ".opencode/plugins/ticket-sync.ts:Zone.Identifier",
+          ".opencode/plugins/tool-guard.ts:Zone.Identifier",
+          ".opencode/skills/docs-and-handoff/SKILL.md:Zone.Identifier",
+          ".opencode/skills/isolation-guidance/SKILL.md:Zone.Identifier",
+          ".opencode/skills/local-git-specialist/SKILL.md:Zone.Identifier",
+          ".opencode/skills/model-operating-profile/SKILL.md:Zone.Identifier",
+          ".opencode/skills/project-context/SKILL.md:Zone.Identifier",
+          ".opencode/skills/repo-navigation/SKILL.md:Zone.Identifier",
+          ".opencode/skills/research-delegation/SKILL.md:Zone.Identifier",
+          ".opencode/skills/review-audit-bridge/SKILL.md:Zone.Identifier",
+          ".opencode/skills/review-audit-bridge/references/review-contract.md:Zone.Identifier",
+          ".opencode/skills/stack-standards/SKILL.md:Zone.Identifier",
+          ".opencode/skills/ticket-execution/SKILL.md:Zone.Identifier",
+          ".opencode/skills/workflow-observability/SKILL.md:Zone.Identifier",
+          ".opencode/skills/workflow-observability/agents/openai.yaml:Zone.Identifier",
+          ".opencode/tools/artifact_register.ts:Zone.Identifier",
+          ".opencode/tools/artifact_write.ts:Zone.Identifier",
+          ".opencode/tools/context_snapshot.ts:Zone.Identifier",
+          ".opencode/tools/environment_bootstrap.ts:Zone.Identifier",
+          ".opencode/tools/handoff_publish.ts:Zone.Identifier",
+          ".opencode/tools/issue_intake.ts:Zone.Identifier",
+          ".opencode/tools/lease_cleanup.ts:Zone.Identifier",
+          ".opencode/tools/skill_ping.ts:Zone.Identifier",
+          ".opencode/tools/smoke_test.ts:Zone.Identifier",
+          ".opencode/tools/ticket_claim.ts:Zone.Identifier",
+          ".opencode/tools/ticket_create.ts:Zone.Identifier",
+          ".opencode/tools/ticket_lookup.ts:Zone.Identifier",
+          ".opencode/tools/ticket_reconcile.ts:Zone.Identifier",
+          ".opencode/tools/ticket_release.ts:Zone.Identifier",
+          ".opencode/tools/ticket_reopen.ts:Zone.Identifier",
+          ".opencode/tools/ticket_reverify.ts:Zone.Identifier",
+          ".opencode/tools/ticket_update.ts:Zone.Identifier"
+        ],
+        "files_removed": [],
+        "files_modified": [
+          ".opencode/skills/stack-standards/SKILL.md",
+          ".opencode/tools/ticket_create.ts",
+          "START-HERE.md"
+        ]
+      },
+      "audit_findings_addressed": [],
+      "verification_passed": false,
+      "verification_findings": [
+        "SKILL001"
+      ],
+      "remediation_ticket_ids": [],
+      "process_version_before": 7,
+      "process_version_after": 7,
+      "backup_path": null,
+      "project_specific_follow_up": [
+        ".opencode/skills",
+        ".opencode/agents",
+        "docs/process/agent-catalog.md"
+      ],
+      "verification_summary": {
+        "performed": true,
+        "finding_count": 1,
+        "error_count": 0,
+        "warning_count": 1,
+        "codes": [
+          "SKILL001"
+        ],
+        "blocking_codes": [
+          "SKILL001"
+        ],
+        "source_follow_up_codes": [],
+        "process_state_codes": [],
+        "pending_process_verification": true,
+        "verification_basis": "current_state_only",
+        "basis_requires_causal_replay": false,
+        "repair_basis_path": "/home/pc/projects/Scafforge/livetesting/glitch/diagnosis/20260402-094026",
+        "current_state_clean": false,
+        "causal_regression_verified": false,
+        "source_regression_summary": {
+          "comparison_available": false,
+          "pre_existing_codes": [],
+          "persistent_codes": [],
+          "resolved_codes": [],
+          "introduced_codes": [],
+          "introduced_critical_codes": []
+        },
+        "contract_failures": [
+          "placeholder_local_skills_survived_refresh"
+        ],
+        "contract_passed": false,
+        "verification_passed": false,
+        "supporting_logs": []
+      }
+    },
+    {
+      "repair_id": "2026-04-02T14:09:18Z",
+      "repaired_at": "2026-04-02T14:09:18Z",
+      "repair_type": "managed-surface-replacement",
+      "repair_kind": "deterministic-workflow-engine-replacement",
+      "repair_package_commit": "d3db92630b350c6ab318b7fe0a9689655024f216",
+      "summary": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "surfaces_replaced": [
+        "opencode.jsonc",
+        ".opencode/tools",
+        ".opencode/lib",
+        ".opencode/plugins",
+        ".opencode/commands",
+        "scaffold-managed .opencode/skills",
+        "docs/process/workflow.md",
+        "docs/process/tooling.md",
+        "docs/process/model-matrix.md",
+        "docs/process/git-capability.md",
+        "START-HERE.md managed block"
+      ],
+      "replaced_surfaces": [
+        "opencode.jsonc",
+        ".opencode/tools",
+        ".opencode/lib",
+        ".opencode/plugins",
+        ".opencode/commands",
+        "scaffold-managed .opencode/skills",
+        "docs/process/workflow.md",
+        "docs/process/tooling.md",
+        "docs/process/model-matrix.md",
+        "docs/process/git-capability.md",
+        "START-HERE.md managed block"
+      ],
+      "diff_summary": {
+        "files_added": [],
+        "files_removed": [
+          ".opencode/commands/bootstrap-check.md:Zone.Identifier",
+          ".opencode/commands/issue-triage.md:Zone.Identifier",
+          ".opencode/commands/join-lanes.md:Zone.Identifier",
+          ".opencode/commands/kickoff.md:Zone.Identifier",
+          ".opencode/commands/plan-wave.md:Zone.Identifier",
+          ".opencode/commands/resume.md:Zone.Identifier",
+          ".opencode/commands/reverify-ticket.md:Zone.Identifier",
+          ".opencode/commands/run-lane.md:Zone.Identifier",
+          ".opencode/lib/workflow.ts:Zone.Identifier",
+          ".opencode/plugins/invocation-tracker.ts:Zone.Identifier",
+          ".opencode/plugins/session-compactor.ts:Zone.Identifier",
+          ".opencode/plugins/stage-gate-enforcer.ts:Zone.Identifier",
+          ".opencode/plugins/ticket-sync.ts:Zone.Identifier",
+          ".opencode/plugins/tool-guard.ts:Zone.Identifier",
+          ".opencode/skills/docs-and-handoff/SKILL.md:Zone.Identifier",
+          ".opencode/skills/isolation-guidance/SKILL.md:Zone.Identifier",
+          ".opencode/skills/local-git-specialist/SKILL.md:Zone.Identifier",
+          ".opencode/skills/model-operating-profile/SKILL.md:Zone.Identifier",
+          ".opencode/skills/project-context/SKILL.md:Zone.Identifier",
+          ".opencode/skills/repo-navigation/SKILL.md:Zone.Identifier",
+          ".opencode/skills/research-delegation/SKILL.md:Zone.Identifier",
+          ".opencode/skills/review-audit-bridge/SKILL.md:Zone.Identifier",
+          ".opencode/skills/review-audit-bridge/references/review-contract.md:Zone.Identifier",
+          ".opencode/skills/stack-standards/SKILL.md:Zone.Identifier",
+          ".opencode/skills/ticket-execution/SKILL.md:Zone.Identifier",
+          ".opencode/skills/workflow-observability/SKILL.md:Zone.Identifier",
+          ".opencode/skills/workflow-observability/agents/openai.yaml:Zone.Identifier",
+          ".opencode/tools/artifact_register.ts:Zone.Identifier",
+          ".opencode/tools/artifact_write.ts:Zone.Identifier",
+          ".opencode/tools/context_snapshot.ts:Zone.Identifier",
+          ".opencode/tools/environment_bootstrap.ts:Zone.Identifier",
+          ".opencode/tools/handoff_publish.ts:Zone.Identifier",
+          ".opencode/tools/issue_intake.ts:Zone.Identifier",
+          ".opencode/tools/lease_cleanup.ts:Zone.Identifier",
+          ".opencode/tools/skill_ping.ts:Zone.Identifier",
+          ".opencode/tools/smoke_test.ts:Zone.Identifier",
+          ".opencode/tools/ticket_claim.ts:Zone.Identifier",
+          ".opencode/tools/ticket_create.ts:Zone.Identifier",
+          ".opencode/tools/ticket_lookup.ts:Zone.Identifier",
+          ".opencode/tools/ticket_reconcile.ts:Zone.Identifier",
+          ".opencode/tools/ticket_release.ts:Zone.Identifier",
+          ".opencode/tools/ticket_reopen.ts:Zone.Identifier",
+          ".opencode/tools/ticket_reverify.ts:Zone.Identifier",
+          ".opencode/tools/ticket_update.ts:Zone.Identifier"
+        ],
+        "files_modified": [
+          ".opencode/lib/workflow.ts",
+          ".opencode/skills/stack-standards/SKILL.md",
+          ".opencode/tools/environment_bootstrap.ts",
+          ".opencode/tools/smoke_test.ts",
+          ".opencode/tools/ticket_update.ts",
+          "START-HERE.md"
+        ]
+      },
+      "audit_findings_addressed": [
+        "WFLOW025",
+        "WFLOW026"
+      ],
+      "verification_passed": false,
+      "verification_findings": [
+        "SKILL001",
+        "REF-003",
+        "WFLOW025",
+        "SESSION001",
+        "SESSION003"
+      ],
+      "remediation_ticket_ids": [
+        "REMED-001",
+        "REMED-002",
+        "REMED-003",
+        "ANDROID-001",
+        "RELEASE-001"
+      ],
+      "process_version_before": 7,
+      "process_version_after": 7,
+      "backup_path": null,
+      "project_specific_follow_up": [
+        ".opencode/skills",
+        ".opencode/agents",
+        "docs/process/agent-catalog.md"
+      ],
+      "verification_summary": {
+        "performed": true,
+        "finding_count": 5,
+        "error_count": 4,
+        "warning_count": 1,
+        "codes": [
+          "SKILL001",
+          "REF-003",
+          "WFLOW025",
+          "SESSION001",
+          "SESSION003"
+        ],
+        "blocking_codes": [
+          "SKILL001",
+          "WFLOW025",
+          "SESSION001",
+          "SESSION003"
+        ],
+        "source_follow_up_codes": [
+          "REF-003"
+        ],
+        "process_state_codes": [],
+        "pending_process_verification": true,
+        "verification_basis": "transcript_backed",
+        "basis_requires_causal_replay": true,
+        "repair_basis_path": "/home/pc/projects/Scafforge/livetesting/glitch/diagnosis/20260402-140906",
+        "current_state_clean": false,
+        "causal_regression_verified": false,
+        "source_regression_summary": {
+          "comparison_available": true,
+          "pre_existing_codes": [
+            "REF-003"
+          ],
+          "persistent_codes": [
+            "REF-003"
+          ],
+          "resolved_codes": [],
+          "introduced_codes": [],
+          "introduced_critical_codes": []
+        },
+        "contract_failures": [
+          "placeholder_local_skills_survived_refresh"
+        ],
+        "contract_passed": false,
+        "verification_passed": false,
+        "supporting_logs": [
+          "/home/pc/projects/Scafforge/livetesting/glitch/glitch1.md"
+        ]
+      }
+    }
+  ],
+  "restart_surface_regeneration_history": [
+    {
+      "generated_at": "2026-04-02T14:09:18Z",
+      "source": "scafforge-repair",
+      "reason": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:09:18Z",
+      "source": "scafforge-repair",
+      "reason": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ]
+    },
+    {
+      "generated_at": "2026-04-02T14:09:20Z",
+      "source": "scafforge-repair",
+      "reason": "Refined repair follow-up tickets after managed repair.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:09:20Z",
+      "source": "scafforge-repair",
+      "reason": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:23:07Z",
+      "source": "scafforge-repair",
+      "reason": "Refined repair follow-up tickets after managed repair.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:23:07Z",
+      "source": "scafforge-repair",
+      "reason": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:25:13Z",
+      "source": "scafforge-repair",
+      "reason": "Refined repair follow-up tickets after managed repair.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:25:13Z",
+      "source": "scafforge-repair",
+      "reason": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:25:53Z",
+      "source": "scafforge-repair",
+      "reason": "Regenerated derived restart surfaces after split-parent repair state update.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ]
+    },
+    {
+      "generated_at": "2026-04-02T14:26:01Z",
+      "source": "scafforge-repair",
+      "reason": "Refined repair follow-up tickets after managed repair.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:26:01Z",
+      "source": "scafforge-repair",
+      "reason": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:28:21Z",
+      "source": "scafforge-repair",
+      "reason": "Regenerated derived restart surfaces after removing self-referential ANDROID-001 split lineage.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ]
+    },
+    {
+      "generated_at": "2026-04-02T14:28:28Z",
+      "source": "scafforge-repair",
+      "reason": "Refined repair follow-up tickets after managed repair.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:28:28Z",
+      "source": "scafforge-repair",
+      "reason": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:42:45Z",
+      "source": "scafforge-repair",
+      "reason": "Refined repair follow-up tickets after managed repair.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:42:45Z",
+      "source": "scafforge-repair",
+      "reason": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:45:52Z",
+      "source": "scafforge-repair",
+      "reason": "Regenerate restart surfaces after repairing ANDROID-001 split-scope lineage.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ]
+    },
+    {
+      "generated_at": "2026-04-02T14:46:00Z",
+      "source": "scafforge-repair",
+      "reason": "Refined repair follow-up tickets after managed repair.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    },
+    {
+      "generated_at": "2026-04-02T14:46:00Z",
+      "source": "scafforge-repair",
+      "reason": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+      "regenerated": [
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "verification": "pending_or_failed"
+    }
+  ],
+  "last_restart_surface_regeneration": {
+    "generated_at": "2026-04-02T14:46:00Z",
+    "source": "scafforge-repair",
+    "reason": "Managed Scafforge repair runner refreshed deterministic workflow surfaces and evaluated downstream repair obligations.",
+    "regenerated": [
+      "START-HERE.md",
+      ".opencode/state/context-snapshot.md",
+      ".opencode/state/latest-handoff.md"
+    ],
+    "verification": "pending_or_failed"
+  }
 }

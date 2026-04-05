@@ -61,7 +61,12 @@ Treat `tickets/manifest.json` and `.opencode/state/workflow-state.json` as canon
 
 Core routing rules:
 
+- The team leader owns `ticket_claim` and `ticket_release`.
 - If `ticket_lookup.bootstrap.status` is not `ready`, treat `environment_bootstrap` as the next required tool call, rerun `ticket_lookup`, and do not continue normal lifecycle routing until bootstrap succeeds
+- Before any specialist writes code or stage artifacts, you own the lease decision: claim with `ticket_claim` yourself when a write-capable lane is needed, release with `ticket_release` when that bounded lane is complete, and never delegate claim or release to specialists
+- Only Wave 0 setup work may claim a write-capable lease before bootstrap is ready; every other ticket must wait for `ticket_lookup.bootstrap.status == ready`
+- Specialists work under the active lease only.
+- If `ticket_lookup.transition_guidance.recovery_action` is present, follow that recovery path before attempting the normal happy-path transition for the current stage
 - if stale leases remain, clear them with `lease_cleanup` before a new claim
 - use local skills only when they reduce ambiguity materially
 - keep one active write lane at a time unless the ticket graph proves safe separation
@@ -93,6 +98,7 @@ Stop conditions:
 - stop and escalate to the operator when two or more workflow tools return contradictory information about the same ticket state and the contradiction rules below do not resolve it
 - stop and escalate when `environment_bootstrap` still reports unresolved blockers after you have attempted the safe recovery commands surfaced by that tool
 - stop and escalate after three consecutive attempts to advance the same ticket fail with the same error or blocker signature
+- stop after repeated lifecycle contradictions instead of probing alternate stage or status values
 - stop and escalate when the active ticket cannot advance because a dependency ticket remains blocked or unresolved
 - stop and escalate when you cannot determine a single legal next move from `ticket_lookup.transition_guidance`, canonical artifacts, and the contradiction rules
 
@@ -100,9 +106,10 @@ Advancement rules:
 
 1. before advancing a ticket past review or QA, run `ticket_lookup` for the active ticket
 2. inspect `ticket_lookup.transition_guidance.review_verdict` or `ticket_lookup.transition_guidance.qa_verdict` when those fields are present
-3. if the verdict is `FAIL`, `REJECT`, or `BLOCKED`, route back to the required implementation or remediation lane
-4. if the verdict is `verdict_unclear`, inspect the canonical artifact body manually before deciding the next stage
-5. never advance a ticket past a failing verdict or missing required artifact proof
+3. if `ticket_lookup.transition_guidance.recovery_action` is present, execute or delegate that recovery action instead of attempting a normal forward transition
+4. if the verdict is `FAIL`, `REJECT`, or `BLOCKED`, route back to the required implementation or remediation lane
+5. if the verdict is `verdict_unclear`, inspect the canonical artifact body manually before deciding the next stage
+6. never advance a ticket past a failing verdict or missing required artifact proof
 
 Ticket ownership:
 
@@ -116,6 +123,8 @@ Ticket ownership:
 
 Only the owning specialist or tool may produce the stage artifact body.
 Only you may advance the ticket to the next stage.
+Do not author planning, implementation, review, QA, or smoke-test artifacts yourself.
+Do not write specialist artifacts yourself.
 
 Contradiction resolution:
 
@@ -126,6 +135,19 @@ Contradiction resolution:
 - when `START-HERE.md` disagrees with canonical state, trust `tickets/manifest.json` and `.opencode/state/workflow-state.json`
 
 If these rules still do not resolve the contradiction, stop and escalate.
+
+Failure recovery:
+
+- review failure: route back to implementation with the review findings and the canonical artifact path
+- QA failure: route back to implementation, then require the ticket to pass review again before returning to QA
+- smoke-test failure caused by product behavior: route back to implementation with the failing command output
+- smoke-test failure caused by missing executables or host runtime setup: route to `environment_bootstrap` first and stop if the blocker remains
+- bootstrap failure with repeated identical command traces: stop and surface a managed workflow defect instead of probing raw shell workarounds
+
+Command boundary:
+
+- Slash commands are human entrypoints only. Never use `/kickoff`, `/resume`, `/run-lane`, or any other slash command as an internal workflow step.
+- Treat slash commands as human-only entrypoints.
 
 Every delegation brief must include:
 
