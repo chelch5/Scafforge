@@ -3,7 +3,21 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts"
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from target_completion import (
+    ANDROID_EXPORT_LANE,
+    ANDROID_EXPORT_TICKET_ID,
+    ANDROID_RELEASE_LANE,
+    ANDROID_RELEASE_TICKET_ID,
+    declares_godot_android_target,
+    expected_android_debug_apk_relpath,
+)
 
 
 def read_json(path: Path) -> Any:
@@ -53,7 +67,7 @@ def load_ticket_recommendations(diagnosis_manifest: Path) -> list[dict[str, Any]
         managed_repair = payload.get("managed_repair")
         if isinstance(managed_repair, dict) and isinstance(managed_repair.get("ticket_recommendations"), list):
             return [item for item in managed_repair["ticket_recommendations"] if isinstance(item, dict)]
-    raise SystemExit(f"No ticket_recommendations were found in {diagnosis_manifest}")
+    return []
 
 
 def render_ticket_document(ticket: dict[str, Any]) -> str:
@@ -173,7 +187,8 @@ def build_acceptance(recommendation: dict[str, Any]) -> list[str]:
 
 
 def build_ticket_record(recommendation: dict[str, Any], manifest: dict[str, Any], active_ticket: dict[str, Any] | None, wave: int) -> dict[str, Any]:
-    depends_on = [active_ticket["id"]] if active_ticket else []
+    source_ticket_id = active_ticket["id"] if active_ticket else None
+    source_mode = "split_scope" if source_ticket_id else "net_new_scope"
     source_files = recommendation.get("affected_files") or recommendation.get("source_files") or []
     files_display = ", ".join(str(item) for item in source_files) if source_files else "the affected repo area"
     description = str(recommendation.get("description") or recommendation.get("summary") or recommendation.get("title") or "")
@@ -186,7 +201,7 @@ def build_ticket_record(recommendation: dict[str, Any], manifest: dict[str, Any]
         "overlap_risk": "low",
         "stage": "planning",
         "status": "todo",
-        "depends_on": depends_on,
+        "depends_on": [],
         "summary": f"{description} Affected surfaces: {files_display}.",
         "acceptance": build_acceptance(recommendation),
         "decision_blockers": [],
@@ -194,9 +209,9 @@ def build_ticket_record(recommendation: dict[str, Any], manifest: dict[str, Any]
         "resolution_state": "open",
         "verification_state": "suspect",
         "finding_source": str(recommendation.get("source_finding_code") or recommendation.get("id") or ""),
-        "source_ticket_id": active_ticket["id"] if active_ticket else None,
+        "source_ticket_id": source_ticket_id,
         "follow_up_ticket_ids": [],
-        "source_mode": "net_new_scope",
+        "source_mode": source_mode,
     }
 
 
@@ -208,6 +223,229 @@ def ensure_ticket_state(workflow: dict[str, Any], ticket_id: str) -> None:
             "reopen_count": 0,
             "needs_reverification": False,
         }
+
+
+def append_unique(items: list[str], value: str) -> None:
+    if value and value not in items:
+        items.append(value)
+
+
+def ensure_follow_up_link(source_ticket: dict[str, Any] | None, target_id: str) -> bool:
+    if not isinstance(source_ticket, dict):
+        return False
+    follow_ups = source_ticket.setdefault("follow_up_ticket_ids", [])
+    if isinstance(follow_ups, list):
+        before = list(follow_ups)
+        append_unique(follow_ups, target_id)
+        return before != follow_ups
+    return False
+
+
+def ensure_split_scope_note(source_ticket: dict[str, Any] | None, target_id: str) -> bool:
+    if not isinstance(source_ticket, dict):
+        return False
+    blockers = source_ticket.setdefault("decision_blockers", [])
+    if not isinstance(blockers, list):
+        return False
+    note = f"Split scope delegated to follow-up ticket {target_id}. Keep the parent open and non-foreground until the child work lands."
+    before = list(blockers)
+    append_unique(blockers, note)
+    return before != blockers
+
+
+def ensure_target_depends(ticket: dict[str, Any], depends_on: list[str]) -> bool:
+    existing = ticket.get("depends_on")
+    current = [str(item).strip() for item in existing if isinstance(item, str) and str(item).strip()] if isinstance(existing, list) else []
+    before = list(current)
+    for item in depends_on:
+        append_unique(current, item)
+    ticket["depends_on"] = current
+    return before != current
+
+
+def android_export_summary() -> str:
+    return (
+        "Create and validate the repo-local Android export surfaces for this Godot Android target. "
+        "This includes an Android preset in `export_presets.cfg`, non-placeholder repo-local `android/` support surfaces, "
+        "and a recorded canonical export command for downstream release work."
+    )
+
+
+def build_android_export_ticket(*, wave: int, source_ticket_id: str | None) -> dict[str, Any]:
+    return {
+        "id": ANDROID_EXPORT_TICKET_ID,
+        "title": "Create Android export surfaces",
+        "wave": wave,
+        "lane": ANDROID_EXPORT_LANE,
+        "parallel_safe": False,
+        "overlap_risk": "medium",
+        "stage": "planning",
+        "status": "todo",
+        "depends_on": [],
+        "summary": android_export_summary(),
+        "acceptance": [
+            "`export_presets.cfg` exists and defines an Android export preset.",
+            "The repo-local `android/` support surfaces exist and are non-placeholder.",
+            "The canonical Android export command is recorded in this ticket and the repo-local skill pack.",
+        ],
+        "decision_blockers": [],
+        "artifacts": [],
+        "resolution_state": "open",
+        "verification_state": "suspect",
+        "finding_source": "WFLOW025",
+        "source_ticket_id": source_ticket_id,
+        "follow_up_ticket_ids": [],
+        "source_mode": "split_scope" if source_ticket_id else "net_new_scope",
+    }
+
+
+def build_android_release_ticket(*, wave: int, source_ticket_id: str | None, repo_root: Path) -> dict[str, Any]:
+    apk_relpath = expected_android_debug_apk_relpath(repo_root)
+    export_command = f"godot --headless --path . --export-debug Android {apk_relpath}"
+    return {
+        "id": ANDROID_RELEASE_TICKET_ID,
+        "title": "Build Android debug APK",
+        "wave": wave,
+        "lane": ANDROID_RELEASE_LANE,
+        "parallel_safe": False,
+        "overlap_risk": "medium",
+        "stage": "planning",
+        "status": "todo",
+        "depends_on": [source_ticket_id] if source_ticket_id else [],
+        "summary": (
+            f"Produce and validate the canonical debug APK for this Android target at `{apk_relpath}` using the repo's resolved Godot binary and Android export pipeline."
+        ),
+        "acceptance": [
+            f"`{export_command}` succeeds or the exact resolved Godot binary equivalent is recorded with the same arguments.",
+            f"The APK exists at `{apk_relpath}`.",
+            f"`unzip -l {apk_relpath}` shows Android manifest and classes/resources content.",
+        ],
+        "decision_blockers": [],
+        "artifacts": [],
+        "resolution_state": "open",
+        "verification_state": "suspect",
+        "finding_source": "WFLOW025",
+        "source_ticket_id": source_ticket_id,
+        "follow_up_ticket_ids": [],
+        "source_mode": "split_scope" if source_ticket_id else "net_new_scope",
+    }
+
+
+def upsert_ticket(
+    *,
+    repo_root: Path,
+    manifest: dict[str, Any],
+    workflow: dict[str, Any],
+    ticket: dict[str, Any],
+) -> str | None:
+    tickets = manifest.setdefault("tickets", [])
+    existing = next(
+        (
+            item
+            for item in tickets
+            if isinstance(item, dict) and str(item.get("id", "")).strip() == str(ticket.get("id", "")).strip()
+        ),
+        None,
+    )
+    touched = False
+    if existing is None:
+        tickets.append(ticket)
+        existing = ticket
+        touched = True
+    else:
+        for key in (
+            "title",
+            "wave",
+            "lane",
+            "parallel_safe",
+            "overlap_risk",
+            "summary",
+            "acceptance",
+            "finding_source",
+            "source_mode",
+        ):
+            if existing.get(key) != ticket.get(key):
+                existing[key] = ticket.get(key)
+                touched = True
+        if ensure_target_depends(existing, ticket.get("depends_on", [])):
+            touched = True
+        if ticket.get("source_ticket_id") and existing.get("source_ticket_id") != ticket.get("source_ticket_id"):
+            existing["source_ticket_id"] = ticket.get("source_ticket_id")
+            touched = True
+        if str(existing.get("resolution_state", "open")).strip() in {"done", "superseded"} or str(existing.get("status", "")).strip() == "done":
+            existing["stage"] = "planning"
+            existing["status"] = "todo"
+            existing["resolution_state"] = "open"
+            existing["verification_state"] = "suspect"
+            touched = True
+    ensure_ticket_state(workflow, str(ticket["id"]))
+    ticket_path = repo_root / "tickets" / f"{ticket['id']}.md"
+    ticket_path.write_text(render_ticket_document(existing), encoding="utf-8")
+    return str(ticket["id"]) if touched else None
+
+
+def ensure_android_target_completion_tickets(
+    *,
+    repo_root: Path,
+    manifest: dict[str, Any],
+    workflow: dict[str, Any],
+    active_ticket: dict[str, Any] | None,
+) -> list[str]:
+    if not declares_godot_android_target(repo_root):
+        return []
+
+    created_or_updated: list[str] = []
+    base_wave = next_wave(manifest)
+    source_ticket_id = str(active_ticket.get("id", "")).strip() if isinstance(active_ticket, dict) else None
+    android_record = next(
+        (
+            item
+            for item in manifest.get("tickets", [])
+            if isinstance(item, dict) and str(item.get("id", "")).strip() == ANDROID_EXPORT_TICKET_ID
+        ),
+        None,
+    )
+    if source_ticket_id == ANDROID_EXPORT_TICKET_ID and isinstance(android_record, dict):
+        # Preserve the open Android parent exactly as-is when it is already the active follow-up ticket.
+        ensure_ticket_state(workflow, ANDROID_EXPORT_TICKET_ID)
+    else:
+        android_source_ticket_id = source_ticket_id if source_ticket_id and source_ticket_id != ANDROID_EXPORT_TICKET_ID else None
+        android_ticket = build_android_export_ticket(wave=base_wave, source_ticket_id=android_source_ticket_id)
+        touched_android = upsert_ticket(repo_root=repo_root, manifest=manifest, workflow=workflow, ticket=android_ticket)
+        if touched_android:
+            created_or_updated.append(touched_android)
+        android_record = next(
+            item
+            for item in manifest.get("tickets", [])
+            if isinstance(item, dict) and str(item.get("id", "")).strip() == ANDROID_EXPORT_TICKET_ID
+        )
+    active_ticket_changed = False
+    if source_ticket_id and source_ticket_id != ANDROID_EXPORT_TICKET_ID:
+        if ensure_follow_up_link(active_ticket, ANDROID_EXPORT_TICKET_ID):
+            active_ticket_changed = True
+        if ensure_split_scope_note(active_ticket, ANDROID_EXPORT_TICKET_ID):
+            active_ticket_changed = True
+    if active_ticket_changed and isinstance(active_ticket, dict):
+        active_ticket_path = repo_root / "tickets" / f"{active_ticket['id']}.md"
+        active_ticket_path.write_text(render_ticket_document(active_ticket), encoding="utf-8")
+
+    release_ticket = build_android_release_ticket(
+        wave=max(base_wave + 1, int(android_record.get("wave", base_wave)) + 1),
+        source_ticket_id=ANDROID_EXPORT_TICKET_ID,
+        repo_root=repo_root,
+    )
+    touched_release = upsert_ticket(repo_root=repo_root, manifest=manifest, workflow=workflow, ticket=release_ticket)
+    if touched_release:
+        created_or_updated.append(touched_release)
+    android_record_changed = False
+    if ensure_follow_up_link(android_record, ANDROID_RELEASE_TICKET_ID):
+        android_record_changed = True
+    if ensure_split_scope_note(android_record, ANDROID_RELEASE_TICKET_ID):
+        android_record_changed = True
+    if android_record_changed:
+        android_ticket_path = repo_root / "tickets" / f"{ANDROID_EXPORT_TICKET_ID}.md"
+        android_ticket_path.write_text(render_ticket_document(android_record), encoding="utf-8")
+    return created_or_updated
 
 
 def parse_args() -> argparse.Namespace:
@@ -227,8 +465,6 @@ def main() -> int:
         for item in load_ticket_recommendations(diagnosis_manifest)
         if str(item.get("route", "")).strip() == "ticket-pack-builder"
     ]
-    if not recommendations:
-        raise SystemExit("No ticket-pack-builder remediation recommendations were found in the diagnosis pack.")
 
     manifest_path = repo_root / "tickets" / "manifest.json"
     workflow_path = repo_root / ".opencode" / "state" / "workflow-state.json"
@@ -243,17 +479,35 @@ def main() -> int:
 
     for recommendation in recommendations:
       ticket_id = str(recommendation.get("id", "")).strip()
-      if not ticket_id or ticket_id in existing_ids:
+      if not ticket_id:
+          continue
+      if ticket_id in existing_ids:
+          append_unique(created_ids, ticket_id)
           continue
       ticket = build_ticket_record(recommendation, manifest, active_ticket, wave)
       manifest.setdefault("tickets", []).append(ticket)
-      if active_ticket and ticket_id not in active_ticket.get("follow_up_ticket_ids", []):
-          active_ticket.setdefault("follow_up_ticket_ids", []).append(ticket_id)
+      active_ticket_changed = False
+      if ensure_follow_up_link(active_ticket, ticket_id):
+          active_ticket_changed = True
+      if ensure_split_scope_note(active_ticket, ticket_id):
+          active_ticket_changed = True
+      if active_ticket_changed:
+          active_ticket_path = repo_root / "tickets" / f"{active_ticket['id']}.md"
+          active_ticket_path.write_text(render_ticket_document(active_ticket), encoding="utf-8")
       ensure_ticket_state(workflow, ticket_id)
       ticket_path = repo_root / "tickets" / f"{ticket_id}.md"
       ticket_path.write_text(render_ticket_document(ticket), encoding="utf-8")
       created_ids.append(ticket_id)
       existing_ids.add(ticket_id)
+
+    android_follow_up_ids = ensure_android_target_completion_tickets(
+        repo_root=repo_root,
+        manifest=manifest,
+        workflow=workflow,
+        active_ticket=active_ticket,
+    )
+    for ticket_id in android_follow_up_ids:
+        append_unique(created_ids, ticket_id)
 
     if not created_ids:
         return 0

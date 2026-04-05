@@ -42,6 +42,7 @@ export default tool({
     pending_process_verification: tool.schema.boolean().describe("Whether post-migration backlog verification is still pending.").optional(),
   },
   async execute(args) {
+    // Lifecycle contract: do not route a ticket to implementation before it passes through plan_review.
     await ensureRequiredFile(ticketsManifestPath(rootPath()), "tickets/manifest.json")
     await ensureRequiredFile(workflowStatePath(rootPath()), ".opencode/state/workflow-state.json")
     const manifest = await loadManifest()

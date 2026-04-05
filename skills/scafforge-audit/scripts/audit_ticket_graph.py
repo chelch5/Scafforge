@@ -6,6 +6,7 @@ import re
 from typing import Any, Callable
 
 from shared_verifier_types import Finding
+from target_completion import declares_godot_android_target, load_manifest, missing_android_completion_ticket_ids, other_android_owner_tickets
 
 
 @dataclass(frozen=True)
@@ -260,8 +261,43 @@ def audit_open_ticket_split_routing(root: Path, findings: list[Finding], ctx: Ti
     )
 
 
+def audit_android_target_completion_backlog(root: Path, findings: list[Finding], ctx: TicketGraphAuditContext) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    if not manifest_path.exists() or not declares_godot_android_target(root):
+        return
+
+    manifest = load_manifest(root)
+    missing_ids = missing_android_completion_ticket_ids(manifest)
+    if not missing_ids:
+        return
+
+    evidence = [
+        f"{ctx.normalize_path(manifest_path, root)} is missing canonical Android target-completion tickets: {', '.join(missing_ids)}."
+    ]
+    generic_owners = other_android_owner_tickets(manifest)
+    if generic_owners:
+        evidence.append(
+            f"Android export or APK work is currently being carried by non-canonical ticket(s): {', '.join(generic_owners)}."
+        )
+
+    ctx.add_finding(
+        findings,
+        Finding(
+            code="WFLOW025",
+            severity="error",
+            problem="Declared Godot Android target lacks canonical backlog ownership for export surfaces and debug APK proof.",
+            root_cause="The repo declares Android delivery in canonical truth, but the backlog never created the dedicated `ANDROID-001` and `RELEASE-001` lanes. That lets presentation or validation tickets absorb Android work without a real export or release-proof path.",
+            files=[ctx.normalize_path(manifest_path, root), ctx.normalize_path(root / "docs" / "spec" / "CANONICAL-BRIEF.md", root)],
+            safer_pattern="For Godot Android repos, always create `ANDROID-001` in lane `android-export` for repo-local export surfaces and `RELEASE-001` in lane `release-readiness` for debug APK proof. Do not let generic polish tickets stand in for release ownership.",
+            evidence=evidence,
+            provenance="script",
+        ),
+    )
+
+
 def run_ticket_graph_audits(root: Path, findings: list[Finding], ctx: TicketGraphAuditContext) -> None:
     audit_closed_ticket_follow_up_deadlock(root, findings, ctx)
     audit_stale_ticket_graph(root, findings, ctx)
     audit_historical_reconciliation_deadlock(root, findings, ctx)
     audit_open_ticket_split_routing(root, findings, ctx)
+    audit_android_target_completion_backlog(root, findings, ctx)

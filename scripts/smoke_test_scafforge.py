@@ -9,6 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 from test_support.repo_seeders import (
     make_stack_skill_non_placeholder,
@@ -217,6 +218,187 @@ def seed_legacy_model_drift(dest: Path) -> None:
     provenance_path.write_text(
         json.dumps(provenance, indent=2) + "\n", encoding="utf-8"
     )
+
+
+def seed_godot_android_target(dest: Path) -> None:
+    brief = "\n".join(
+        [
+            "# Canonical Brief",
+            "",
+            "## 1. Project Summary",
+            "",
+            "Synthetic Godot Android delivery fixture.",
+            "",
+            "## 2. Goals",
+            "",
+            "- Ship a Godot Android build.",
+            "",
+            "## 3. Non-Goals",
+            "",
+            "- None",
+            "",
+            "## 4. Constraints",
+            "",
+            "- Platform target is Android.",
+            "- Engine is Godot.",
+            "",
+            "## 5. Required Outputs",
+            "",
+            "- Android export surfaces and debug APK proof.",
+            "",
+            "## 6. Tooling and Model Constraints",
+            "",
+            "- Stack label: `godot-android-2d`",
+            "",
+            "## 7. Canonical Truth Map",
+            "",
+            "- Durable facts: `docs/spec/CANONICAL-BRIEF.md`",
+            "",
+            "## 8. Blocking Decisions",
+            "",
+            "- None",
+            "",
+            "## 9. Non-Blocking Open Questions",
+            "",
+            "- None",
+            "",
+            "## 10. Backlog Readiness",
+            "",
+            "Backlog can proceed.",
+            "",
+            "## 11. Acceptance Signals",
+            "",
+            "- Android export lane and release lane exist.",
+            "",
+            "## 12. Assumptions",
+            "",
+            "- GDScript is acceptable.",
+            "",
+        ]
+    )
+    (dest / "docs" / "spec" / "CANONICAL-BRIEF.md").write_text(
+        brief + "\n", encoding="utf-8"
+    )
+    provenance_path = dest / ".opencode" / "meta" / "bootstrap-provenance.json"
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    provenance["stack_label"] = "godot-android-2d"
+    provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+
+
+def seed_minimal_godot_project(dest: Path) -> None:
+    (dest / "project.godot").write_text(
+        "\n".join(
+            [
+                "; Engine configuration file.",
+                "[application]",
+                'config/name="Smoke Android Fixture"',
+                'run/main_scene="res://scenes/main.tscn"',
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dest / "scenes").mkdir(parents=True, exist_ok=True)
+    (dest / "scenes" / "main.tscn").write_text(
+        '[gd_scene format=3]\n\n[node name="Main" type="Node2D"]\n',
+        encoding="utf-8",
+    )
+
+
+def append_manifest_ticket(dest: Path, ticket: dict[str, Any]) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.setdefault("tickets", []).append(ticket)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def seed_spinner_like_android_gap(dest: Path) -> None:
+    seed_godot_android_target(dest)
+    seed_minimal_godot_project(dest)
+    seed_all_tickets_closed(dest)
+    (dest / "android").mkdir(parents=True, exist_ok=True)
+    (dest / "android" / ".gitkeep").write_text("", encoding="utf-8")
+    append_manifest_ticket(
+        dest,
+        {
+            "id": "POLISH-001",
+            "title": "Validate Android export and performance posture",
+            "wave": 3,
+            "lane": "polish",
+            "parallel_safe": False,
+            "overlap_risk": "medium",
+            "stage": "closeout",
+            "status": "done",
+            "resolution_state": "done",
+            "verification_state": "trusted",
+            "depends_on": [],
+            "source_ticket_id": None,
+            "follow_up_ticket_ids": [],
+            "summary": "Android export validation recorded only as host gaps documented: no export templates, empty android/ folder, Android SDK not verified.",
+            "acceptance": [
+                "Android export validation documented",
+                "Performance review complete",
+            ],
+            "decision_blockers": [],
+            "artifacts": [],
+        },
+    )
+    manifest_path = dest / "tickets" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["active_ticket"] = "POLISH-001"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    workflow["active_ticket"] = "POLISH-001"
+    workflow["stage"] = "closeout"
+    workflow["status"] = "done"
+    workflow["ticket_state"]["POLISH-001"] = {
+        "approved_plan": True,
+        "reopen_count": 0,
+        "needs_reverification": False,
+    }
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+
+
+def seed_review_stage_with_verdict(dest: Path, verdict_line: str) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    ticket = manifest["tickets"][0]
+    ticket["stage"] = "review"
+    ticket["status"] = "review"
+    manifest["active_ticket"] = ticket["id"]
+    workflow["active_ticket"] = ticket["id"]
+    workflow["stage"] = "review"
+    workflow["status"] = "review"
+    workflow["ticket_state"].setdefault(
+        ticket["id"],
+        {"approved_plan": True, "reopen_count": 0, "needs_reverification": False},
+    )["approved_plan"] = True
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    register_current_ticket_artifact(
+        dest,
+        ticket_id=ticket["id"],
+        kind="review",
+        stage="review",
+        relative_path=".opencode/state/reviews/setup-001-review.md",
+        summary="Synthetic review artifact.",
+        content=f"# Review\n\n{verdict_line}\n\nCommand: synthetic\n\n~~~~text\nPASS\n~~~~\n",
+    )
+
+
+def seed_legacy_markdown_verdict_parser(dest: Path) -> None:
+    legacy_minimax = "minimax-coding-plan/" + "MiniMax-M2." + "5"
+    workflow_path = dest / ".opencode" / "lib" / "workflow.ts"
+    text = workflow_path.read_text(encoding="utf-8")
+    text = text.replace(
+        r"/^(?:[-*]\s*)?(?:\*\*|__)?(?:overall(?:\s+result)?|verdict|result|approval\s+signal)(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s*(pass|fail|reject|approved?|blocked?|blocker)(?:\*\*|__)?\b/i",
+        r"/^(?:overall(?:\s+result)?|verdict|result|approval\s+signal)\s*:\s*(?:\*\*)?\s*(pass|fail|reject|approved?|blocked?|blocker)\b/i",
+    )
+    workflow_path.write_text(text, encoding="utf-8")
 
     (dest / "docs" / "process" / "model-matrix.md").write_text(
         "\n".join(
@@ -3448,6 +3630,36 @@ def main() -> int:
             raise RuntimeError(
                 f"A placeholder-free fresh scaffold should pass the shared greenfield continuation verifier, but it emitted: {codes}"
             )
+        android_greenfield_dest = workspace / "greenfield-android-target-missing-lanes"
+        shutil.copytree(full_dest, android_greenfield_dest)
+        make_stack_skill_non_placeholder(android_greenfield_dest)
+        seed_godot_android_target(android_greenfield_dest)
+        android_greenfield_result = subprocess.run(
+            [
+                sys.executable,
+                str(VERIFY_GENERATED),
+                str(android_greenfield_dest),
+                "--format",
+                "json",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        android_greenfield_payload = json.loads(android_greenfield_result.stdout)
+        android_greenfield_codes = {
+            finding["code"]
+            for finding in android_greenfield_payload.get("findings", [])
+        }
+        if android_greenfield_result.returncode != 2:
+            raise RuntimeError(
+                "Greenfield continuation verifier should fail when a declared Godot Android target lacks canonical Android completion tickets"
+            )
+        if "VERIFY012" not in android_greenfield_codes:
+            raise RuntimeError(
+                "Greenfield continuation verifier should emit VERIFY012 for missing Android target-completion lanes"
+            )
         blocked_greenfield_dest = workspace / "greenfield-proof-gate-bootstrap-blocked"
         shutil.copytree(greenfield_gate_dest, blocked_greenfield_dest)
         blocked_workflow_path = (
@@ -4124,6 +4336,55 @@ def main() -> int:
         ).exists():
             raise RuntimeError(
                 "Public managed repair runner should persist a machine-readable repair execution record"
+            )
+        public_repair_android_dest = workspace / "public-repair-android-follow-up"
+        shutil.copytree(full_dest, public_repair_android_dest)
+        seed_godot_android_target(public_repair_android_dest)
+        seed_minimal_godot_project(public_repair_android_dest)
+        seed_ready_bootstrap(public_repair_android_dest)
+        public_repair_android = subprocess.run(
+            [
+                sys.executable,
+                str(PUBLIC_REPAIR),
+                str(public_repair_android_dest),
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if not public_repair_android.stdout.strip():
+            raise RuntimeError(
+                "Public managed repair runner should always emit a JSON execution payload"
+            )
+        public_repair_android_manifest = json.loads(
+            (public_repair_android_dest / "tickets" / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        android_ticket = next(
+            (
+                ticket
+                for ticket in public_repair_android_manifest["tickets"]
+                if ticket["id"] == "ANDROID-001"
+            ),
+            None,
+        )
+        release_ticket = next(
+            (
+                ticket
+                for ticket in public_repair_android_manifest["tickets"]
+                if ticket["id"] == "RELEASE-001"
+            ),
+            None,
+        )
+        if android_ticket is None or release_ticket is None:
+            raise RuntimeError(
+                "Managed repair follow-on should create the canonical Android export and release tickets for Godot Android repos"
+            )
+        if "ANDROID-001" not in release_ticket.get("depends_on", []):
+            raise RuntimeError(
+                "RELEASE-001 should depend on ANDROID-001 when repair creates the Android target-completion ticket pair"
             )
 
         repeat_dest = workspace / "repeat-cycle"
@@ -5611,6 +5872,28 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_update should reject review-to-QA transitions when the latest review verdict is FAIL"
             )
+        markdown_verdict_dest = workspace / "executed-review-markdown-verdict"
+        shutil.copytree(full_dest, markdown_verdict_dest)
+        seed_ready_bootstrap(markdown_verdict_dest)
+        seed_review_stage_with_verdict(markdown_verdict_dest, "**Verdict**: PASS")
+        markdown_lookup = run_generated_tool(
+            markdown_verdict_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if markdown_lookup["transition_guidance"]["review_verdict"] != "PASS":
+            raise RuntimeError(
+                "ticket_lookup should extract PASS verdicts from markdown-emphasized review artifacts"
+            )
+        markdown_update = run_generated_tool(
+            markdown_verdict_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "qa", "activate": True},
+        )
+        if markdown_update["updated_ticket"]["stage"] != "qa":
+            raise RuntimeError(
+                "ticket_update should allow review-to-QA transitions when the latest review artifact records `**Verdict**: PASS`"
+            )
         qa_fail_dest = workspace / "executed-qa-fail-guidance"
         shutil.copytree(full_dest, qa_fail_dest)
         seed_ready_bootstrap(qa_fail_dest)
@@ -6178,6 +6461,22 @@ def main() -> int:
         if bootstrap_workflow.get("bootstrap_blockers") != []:
             raise RuntimeError(
                 "environment_bootstrap should persist cleared bootstrap_blockers into workflow-state after a successful run"
+            )
+        android_bootstrap_dest = workspace / "executed-environment-bootstrap-android"
+        shutil.copytree(full_dest, android_bootstrap_dest)
+        seed_godot_android_target(android_bootstrap_dest)
+        seed_minimal_godot_project(android_bootstrap_dest)
+        android_bootstrap_result = run_generated_tool(
+            android_bootstrap_dest,
+            ".opencode/tools/environment_bootstrap.ts",
+            {"ticket_id": "SETUP-001"},
+        )
+        android_warnings = [
+            warning.lower() for warning in android_bootstrap_result.get("warnings", [])
+        ]
+        if not any("export_presets.cfg" in warning for warning in android_warnings):
+            raise RuntimeError(
+                "environment_bootstrap should warn about missing Android export presets when the canonical brief declares a Godot Android target even before export_presets.cfg exists"
             )
 
         executed_smoke_test_dest = workspace / "executed-smoke-test"
@@ -7114,6 +7413,39 @@ def main() -> int:
             raise RuntimeError(
                 "Deprecated package-managed MiniMax drift should emit MODEL001 as an error, not a warning"
             )
+        markdown_verdict_audit_dest = workspace / "markdown-verdict-audit"
+        shutil.copytree(full_dest, markdown_verdict_audit_dest)
+        seed_ready_bootstrap(markdown_verdict_audit_dest)
+        seed_review_stage_with_verdict(markdown_verdict_audit_dest, "**Verdict**: PASS")
+        seed_legacy_markdown_verdict_parser(markdown_verdict_audit_dest)
+        markdown_verdict_audit = run_json(
+            [sys.executable, str(AUDIT), str(markdown_verdict_audit_dest), "--format", "json"],
+            ROOT,
+        )
+        markdown_verdict_codes = {
+            finding["code"] for finding in markdown_verdict_audit.get("findings", [])
+        }
+        if "WFLOW026" not in markdown_verdict_codes:
+            raise RuntimeError(
+                "Audit should emit WFLOW026 when the repo parser still treats explicit markdown verdict labels as unclear"
+            )
+
+        spinner_gap_dest = workspace / "spinner-target-completion-gap"
+        shutil.copytree(full_dest, spinner_gap_dest)
+        make_stack_skill_non_placeholder(spinner_gap_dest)
+        seed_spinner_like_android_gap(spinner_gap_dest)
+        spinner_gap_audit = run_json(
+            [sys.executable, str(AUDIT), str(spinner_gap_dest), "--format", "json"],
+            ROOT,
+        )
+        spinner_gap_codes = {
+            finding["code"] for finding in spinner_gap_audit.get("findings", [])
+        }
+        for expected_code in ("WFLOW025", "EXEC-GODOT-005"):
+            if expected_code not in spinner_gap_codes:
+                raise RuntimeError(
+                    f"Spinner-like Android completion gaps should emit {expected_code}"
+                )
 
         repair_dest = workspace / "repair"
         shutil.copytree(full_dest, repair_dest)

@@ -238,6 +238,7 @@ def write_bootstrap_provenance(
     planner_model: str,
     implementer_model: str,
     utility_model: str,
+    stack_label: str,
 ) -> None:
     template_commit_result = template_commit()
     steps = (
@@ -261,6 +262,7 @@ def write_bootstrap_provenance(
             "implementer": implementer_model,
             "utility": utility_model,
         },
+        "stack_label": stack_label,
         "bootstrap_steps": steps,
         "tracking": {
             "invocation_log": ".opencode/state/invocation-log.jsonl",
@@ -432,6 +434,7 @@ def main() -> int:
         planner_model=planner_model,
         implementer_model=implementer_model,
         utility_model=utility_model,
+        stack_label=args.stack_label,
     )
 
     print(f"Rendered {len(created)} files into {dest_root}")

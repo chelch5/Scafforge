@@ -87,3 +87,4 @@ Rules:
 - during bootstrap, detail the first execution wave only where blocking decisions are resolved
 - convert unresolved major choices into explicit blocked, decision, or discovery tickets instead of fabricating implementation detail
 - keep acceptance commands scope-isolated; if a literal closeout command depends on later-ticket work, split the ticket or encode the dependency explicitly instead of shipping contradictory acceptance
+- when canonical truth declares a Tier 1 release target, keep export and release-proof ownership explicit in the backlog instead of folding it into generic polish or validation tickets

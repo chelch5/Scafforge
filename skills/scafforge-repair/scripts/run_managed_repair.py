@@ -118,6 +118,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--planner-model", help="Override planner model when provenance is missing.")
     parser.add_argument("--implementer-model", help="Override implementer model when provenance is missing.")
     parser.add_argument("--utility-model", help="Override utility model when provenance is missing.")
+    parser.add_argument(
+        "--model-tier",
+        choices=("strong", "standard", "weak"),
+        help="Override prompt-density model tier when provenance is missing.",
+    )
     parser.add_argument("--stack-label", default="framework-agnostic", help="Stack label for regenerated process docs.")
     parser.add_argument(
         "--change-summary",
@@ -185,12 +190,17 @@ def derive_required_follow_on_stages(
                 "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff.",
             }
         )
-    if any(code.startswith("EXEC") for code in finding_codes):
+    if any(code.startswith("EXEC") for code in finding_codes) or "WFLOW025" in finding_codes:
+        ticket_follow_up_reason = (
+            "Repair left remediation, reverification, or target-completion follow-up that must be routed into the repo ticket system."
+            if "WFLOW025" in finding_codes
+            else "Repair left remediation or reverification follow-up that must be routed into the repo ticket system."
+        )
         required.append(
             {
                 **follow_on_stage_metadata("ticket-pack-builder"),
                 "stage": "ticket-pack-builder",
-                "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
+                "reason": ticket_follow_up_reason,
             }
         )
     return required
@@ -261,11 +271,6 @@ def create_remediation_follow_up_tickets(repo_root: Path, diagnosis_manifest_or_
     manifest_path = diagnosis_path / "manifest.json" if diagnosis_path.is_dir() else diagnosis_path
     manifest = read_json(manifest_path)
     if not isinstance(manifest, dict):
-        return {"created_tickets": []}
-    if not any(
-        isinstance(item, dict) and str(item.get("route", "")).strip() == "ticket-pack-builder"
-        for item in manifest.get("ticket_recommendations", [])
-    ):
         return {"created_tickets": []}
 
     result = subprocess.run(

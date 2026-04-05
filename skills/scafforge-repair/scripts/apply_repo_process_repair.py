@@ -254,19 +254,6 @@ def detect_intent_changing_repair(repo_root: Path, rendered_root: Path) -> list[
             }
         )
 
-    current_bootstrap_text = read_text(repo_root / ".opencode" / "tools" / "environment_bootstrap.ts")
-    rendered_bootstrap_text = read_text(rendered_root / ".opencode" / "tools" / "environment_bootstrap.ts")
-    if current_bootstrap_text.strip() and rendered_bootstrap_text.strip() and current_bootstrap_text != rendered_bootstrap_text:
-        reasons.append(
-            {
-                "category": "bootstrap_command_contract",
-                "why_intent_changing": "Changing the managed bootstrap tool can alter the first-run environment contract for the repo.",
-                "details": {
-                    "target": ".opencode/tools/environment_bootstrap.ts",
-                },
-                "user_decision": "Confirm that the bootstrap command contract should change before applying this repair automatically.",
-            }
-        )
     return reasons
 
 

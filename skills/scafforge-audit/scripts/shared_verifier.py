@@ -10,6 +10,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from audit_repo_process import audit_repo
 from shared_verifier_types import Finding
+from target_completion import declares_godot_android_target, load_manifest, missing_android_completion_ticket_ids, stack_label
 
 GREENFIELD_BOOTSTRAP_NEXT_ACTION = (
     "Run `environment_bootstrap`, register its proof artifact, rerun `ticket_lookup`, "
@@ -463,6 +464,25 @@ def verify_greenfield_continuation(root: Path) -> list[Finding]:
                 is_user_action=True,
             )
         )
+
+    if declares_godot_android_target(root):
+        missing_target_tickets = missing_android_completion_ticket_ids(load_manifest(root))
+        if missing_target_tickets:
+            findings.append(
+                _finding(
+                    code="VERIFY012",
+                    problem="The generated repo declares a Godot Android target but does not seed the canonical Android completion lane.",
+                    root_cause="Greenfield continuation is incomplete when an Android-targeted Godot repo can reach handoff without explicit backlog ownership for repo-local export surfaces and debug APK proof.",
+                    files=[_normalize(manifest_path, root), _normalize(root / "docs" / "spec" / "CANONICAL-BRIEF.md", root)],
+                    safer_pattern="Seed `ANDROID-001` and `RELEASE-001` for Godot Android repos during bootstrap backlog generation, and fail greenfield verification when those target-completion tickets are missing.",
+                    evidence=[
+                        f"declared stack label = {stack_label(root) or 'unknown'}",
+                        f"missing target-completion tickets: {', '.join(missing_target_tickets)}",
+                    ],
+                    remediation_action="Add the canonical Android export and release-readiness tickets, then rerun the continuation verifier.",
+                    remediation_target=_normalize(manifest_path, root),
+                )
+            )
 
     audit_findings = audit_repo(root)
     critical_exec_findings = [finding for finding in audit_findings if finding.code.startswith("EXEC") and finding.severity == "error"]

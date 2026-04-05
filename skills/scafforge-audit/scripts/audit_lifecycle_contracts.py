@@ -202,6 +202,69 @@ def audit_verdict_aware_transition_contract(
     )
 
 
+def audit_markdown_verdict_parser_mismatch(
+    root: Path, findings: list[Finding], ctx: LifecycleContractAuditContext
+) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    workflow_tool = root / ".opencode" / "lib" / "workflow.ts"
+    if not manifest_path.exists() or not workflow_tool.exists():
+        return
+
+    manifest = ctx.read_json(manifest_path)
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) and isinstance(manifest.get("tickets"), list) else []
+    if not tickets:
+        return
+
+    workflow_text = ctx.read_text(workflow_tool)
+    if "(?:\\*\\*|__)?" in workflow_text:
+        return
+
+    emphasized_verdict = re.compile(
+        r"^(?:[-*]\s*)?(?:\*\*|__)(overall(?:\s+result)?|verdict|result|approval\s+signal)(?:\*\*|__)\s*:\s*(?:\*\*|__)?\s*(pass|fail|reject|approved?|blocked?|blocker)(?:\*\*|__)?\b",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    evidence: list[str] = []
+    files = [ctx.normalize_path(workflow_tool, root), ctx.normalize_path(manifest_path, root)]
+
+    for ticket in tickets:
+        if not isinstance(ticket, dict):
+            continue
+        for artifact in ticket.get("artifacts", []):
+            if not isinstance(artifact, dict):
+                continue
+            if str(artifact.get("trust_state", "current")).strip() != "current":
+                continue
+            stage = str(artifact.get("stage", "")).strip()
+            if stage not in {"review", "qa", "smoke-test"}:
+                continue
+            artifact_path = root / str(artifact.get("path", "")).strip()
+            artifact_text = ctx.read_text(artifact_path)
+            match = emphasized_verdict.search(artifact_text)
+            if not match:
+                continue
+            files.append(ctx.normalize_path(artifact_path, root))
+            evidence.append(
+                f"{ctx.normalize_path(artifact_path, root)} contains `{match.group(0).strip()}`, but {ctx.normalize_path(workflow_tool, root)} still uses a plain-label verdict parser."
+            )
+
+    if not evidence:
+        return
+
+    ctx.add_finding(
+        findings,
+        Finding(
+            code="WFLOW026",
+            severity="error",
+            problem="Current artifacts contain explicit markdown verdict labels, but the generated verdict extractor still reports them as unclear.",
+            root_cause="The repo-local workflow parser only matches plain `Verdict:` or `Approval Signal:` labels. Markdown-emphasized labels such as `**Verdict**: PASS` then look unparseable, which blocks review or QA transitions even though the artifact body is explicit.",
+            files=list(dict.fromkeys(files)),
+            safer_pattern="Keep one shared artifact verdict extractor that accepts plain and markdown-emphasized verdict labels, then route ticket_lookup and ticket_update through that shared parser instead of treating explicit review or QA verdicts as unclear.",
+            evidence=evidence[:8],
+            provenance="script",
+        ),
+    )
+
+
 def audit_reverification_deadlock(
     root: Path, findings: list[Finding], ctx: LifecycleContractAuditContext
 ) -> None:
@@ -607,6 +670,7 @@ def run_lifecycle_contract_audits(
     audit_review_stage_ambiguity(root, findings, ctx)
     audit_ticket_transition_contract(root, findings, ctx)
     audit_verdict_aware_transition_contract(root, findings, ctx)
+    audit_markdown_verdict_parser_mismatch(root, findings, ctx)
     audit_reverification_deadlock(root, findings, ctx)
     audit_smoke_test_artifact_bypass(root, findings, ctx)
     audit_handoff_artifact_ownership_conflict(root, findings, ctx)

@@ -1,7 +1,8 @@
 import { tool } from "@opencode-ai/plugin"
 import { spawn } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, readdirSync } from "node:fs"
 import { access, readFile, readdir } from "node:fs/promises"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import {
 	computeBootstrapFingerprint,
@@ -70,6 +71,24 @@ type StackAdapter = {
 	detect(root: string): Promise<StackDetectionResult>
 }
 
+type BootstrapProvenance = {
+	stack_label?: string
+}
+
+type TargetCompletionExpectation = {
+	host_prerequisites: string[]
+	repo_prerequisites: string[]
+	release_proof: string
+}
+
+const TARGET_COMPLETION_EXPECTATIONS: Record<string, TargetCompletionExpectation> = {
+	"godot-android": {
+		host_prerequisites: ["godot", "java", "javac", "android-sdk", "godot-export-templates"],
+		repo_prerequisites: ["export_presets.cfg Android preset", "repo-local android support surfaces"],
+		release_proof: "build/android/__PROJECT_SLUG__-debug.apk",
+	},
+}
+
 const SAFE_BOOTSTRAP_PATTERNS = [
 	/^(?:apt-get|apt)\s+install\b.*(?:-y|--yes)\b/i,
 	/^brew\s+install\b/i,
@@ -116,6 +135,70 @@ async function readJson<T>(path: string): Promise<T | undefined> {
 		return JSON.parse(await readFile(path, "utf-8")) as T
 	} catch {
 		return undefined
+	}
+}
+
+async function detectedStackLabel(root: string): Promise<string> {
+	const provenance = await readJson<BootstrapProvenance>(join(root, ".opencode", "meta", "bootstrap-provenance.json"))
+	if (provenance?.stack_label?.trim()) return provenance.stack_label.trim()
+	const brief = await readText(join(root, "docs", "spec", "CANONICAL-BRIEF.md"))
+	return brief.match(/^\s*-\s*Stack label:\s*`?([^`\n]+)`?\s*$/m)?.[1]?.trim() || ""
+}
+
+async function repoTargetsGodotAndroid(root: string): Promise<boolean> {
+	const stackLabel = (await detectedStackLabel(root)).toLowerCase()
+	if (stackLabel.includes("godot") && stackLabel.includes("android")) return true
+	const brief = (await readText(join(root, "docs", "spec", "CANONICAL-BRIEF.md"))).toLowerCase()
+	const androidTarget = /platform target is android|target platform is android|platform target:\s*android|\bandroid\b/.test(brief)
+	const godotTarget = /engine is godot|\bgodot\b/.test(brief) || existsSync(join(root, "project.godot"))
+	return androidTarget && godotTarget
+}
+
+async function discoverAndroidSdkPath(): Promise<string | null> {
+	const envValue = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT
+	if (envValue && await exists(envValue)) return envValue
+	const home = homedir()
+	for (const candidate of [
+		join(home, "Android", "Sdk"),
+		join(home, "Library", "Android", "sdk"),
+		join(home, "AppData", "Local", "Android", "Sdk"),
+	]) {
+		if (await exists(candidate)) return candidate
+	}
+	return null
+}
+
+async function hasGodotExportTemplatesInstalled(): Promise<boolean> {
+	const templatesRoot = join(homedir(), ".local", "share", "godot", "export_templates")
+	if (!(await exists(templatesRoot))) return false
+	try {
+		const entries = await readdir(templatesRoot)
+		return entries.length > 0
+	} catch {
+		return false
+	}
+}
+
+function hasMeaningfulAndroidSupportSurface(root: string): boolean {
+	const androidDir = join(root, "android")
+	if (!existsSync(androidDir)) return false
+	try {
+		const stack = [androidDir]
+		while (stack.length > 0) {
+			const current = stack.pop()
+			if (!current) continue
+			for (const entry of readdirSync(current, { withFileTypes: true })) {
+				const full = join(current, entry.name)
+				if (entry.isDirectory()) {
+					stack.push(full)
+					continue
+				}
+				if (entry.isFile() && entry.name !== ".gitkeep") return true
+			}
+		}
+		return false
+	} catch {
+		return false
 	}
 }
 
@@ -416,18 +499,22 @@ async function isUvManagedVenv(root: string): Promise<boolean> {
 }
 
 function hasPyprojectDevExtra(pyprojectText: string): boolean {
+	// Detect `[project.optional-dependencies]` / `dev = [...]` layouts without relying on a brittle multi-line regex.
 	return hasSectionValue(pyprojectText, "project.optional-dependencies", "dev")
 }
 
 function hasPyprojectDevDependencyGroup(pyprojectText: string): boolean {
+	// Detect `[dependency-groups]` / `dev = [...]` layouts for uv-managed repos.
 	return hasSectionValue(pyprojectText, "dependency-groups", "dev")
 }
 
 function hasPyprojectUvDevDependencies(pyprojectText: string): boolean {
+	// Detect legacy `[tool.uv.dev-dependencies]` layouts as a fallback.
 	return /\[tool\.uv(?:\.[^\]]+)?\][\s\S]*?^\s*dev-dependencies\s*=/m.test(pyprojectText) || /\[tool\.uv\.dev-dependencies\]/m.test(pyprojectText)
 }
 
 function hasPyprojectPytestConfig(pyprojectText: string): boolean {
+	// Detect `[tool.pytest.ini_options]` even when no tests/ directory exists yet.
 	return /\[tool\.pytest\.ini_options\]/m.test(pyprojectText)
 }
 
@@ -565,6 +652,7 @@ async function detectGodotBootstrap(root: string): Promise<StackDetectionResult>
 	const projectText = await readText(join(root, "project.godot"))
 	const configVersion = projectText.match(/config_version=(\d+)/)?.[1]
 	if (configVersion) detection.version_info.config_version = configVersion
+	const androidExpectation = TARGET_COMPLETION_EXPECTATIONS["godot-android"]
 	const godotExecutable = await firstAvailableExecutable(["godot4", "godot"], ["--version"])
 	if (!godotExecutable) {
 		detection.missing_executables.push("godot")
@@ -573,14 +661,24 @@ async function detectGodotBootstrap(root: string): Promise<StackDetectionResult>
 		detection.commands.push({ label: `${godotExecutable} headless version`, argv: [godotExecutable, "--headless", "--version"], reason: "Verify the Godot runtime is available for headless validation." })
 	}
 	const exportPresets = await readText(join(root, "export_presets.cfg"))
-	const requiresAndroid = /android/i.test(exportPresets)
+	const requiresAndroid = /android/i.test(exportPresets) || await repoTargetsGodotAndroid(root)
 	if (requiresAndroid) {
-		if (!process.env.ANDROID_HOME && !process.env.ANDROID_SDK_ROOT) {
+		const androidSdkPath = await discoverAndroidSdkPath()
+		if (!androidSdkPath) {
 			detection.missing_env_vars.push("ANDROID_HOME/ANDROID_SDK_ROOT")
-			detection.blockers.push(createBlocker("android-sdk", "Required by Android export configuration in export_presets.cfg.", "sdkmanager --install 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0'"))
+			detection.blockers.push(createBlocker("android-sdk", `Required for the Godot Android target declared by the canonical target-completion contract (${androidExpectation.release_proof}).`, "sdkmanager --install 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0'"))
+		} else {
+			detection.version_info.android_sdk_path = androidSdkPath
 		}
 		if (!(await firstAvailableExecutable(["java"], ["-version"]))) detection.blockers.push(createBlocker("java", "Required for Android export support in Godot.", null))
 		if (!(await firstAvailableExecutable(["javac"], ["-version"]))) detection.blockers.push(createBlocker("javac", "Required for Android export support in Godot.", null))
+		if (!(await hasGodotExportTemplatesInstalled())) detection.blockers.push(createBlocker("godot-export-templates", "Required for Godot Android debug APK export.", null))
+		if (!existsSync(join(root, "export_presets.cfg"))) {
+			detection.warnings.push(`Android target declared in canonical brief, but repo prerequisite ${androidExpectation.repo_prerequisites[0]} is still missing.`)
+		}
+		if (!hasMeaningfulAndroidSupportSurface(root)) {
+			detection.warnings.push(`Android target declared in canonical brief, but repo prerequisite ${androidExpectation.repo_prerequisites[1]} is still missing.`)
+		}
 	}
 	return finalizeDetection(detection)
 }

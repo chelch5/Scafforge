@@ -170,6 +170,12 @@ def prevention_action(finding: Finding) -> str:
         return "Make ticket acceptance criteria scope-isolated: if the literal closeout command depends on later-ticket work, split the backlog differently or encode the dependency explicitly instead of shipping contradictory acceptance."
     if finding.code == "WFLOW024":
         return "Give historical reconciliation one legal evidence-backed path so superseded invalidated tickets can be repaired without depending on impossible direct-artifact or closeout assumptions."
+    if finding.code == "WFLOW025":
+        return "Extend the target-completion contract so declared Godot Android repos always get canonical `ANDROID-001` and `RELEASE-001` backlog ownership instead of leaving Android delivery buried in generic polish work."
+    if finding.code == "WFLOW026":
+        return "Teach the shared artifact verdict extractor to accept markdown-emphasized labels like `**Verdict**: PASS`, then route ticket_lookup and ticket_update through that single parser."
+    if finding.code == "WFLOW027":
+        return "Return verification metadata from restart-surface tools so callers can confirm what handoff and snapshot publication actually wrote."
     if finding.code == "SESSION001":
         return "Teach scafforge-audit to treat supplied session logs as first-class temporal evidence and explain final reasoning failures before reconciling current repo state."
     if finding.code == "SESSION002":
@@ -225,17 +231,66 @@ def package_has_wflow024_fix(ctx: AuditReportingContext) -> bool:
     )
 
 
+def package_has_target_completion_fix(ctx: AuditReportingContext) -> bool:
+    package = ctx.package_root
+    verifier = read_text(package / "skills" / "scafforge-audit" / "scripts" / "shared_verifier.py")
+    ticket_graph = read_text(package / "skills" / "scafforge-audit" / "scripts" / "audit_ticket_graph.py")
+    bootstrap = read_text(package / "skills" / "repo-scaffold-factory" / "assets" / "project-template" / ".opencode" / "tools" / "environment_bootstrap.ts")
+    repair_follow_up = read_text(package / "skills" / "ticket-pack-builder" / "scripts" / "apply_remediation_follow_up.py")
+    return (
+        "VERIFY012" in verifier
+        and "WFLOW025" in ticket_graph
+        and "repoTargetsGodotAndroid" in bootstrap
+        and "ANDROID_EXPORT_TICKET_ID" in repair_follow_up
+        and "ANDROID_RELEASE_TICKET_ID" in repair_follow_up
+    )
+
+
+def package_has_verdict_parser_fix(ctx: AuditReportingContext) -> bool:
+    workflow_lib = read_text(
+        ctx.package_root
+        / "skills"
+        / "repo-scaffold-factory"
+        / "assets"
+        / "project-template"
+        / ".opencode"
+        / "lib"
+        / "workflow.ts"
+    )
+    lifecycle_audit = read_text(ctx.package_root / "skills" / "scafforge-audit" / "scripts" / "audit_lifecycle_contracts.py")
+    return "(?:\\*\\*|__)?" in workflow_lib and "WFLOW026" in lifecycle_audit
+
+
 def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingContext) -> list[dict[str, Any]]:
     recommendations: list[dict[str, Any]] = []
     wflow024_package_fix_available = package_has_wflow024_fix(ctx)
+    target_completion_fix_available = package_has_target_completion_fix(ctx)
+    verdict_parser_fix_available = package_has_verdict_parser_fix(ctx)
     grouped_follow_up: dict[str, list[Finding]] = {}
     next_index = 1
     for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
-        if finding.code.startswith(("BOOT", "ENV", "EXEC", "REF", "SESSION")):
+        if finding.code in {"BOOT001", "BOOT002"}:
+            route = "scafforge-repair"
+            repair_class = "safe Scafforge package change"
+        elif finding.code.startswith(("BOOT", "ENV", "EXEC", "REF", "SESSION")):
             route = "ticket-pack-builder"
             repair_class = "generated-repo remediation ticket"
         elif finding.code == "WFLOW024":
             if wflow024_package_fix_available:
+                route = "scafforge-repair"
+                repair_class = "safe Scafforge package change"
+            else:
+                route = "manual-prerequisite"
+                repair_class = "Scafforge package work required before the next subject-repo repair run"
+        elif finding.code == "WFLOW025":
+            if target_completion_fix_available:
+                route = "scafforge-repair"
+                repair_class = "safe Scafforge package change"
+            else:
+                route = "manual-prerequisite"
+                repair_class = "Scafforge package work required before the next subject-repo repair run"
+        elif finding.code == "WFLOW026":
+            if verdict_parser_fix_available:
                 route = "scafforge-repair"
                 repair_class = "safe Scafforge package change"
             else:

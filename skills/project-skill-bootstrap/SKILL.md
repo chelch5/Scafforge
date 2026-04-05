@@ -55,6 +55,7 @@ For each baseline skill in `.opencode/skills/`, rewrite the SKILL.md with actual
 - Actual linting/formatting rules
 - Actual code-quality gate commands for review and QA (build, lint, type-check, reference-integrity)
 - Stack-specific execution commands surfaced by the generated adapter and environment bootstrap flow
+- Target-completion or release-proof commands when the brief declares a platform-specific artifact path such as a Godot Android APK export
 - Code style preferences from the brief
 - Do not leave placeholder text behind; a baseline skill that still says "Replace this file..." is invalid
 - Pull framework-specific rules from the canonical brief, repo instructions, and current code evidence
@@ -183,6 +184,7 @@ Continue to `../opencode-team-bootstrap/SKILL.md` as directed by scaffold-kickof
 - Keep generated review and diagnosis guidance repo-local; do not promote it into a Scafforge core skill
 - Generated workflow skills must agree with the ticket tools and prompts on stage order, artifact ownership, and blocker behavior before generation is complete
 - Generated workflow skills should name stack-specific build and verification commands that match the active adapter evidence instead of falling back to generic Python or Node assumptions
+- When the brief declares a release target such as Godot Android, generated skills must record the canonical export command and artifact path so weaker models do not treat release proof as optional polish work
 
 ## References
 
