@@ -872,12 +872,12 @@ function validateTicketGraphInvariants(manifest: Manifest): void {
       if (ticket.source_ticket_id === ticket.id) {
         throw new Error(`Ticket ${ticket.id} cannot be its own source.`)
       }
+      if (dependsOn.has(ticket.source_ticket_id)) {
+        throw new Error(`Ticket ${ticket.id} cannot name ${ticket.source_ticket_id} as both source_ticket_id and depends_on.`)
+      }
       const sourceTicket = ticketsById.get(ticket.source_ticket_id)
       if (!sourceTicket) {
         throw new Error(`Ticket ${ticket.id} references missing source ticket ${ticket.source_ticket_id}.`)
-      }
-      if (ticket.source_mode === "split_scope" && dependsOn.has(ticket.source_ticket_id)) {
-        throw new Error(`Split-scope ticket ${ticket.id} cannot depend on its source ticket ${ticket.source_ticket_id}.`)
       }
       if (!sourceTicket.follow_up_ticket_ids.includes(ticket.id)) {
         throw new Error(`Ticket ${ticket.id} is missing symmetric follow-up linkage from ${sourceTicket.id}.`)
@@ -967,6 +967,18 @@ async function validateWorkflowWriteState(workflow: WorkflowState, root = rootPa
 export function validateRestartSurfacePublication(manifest: Manifest, workflow: WorkflowState, pivot: PivotState): string | null {
   if (!pivot.pivot_state_owner || !pivot.pivot_state_owner.trim()) {
     return "Pivot state owner is missing; restart surfaces can only publish from a normalized pivot state."
+  }
+  const restartInputs = pivot.restart_surface_inputs
+  if (!restartInputs.pivot_in_progress) {
+    if (restartInputs.pivot_changed_surfaces.length > 0 && !restartInputs.post_pivot_verification_passed) {
+      return "Restart surfaces can only publish from a final pivot snapshot after post-pivot verification passes."
+    }
+    if (restartInputs.pending_downstream_stages.length > 0) {
+      return `Restart surfaces can only publish from a final pivot snapshot when no downstream stages remain pending, but pending stages remain: ${restartInputs.pending_downstream_stages.join(", ")}.`
+    }
+    if (restartInputs.pending_ticket_lineage_actions.length > 0) {
+      return `Restart surfaces can only publish from a final pivot snapshot when no ticket lineage actions remain pending, but pending actions remain: ${restartInputs.pending_ticket_lineage_actions.join(", ")}.`
+    }
   }
   const activeTicket = getTicket(manifest, manifest.active_ticket)
   if (workflow.active_ticket !== activeTicket.id) {

@@ -5,7 +5,14 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from typing import Any
+
+RUNTIME_SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scafforge-pivot" / "scripts"
+if str(RUNTIME_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_SCRIPT_DIR))
+
+from shared_generated_tool_runtime import run_generated_tool
 
 
 START_HERE_MANAGED_START = "<!-- SCAFFORGE:START_HERE_BLOCK START -->"
@@ -745,31 +752,17 @@ def regenerate_restart_surfaces(
     verification_passed: bool | None = None,
     update_provenance_entry: bool = True,
 ) -> dict[str, Any]:
+    publication = run_generated_tool(
+        repo_root,
+        ".opencode/tools/handoff_publish.ts",
+        {"next_action": next_action} if isinstance(next_action, str) and next_action.strip() else {},
+    )
     manifest = read_json(repo_root / "tickets" / "manifest.json")
     workflow = read_json(repo_root / ".opencode" / "state" / "workflow-state.json")
-    provenance = read_json(repo_root / ".opencode" / "meta" / "bootstrap-provenance.json")
     pivot_state = load_pivot_state(repo_root)
-    if not isinstance(manifest, dict) or not isinstance(workflow, dict):
-        raise SystemExit("Cannot regenerate restart surfaces without tickets/manifest.json and .opencode/state/workflow-state.json.")
+    provenance = read_json(repo_root / ".opencode" / "meta" / "bootstrap-provenance.json")
     if not isinstance(provenance, dict):
         provenance = {}
-
-    backlog_verifier_agent = load_backlog_verifier_agent(provenance)
-    rendered_start_here = render_start_here(
-        manifest,
-        workflow,
-        backlog_verifier_agent=backlog_verifier_agent,
-        verification_passed=verification_passed,
-        next_action=next_action,
-        pivot_state=pivot_state,
-    )
-    start_here_path = repo_root / "START-HERE.md"
-    write_text(start_here_path, merge_start_here(read_text(start_here_path), rendered_start_here))
-    write_text(
-        repo_root / ".opencode" / "state" / "context-snapshot.md",
-        render_context_snapshot(manifest, workflow, context_note, pivot_state=pivot_state),
-    )
-    write_text(repo_root / ".opencode" / "state" / "latest-handoff.md", rendered_start_here)
 
     if update_provenance_entry:
         update_restart_surface_provenance(
@@ -782,6 +775,7 @@ def regenerate_restart_surfaces(
     return {
         "repo_root": str(repo_root),
         "surfaces": list(REGENERATED_SURFACES),
+        "publication": publication,
         "handoff_status": compute_handoff_status(
             workflow,
             verification_passed,

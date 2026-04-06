@@ -506,7 +506,7 @@ def seed_closed_ticket_with_blocked_dependent(dest: Path) -> None:
     workflow["bootstrap"] = {
         "status": "ready",
         "last_verified_at": "2026-03-26T00:00:00Z",
-        "environment_fingerprint": "synthetic-ready-bootstrap",
+        "environment_fingerprint": compute_bootstrap_fingerprint(dest),
         "proof_artifact": ".opencode/state/bootstrap/synthetic-ready-bootstrap.md",
     }
     ticket_state = workflow.get("ticket_state")
@@ -542,7 +542,7 @@ def seed_closed_ticket_needing_explicit_reverification(dest: Path) -> None:
     workflow["bootstrap"] = {
         "status": "ready",
         "last_verified_at": "2026-03-26T00:00:00Z",
-        "environment_fingerprint": "synthetic-ready-bootstrap",
+        "environment_fingerprint": compute_bootstrap_fingerprint(dest),
         "proof_artifact": ".opencode/state/bootstrap/synthetic-ready-bootstrap.md",
     }
     ticket_state = workflow.get("ticket_state")
@@ -578,7 +578,7 @@ def seed_closed_ticket_needing_reconciliation(dest: Path) -> None:
     workflow["bootstrap"] = {
         "status": "ready",
         "last_verified_at": "2026-03-26T00:00:00Z",
-        "environment_fingerprint": "synthetic-ready-bootstrap",
+        "environment_fingerprint": compute_bootstrap_fingerprint(dest),
         "proof_artifact": ".opencode/state/bootstrap/synthetic-ready-bootstrap.md",
     }
     ticket_state = workflow.get("ticket_state")
@@ -1326,7 +1326,7 @@ def seed_truthful_process_verification(dest: Path) -> None:
     workflow["bootstrap"] = {
         "status": "ready",
         "last_verified_at": "2026-03-27T01:30:00Z",
-        "environment_fingerprint": "synthetic-ready-bootstrap",
+        "environment_fingerprint": compute_bootstrap_fingerprint(dest),
         "proof_artifact": bootstrap_rel,
     }
     workflow["repair_follow_on"] = {
@@ -1715,7 +1715,7 @@ def seed_open_active_ticket_with_pending_verification(dest: Path) -> None:
     workflow["bootstrap"] = {
         "status": "ready",
         "last_verified_at": "2026-03-26T00:00:00Z",
-        "environment_fingerprint": "synthetic-ready-bootstrap",
+        "environment_fingerprint": compute_bootstrap_fingerprint(dest),
         "proof_artifact": ".opencode/state/bootstrap/synthetic-ready-bootstrap.md",
     }
     proof_path = (
@@ -2325,7 +2325,7 @@ def main() -> int:
         for expected in (
             "load_ticket_recommendations",
             '"finding_source": str(recommendation.get("source_finding_code")',
-            "render_board(manifest)",
+            'run_generated_tool(repo_root, ".opencode/tools/ticket_create.ts", payload)',
         ):
             if expected not in remediation_follow_up_script:
                 raise RuntimeError(
@@ -3415,6 +3415,7 @@ def main() -> int:
                 sys.executable,
                 str(PIVOT_APPLY),
                 str(pivot_lineage_dest),
+                "--skip-publish",
             ],
             ROOT,
         )
@@ -3449,24 +3450,9 @@ def main() -> int:
             raise RuntimeError(
                 "Pivot lineage execution should persist completed explicit lineage actions in pivot state"
             )
-        pivot_lineage_start_here = (pivot_lineage_dest / "START-HERE.md").read_text(
-            encoding="utf-8"
-        )
-        if (
-            "- pivot_pending_ticket_lineage_actions: none"
-            not in pivot_lineage_start_here
-        ):
+        if pivot_lineage_apply["publication"] is not None:
             raise RuntimeError(
-                "Pivot lineage execution should republish START-HERE when no explicit ticket lineage actions remain pending"
-            )
-        if (
-            "- pivot_completed_ticket_lineage_actions: reopen:EXEC-REOPEN, reconcile:EXEC-RECON-TGT"
-            not in pivot_lineage_start_here
-            and "- pivot_completed_ticket_lineage_actions: reconcile:EXEC-RECON-TGT, reopen:EXEC-REOPEN"
-            not in pivot_lineage_start_here
-        ):
-            raise RuntimeError(
-                "Pivot lineage execution should republish START-HERE with completed explicit ticket lineage actions"
+                "Pivot lineage execution should defer restart publication when post-pivot verification is explicitly skipped"
             )
         updated_lineage_manifest = json.loads(
             lineage_manifest_path.read_text(encoding="utf-8")
@@ -3671,7 +3657,7 @@ def main() -> int:
         blocked_workflow["bootstrap"] = {
             "status": "ready",
             "last_verified_at": "2026-04-01T00:00:00Z",
-            "environment_fingerprint": "synthetic-ready-bootstrap",
+            "environment_fingerprint": compute_bootstrap_fingerprint(blocked_greenfield_dest),
             "proof_artifact": ".opencode/state/bootstrap/synthetic-ready-bootstrap.md",
         }
         blocked_workflow["bootstrap_blockers"] = [
@@ -4250,8 +4236,8 @@ def main() -> int:
             restart_repair_dest / ".opencode" / "state" / "context-snapshot.md"
         ).read_text(encoding="utf-8")
         if (
-            "- state_revision: 122" not in repaired_context_snapshot
-            or "synthetic-team-leader" not in repaired_context_snapshot
+            "- state_revision: 123" not in repaired_context_snapshot
+            or "- No active lane leases" not in repaired_context_snapshot
             or "## Repair Follow-On" not in repaired_context_snapshot
             or "- Open split children: none" not in repaired_context_snapshot
         ):
@@ -4382,9 +4368,16 @@ def main() -> int:
             raise RuntimeError(
                 "Managed repair follow-on should create the canonical Android export and release tickets for Godot Android repos"
             )
-        if "ANDROID-001" not in release_ticket.get("depends_on", []):
+        if "ANDROID-001" in release_ticket.get("depends_on", []):
             raise RuntimeError(
-                "RELEASE-001 should depend on ANDROID-001 when repair creates the Android target-completion ticket pair"
+                "RELEASE-001 should remain a split-scope child of ANDROID-001 without blocking on its open parent"
+            )
+        if (
+            release_ticket.get("source_ticket_id") != "ANDROID-001"
+            or release_ticket.get("source_mode") != "split_scope"
+        ):
+            raise RuntimeError(
+                "RELEASE-001 should preserve split-scope lineage to ANDROID-001 when repair creates the Android target-completion ticket pair"
             )
 
         repeat_dest = workspace / "repeat-cycle"
@@ -5465,6 +5458,26 @@ def main() -> int:
         ):
             raise RuntimeError(
                 "ticket_create should record the split-scope parent guidance on the source ticket"
+            )
+
+        split_scope_dependency_error = run_generated_tool_error(
+            executed_split_scope_dest,
+            ".opencode/tools/ticket_create.ts",
+            {
+                "id": "EXEC-SPLIT-BAD",
+                "title": "Synthetic invalid split-scope child",
+                "lane": "implementation",
+                "wave": 2,
+                "summary": "Invalid split child that also blocks on its source.",
+                "acceptance": ["This ticket should never be created."],
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "split_scope",
+                "depends_on": ["SETUP-001"],
+            },
+        )
+        if "as both source_ticket_id and depends_on" not in split_scope_dependency_error:
+            raise RuntimeError(
+                "ticket_create should reject tickets that name the same parent in both source_ticket_id and depends_on"
             )
 
         executed_process_verification_dest = (

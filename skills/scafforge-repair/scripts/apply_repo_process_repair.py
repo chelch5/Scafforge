@@ -12,9 +12,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+RUNTIME_SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scafforge-pivot" / "scripts"
+if str(RUNTIME_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_SCRIPT_DIR))
+
 from audit_repo_process import load_latest_previous_diagnosis, manifest_supporting_logs, supporting_log_paths
 from regenerate_restart_surfaces import regenerate_restart_surfaces
 from shared_verifier import audit_repo
+from shared_generated_tool_runtime import run_generated_tool
 
 
 START_HERE_MANAGED_START = "<!-- SCAFFORGE:START_HERE_BLOCK START -->"
@@ -907,90 +912,37 @@ def refresh_restart_surfaces(repo_root: Path) -> None:
 
 
 def update_workflow_state(repo_root: Path, rendered_provenance: dict[str, Any], change_summary: str) -> None:
-    workflow_path = repo_root / ".opencode" / "state" / "workflow-state.json"
-    manifest = read_json(repo_root / "tickets" / "manifest.json")
-    workflow = read_json(workflow_path)
-
-    manifest_active_ticket = None
-    manifest_stage = "planning"
-    manifest_status = "todo"
-    if isinstance(manifest, dict):
-        raw_active = manifest.get("active_ticket")
-        if isinstance(raw_active, str) and raw_active.strip():
-            manifest_active_ticket = raw_active.strip()
-        tickets = manifest.get("tickets")
-        if isinstance(tickets, list) and manifest_active_ticket:
-            for ticket in tickets:
-                if not isinstance(ticket, dict):
-                    continue
-                if ticket.get("id") == manifest_active_ticket:
-                    if isinstance(ticket.get("stage"), str) and ticket["stage"].strip():
-                        manifest_stage = ticket["stage"].strip()
-                    if isinstance(ticket.get("status"), str) and ticket["status"].strip():
-                        manifest_status = ticket["status"].strip()
-                    break
-
-    existing_active_ticket = workflow.get("active_ticket") if isinstance(workflow, dict) else None
-    active_ticket = existing_active_ticket if isinstance(existing_active_ticket, str) and existing_active_ticket.strip() else manifest_active_ticket or "UNKNOWN"
-    stage = workflow.get("stage") if isinstance(workflow, dict) and isinstance(workflow.get("stage"), str) and workflow.get("stage").strip() else manifest_stage
-    status = workflow.get("status") if isinstance(workflow, dict) and isinstance(workflow.get("status"), str) and workflow.get("status").strip() else manifest_status
-    ticket_state = normalize_ticket_state_map(workflow.get("ticket_state") if isinstance(workflow, dict) else None)
-    legacy_approved_plan = workflow.get("approved_plan") if isinstance(workflow, dict) and isinstance(workflow.get("approved_plan"), bool) else False
-    if isinstance(active_ticket, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", active_ticket) and active_ticket not in ticket_state:
-        ticket_state[active_ticket] = {
-            "approved_plan": legacy_approved_plan,
-            "reopen_count": 0,
-            "needs_reverification": False,
-        }
-    approved_plan = ticket_state.get(active_ticket, {}).get("approved_plan", legacy_approved_plan)
-    existing_bootstrap = workflow.get("bootstrap") if isinstance(workflow, dict) and isinstance(workflow.get("bootstrap"), dict) else {}
-    existing_lane_leases = workflow.get("lane_leases") if isinstance(workflow, dict) and isinstance(workflow.get("lane_leases"), list) else []
-    existing_state_revision = workflow.get("state_revision") if isinstance(workflow, dict) and isinstance(workflow.get("state_revision"), int) and workflow.get("state_revision") >= 0 else 0
-    bootstrap_status = existing_bootstrap.get("status")
-    if bootstrap_status not in {"missing", "ready", "stale", "failed"}:
-        bootstrap_status = "missing"
-
     workflow_contract = rendered_provenance.get("workflow_contract", {}) if isinstance(rendered_provenance, dict) else {}
     process_version = workflow_contract.get("process_version", 7)
     changed_at = current_iso_timestamp()
-    payload = {
-        "active_ticket": active_ticket,
-        "stage": stage,
-        "status": status,
-        "approved_plan": approved_plan,
-        "ticket_state": ticket_state,
-        "process_version": process_version,
-        "process_last_changed_at": changed_at,
-        "process_last_change_summary": change_summary,
-        "pending_process_verification": True,
-        "parallel_mode": workflow_contract.get("parallel_mode", "sequential"),
-        "repair_follow_on": {
-            "outcome": "managed_blocked",
-            "required_stages": [],
-            "completed_stages": [],
-            "asserted_completed_stages": [],
-            "legacy_asserted_completed_stages": [],
-            "stage_completion_mode": "legacy_manual_assertion",
-            "tracking_mode": "persistent_recorded_state",
-            "follow_on_state_path": str(FOLLOW_ON_TRACKING_PATH).replace("\\", "/"),
-            "blocking_reasons": [
-                "Managed repair refreshed workflow surfaces. Run the full scafforge-repair follow-on flow before resuming normal ticket lifecycle execution."
-            ],
-            "verification_passed": False,
-            "handoff_allowed": False,
-            "last_updated_at": changed_at,
+    run_generated_tool(
+        repo_root,
+        ".opencode/tools/repair_follow_on_refresh.ts",
+        {
+            "change_summary": change_summary,
             "process_version": process_version,
+            "parallel_mode": workflow_contract.get("parallel_mode", "sequential"),
+            "repair_follow_on_json": json.dumps(
+                {
+                    "outcome": "managed_blocked",
+                    "required_stages": [],
+                    "completed_stages": [],
+                    "asserted_completed_stages": [],
+                    "legacy_asserted_completed_stages": [],
+                    "stage_completion_mode": "legacy_manual_assertion",
+                    "tracking_mode": "persistent_recorded_state",
+                    "follow_on_state_path": str(FOLLOW_ON_TRACKING_PATH).replace("\\", "/"),
+                    "blocking_reasons": [
+                        "Managed repair refreshed workflow surfaces. Run the full scafforge-repair follow-on flow before resuming normal ticket lifecycle execution."
+                    ],
+                    "verification_passed": False,
+                    "handoff_allowed": False,
+                    "last_updated_at": changed_at,
+                    "process_version": process_version,
+                }
+            ),
         },
-        "bootstrap": {
-            "status": bootstrap_status,
-            "last_verified_at": existing_bootstrap.get("last_verified_at"),
-            "environment_fingerprint": existing_bootstrap.get("environment_fingerprint"),
-            "proof_artifact": existing_bootstrap.get("proof_artifact"),
-        },
-        "lane_leases": existing_lane_leases,
-        "state_revision": existing_state_revision,
-    }
-    write_json(workflow_path, payload)
+    )
     initialize_follow_on_tracking_state(
         repo_root,
         process_version=process_version,
