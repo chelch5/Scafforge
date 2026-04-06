@@ -2,7 +2,7 @@
 
 Package backlog only. This board is a tracker, not runtime workflow state.
 
-Current focus: `MUT-001`
+Current focus: `MUT-002`
 
 | Wave | ID | Title | Lane | Stage | Status | Resolution | Verification | Parallel Safe | Overlap Risk | Depends On | Follow-ups |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
