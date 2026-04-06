@@ -851,7 +851,13 @@ function validateTicketLifecycleConsistency(ticket: Ticket): void {
 }
 
 function validateTicketGraphInvariants(manifest: Manifest): void {
-  const ticketsById = new Map<string, Ticket>(manifest.tickets.map((ticket) => [ticket.id, ticket] as const))
+  const ticketsById = new Map<string, Ticket>()
+  for (const ticket of manifest.tickets) {
+    if (ticketsById.has(ticket.id)) {
+      throw new Error(`Duplicate ticket ID detected: ${ticket.id}`)
+    }
+    ticketsById.set(ticket.id, ticket)
+  }
   for (const ticket of manifest.tickets) {
     validateTicketLifecycleConsistency(ticket)
     const dependsOn = new Set(ticket.depends_on)
@@ -863,6 +869,9 @@ function validateTicketGraphInvariants(manifest: Manifest): void {
       throw new Error(`Ticket ${ticket.id} contains duplicate follow_up_ticket_ids entries.`)
     }
     if (ticket.source_ticket_id) {
+      if (ticket.source_ticket_id === ticket.id) {
+        throw new Error(`Ticket ${ticket.id} cannot be its own source.`)
+      }
       const sourceTicket = ticketsById.get(ticket.source_ticket_id)
       if (!sourceTicket) {
         throw new Error(`Ticket ${ticket.id} references missing source ticket ${ticket.source_ticket_id}.`)
@@ -892,6 +901,14 @@ function validateTicketGraphInvariants(manifest: Manifest): void {
         throw new Error(`Ticket ${ticket.id} does not have symmetric source ownership for follow-up ticket ${followUpTicketId}.`)
       }
     }
+    for (const dependencyId of dependsOn) {
+      if (dependencyId === ticket.id) {
+        throw new Error(`Ticket ${ticket.id} cannot depend on itself.`)
+      }
+      if (!ticketsById.has(dependencyId)) {
+        throw new Error(`Ticket ${ticket.id} depends on missing ticket ${dependencyId}.`)
+      }
+    }
   }
 
   const visited = new Set<string>()
@@ -903,8 +920,7 @@ function validateTicketGraphInvariants(manifest: Manifest): void {
     }
     visiting.add(ticket.id)
     for (const dependencyId of ticket.depends_on) {
-      const dependency = ticketsById.get(dependencyId)
-      if (!dependency) continue
+      const dependency = ticketsById.get(dependencyId)!
       visit(dependency, [...trail, ticket.id])
     }
     visiting.delete(ticket.id)
