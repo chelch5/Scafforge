@@ -164,6 +164,12 @@ export const StageGateEnforcer: Plugin = async () => {
         const manifest = await loadManifest()
         const sourceMode = typeof output.args.source_mode === "string" ? output.args.source_mode : "net_new_scope"
         const sourceTicketId = typeof output.args.source_ticket_id === "string" ? output.args.source_ticket_id : ""
+        const dependsOn = Array.isArray(output.args.depends_on)
+          ? output.args.depends_on.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean)
+          : []
+        if (sourceTicketId && dependsOn.includes(sourceTicketId)) {
+          throw new Error(`ticket_create cannot name ${sourceTicketId} as both source_ticket_id and depends_on.`)
+        }
         if (sourceMode === "process_verification" && !workflow.pending_process_verification) {
           throw new Error("process_verification follow-up creation is only available while pending_process_verification is true.")
         }

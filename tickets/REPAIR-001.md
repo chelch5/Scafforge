@@ -47,16 +47,16 @@ repair-engine
 
 ## Stage
 
-planning
+complete
 
 ## Status
 
-todo
+done
 
 ## Trust
 
-- resolution_state: open
-- verification_state: suspect
+- resolution_state: completed
+- verification_state: verified
 - finding_source: None
 - source_ticket_id: None
 - source_mode: None
@@ -76,10 +76,10 @@ None
 
 ## Acceptance Criteria
 
-- [ ] `apply_repo_process_repair.py` no longer rebuilds canonical workflow state through a private parallel truth model
-- [ ] Workflow-state changes triggered during repair route through the canonical runtime mutation contract or a shared adapter path
-- [ ] Repair-side workflow updates preserve `active_ticket`, `repair_follow_on`, bootstrap, process-version, and lane-lease truth without inventing secondary semantics
-- [ ] The repair script records only orchestration intent and provenance that belong at package level
+- [x] `apply_repo_process_repair.py` no longer rebuilds canonical workflow state through a private parallel truth model
+- [x] Workflow-state changes triggered during repair route through the canonical runtime mutation contract or a shared adapter path
+- [x] Repair-side workflow updates preserve `active_ticket`, `repair_follow_on`, bootstrap, process-version, and lane-lease truth without inventing secondary semantics
+- [x] The repair script records only orchestration intent and provenance that belong at package level
 
 ## Artifacts
 

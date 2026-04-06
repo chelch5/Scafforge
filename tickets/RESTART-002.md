@@ -47,16 +47,16 @@ restart-surfaces
 
 ## Stage
 
-planning
+complete
 
 ## Status
 
-todo
+done
 
 ## Trust
 
-- resolution_state: open
-- verification_state: suspect
+- resolution_state: completed
+- verification_state: verified
 - finding_source: None
 - source_ticket_id: None
 - source_mode: None
@@ -76,10 +76,10 @@ None
 
 ## Acceptance Criteria
 
-- [ ] `regenerate_restart_surfaces.py` becomes a thin runtime-backed adapter or is otherwise stripped of independent render logic
-- [ ] No package-side restart renderer remains authoritative after this cutover
-- [ ] Repair and pivot restart publication use the same canonical derivation contract
-- [ ] Validation clearly fails if a package-side restart writer drifts from runtime-owned restart truth
+- [x] `regenerate_restart_surfaces.py` becomes a thin runtime-backed adapter or is otherwise stripped of independent render logic
+- [x] No package-side restart renderer remains authoritative after this cutover
+- [x] Repair and pivot restart publication use the same canonical derivation contract
+- [x] Validation clearly fails if a package-side restart writer drifts from runtime-owned restart truth
 
 ## Artifacts
 
@@ -90,4 +90,4 @@ None
 - RFC coverage: Workstream B repair-side renderer collapse and final-state publish gate preconditions.
 - Primary surfaces: `skills/scafforge-repair/scripts/regenerate_restart_surfaces.py`, `workflow.ts`, `handoff_publish.ts`, repair or pivot callers.
 - This ticket is the explicit answer to the review note that restart rendering duplication was understated.
-- PR-11 final-authority follow-up: `validateRestartSurfacePublication(...)` currently checks pivot ownership plus manifest/workflow convergence, but it does not directly enforce pivot verification-complete fields such as `restart_surface_inputs.post_pivot_verification_passed`, `pending_downstream_stages`, or `pending_ticket_lineage_actions`. If RESTART-002 changes publication or restart inputs, either tighten that gate to cover these fields or document why convergence alone remains sufficient.
+- Final-authority closeout: `validateRestartSurfacePublication(...)` now rejects final pivot snapshots that still have pending downstream stages, pending lineage actions, or changed surfaces without `post_pivot_verification_passed=true`, and `publish_pivot_surfaces.py` no longer fabricates that verification flag when lineage work merely reaches all-done.

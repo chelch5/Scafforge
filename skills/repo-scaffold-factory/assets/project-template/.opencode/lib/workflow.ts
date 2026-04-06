@@ -872,6 +872,9 @@ function validateTicketGraphInvariants(manifest: Manifest): void {
       if (ticket.source_ticket_id === ticket.id) {
         throw new Error(`Ticket ${ticket.id} cannot be its own source.`)
       }
+      if (dependsOn.has(ticket.source_ticket_id)) {
+        throw new Error(`Ticket ${ticket.id} cannot name ${ticket.source_ticket_id} as both source_ticket_id and depends_on.`)
+      }
       const sourceTicket = ticketsById.get(ticket.source_ticket_id)
       if (!sourceTicket) {
         throw new Error(`Ticket ${ticket.id} references missing source ticket ${ticket.source_ticket_id}.`)
@@ -967,6 +970,9 @@ export function validateRestartSurfacePublication(manifest: Manifest, workflow: 
   }
   const restartInputs = pivot.restart_surface_inputs
   if (!restartInputs.pivot_in_progress) {
+    if (restartInputs.pivot_changed_surfaces.length > 0 && !restartInputs.post_pivot_verification_passed) {
+      return "Restart surfaces can only publish from a final pivot snapshot after post-pivot verification passes."
+    }
     if (restartInputs.pending_downstream_stages.length > 0) {
       return `Restart surfaces can only publish from a final pivot snapshot when no downstream stages remain pending, but pending stages remain: ${restartInputs.pending_downstream_stages.join(", ")}.`
     }
