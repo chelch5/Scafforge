@@ -306,10 +306,17 @@ def normalize_restart_surface_publication(value: Any) -> dict[str, Any]:
     }
 
 
+def normalize_pivot_state_owner(value: Any) -> str:
+    normalized = str(value).strip()
+    if not normalized or normalized == DEFAULT_PIVOT_STATE_OWNER:
+        return DEFAULT_PIVOT_STATE_OWNER
+    raise ValueError(f"Pivot state owner is restricted to {DEFAULT_PIVOT_STATE_OWNER}.")
+
+
 def normalize_pivot_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("Pivot state payload is missing or invalid.")
-    pivot_state_owner = str(payload.get("pivot_state_owner", "")).strip() or DEFAULT_PIVOT_STATE_OWNER
+    pivot_state_owner = normalize_pivot_state_owner(payload.get("pivot_state_owner", ""))
     downstream_state = payload.get("downstream_refresh_state")
     if not isinstance(downstream_state, dict):
         required_details = payload.get("downstream_refresh") if isinstance(payload.get("downstream_refresh"), list) else []

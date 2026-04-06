@@ -5,8 +5,8 @@ This document is the execution contract for the next implementation agent and th
 Current state:
 - package backlog cleanup is complete
 - package-root generated-repo runtime state has been removed
-- `SETUP-001`, `ARCH-001`, `ARCH-002`, `STACK-001`, `DIAG-001`, `DIAG-002`, `MUT-001`, `PIVOT-001`, `RESTART-001`, and `INV-001` are complete
-- the next implementation focus is `MUT-002`
+- `SETUP-001`, `ARCH-001`, `ARCH-002`, `STACK-001`, `DIAG-001`, `DIAG-002`, `MUT-001`, `MUT-002`, `PIVOT-001`, `REPAIR-001`, `RESTART-001`, `RESTART-002`, `INV-001`, and `INV-002` are complete
+- the next implementation focus is `REPAIR-002`
 
 ## Non-Negotiable Rules
 
