@@ -335,6 +335,18 @@ def update_latest_repair_history(repo_root: Path, repair_id: str, updates: dict[
             return
 
 
+def append_migration_history(repo_root: Path, migration_entry: dict[str, Any]) -> None:
+    provenance_path = repo_root / ".opencode" / "meta" / "bootstrap-provenance.json"
+    payload = read_json(provenance_path)
+    if not isinstance(payload, dict):
+        return
+    history = payload.get("migration_history")
+    if not isinstance(history, list):
+        history = []
+    payload["migration_history"] = [*history, migration_entry]
+    write_json(provenance_path, payload)
+
+
 def merge_start_here(existing: str, rendered: str) -> str:
     rendered_pattern = re.compile(
         rf"{re.escape(START_HERE_MANAGED_START)}[\s\S]*?{re.escape(START_HERE_MANAGED_END)}",
@@ -966,6 +978,8 @@ def update_provenance(
     existing = read_json(provenance_path)
     rendered = read_json(rendered_root / ".opencode" / "meta" / "bootstrap-provenance.json")
     payload = rendered if isinstance(rendered, dict) else {}
+    existing_migration_history = existing.get("migration_history") if isinstance(existing, dict) and isinstance(existing.get("migration_history"), list) else []
+    rendered_migration_history = rendered.get("migration_history") if isinstance(rendered, dict) and isinstance(rendered.get("migration_history"), list) else []
     history = existing.get("repair_history") if isinstance(existing, dict) and isinstance(existing.get("repair_history"), list) else []
     payload["repair_history"] = [
         *history,
@@ -993,6 +1007,7 @@ def update_provenance(
             ),
         },
     ]
+    payload["migration_history"] = existing_migration_history or rendered_migration_history
     write_json(provenance_path, payload)
 
 
