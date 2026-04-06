@@ -2993,6 +2993,48 @@ def main() -> int:
             raise RuntimeError(
                 "Pivot restart surface drift should be detected when pivot-state inputs no longer match the rendered surfaces"
             )
+        pivot_latest_handoff_drift_dest = workspace / "pivot-latest-handoff-drift"
+        shutil.copytree(pivot_dest, pivot_latest_handoff_drift_dest)
+        pivot_latest_handoff_path = (
+            pivot_latest_handoff_drift_dest
+            / ".opencode"
+            / "state"
+            / "latest-handoff.md"
+        )
+        pivot_latest_handoff_text = pivot_latest_handoff_path.read_text(
+            encoding="utf-8"
+        )
+        if "- pivot_class: architecture-change" not in pivot_latest_handoff_text:
+            raise RuntimeError(
+                "Pivot smoke fixture should expose canonical pivot_class in latest-handoff before drift injection"
+            )
+        pivot_latest_handoff_path.write_text(
+            pivot_latest_handoff_text.replace(
+                "- pivot_class: architecture-change",
+                "- pivot_class: drifted",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        pivot_latest_handoff_drift = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(pivot_latest_handoff_drift_dest),
+                "--format",
+                "json",
+                "--no-diagnosis-pack",
+            ],
+            ROOT,
+        )
+        pivot_latest_handoff_drift_codes = {
+            finding["code"]
+            for finding in pivot_latest_handoff_drift.get("findings", [])
+        }
+        if "WFLOW010" not in pivot_latest_handoff_drift_codes:
+            raise RuntimeError(
+                "Pivot drift isolated to latest-handoff should still emit WFLOW010"
+            )
         if set(pivot_state["downstream_refresh_state"]["pending_stages"]) != set(
             pivot_stages
         ):
@@ -7556,6 +7598,10 @@ def main() -> int:
             raise RuntimeError(
                 "Repair history should preserve verification_passed for cycle auditing"
             )
+        if latest_repair_entry.get("blocking_reasons") != repair_payload["execution_record"]["blocking_reasons"]:
+            raise RuntimeError(
+                "Repair history should preserve blocking_reasons for cycle auditing"
+            )
         latest_repair_verification_summary = latest_repair_entry.get("verification_summary")
         if not isinstance(latest_repair_verification_summary, dict):
             raise RuntimeError(
@@ -8882,6 +8928,10 @@ def main() -> int:
                 ROOT / "skills" / "scafforge-audit" / "scripts" / "audit_reporting.py",
                 "scafforge_smoke_audit_reporting_disposition",
             )
+            audit_repair_cycles_module = load_python_module(
+                ROOT / "skills" / "scafforge-audit" / "scripts" / "audit_repair_cycles.py",
+                "scafforge_smoke_audit_repair_cycles",
+            )
             audit_repo_process_module = load_python_module(
                 AUDIT, "scafforge_smoke_audit_repo_process_disposition"
             )
@@ -9026,6 +9076,24 @@ def main() -> int:
             ):
                 raise RuntimeError(
                     "Audit-side repair routing should trust an authoritative empty disposition bundle instead of falling back to legacy recommendation heuristics"
+                )
+
+            same_second_repair = audit_repair_cycles_module.latest_repair_history_entry_after(
+                [
+                    {
+                        "repaired_at": "2026-04-06T13:00:00Z",
+                        "summary": "same-second repair",
+                    }
+                ],
+                audit_repo_process_module.parse_iso_timestamp("2026-04-06T13:00:00Z"),
+                audit_repo_process_module.parse_iso_timestamp,
+            )
+            if same_second_repair != {
+                "repaired_at": "2026-04-06T13:00:00Z",
+                "summary": "same-second repair",
+            }:
+                raise RuntimeError(
+                    "Repair-cycle audit should retain same-second repair entries because diagnosis and repair timestamps are stored with second precision"
                 )
 
             contract_failures = (
