@@ -12,9 +12,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+RUNTIME_SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scafforge-pivot" / "scripts"
+if str(RUNTIME_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_SCRIPT_DIR))
+
 from audit_repo_process import load_latest_previous_diagnosis, manifest_supporting_logs, supporting_log_paths
 from regenerate_restart_surfaces import regenerate_restart_surfaces
 from shared_verifier import audit_repo
+from shared_generated_tool_runtime import run_generated_tool
 
 
 START_HERE_MANAGED_START = "<!-- SCAFFORGE:START_HERE_BLOCK START -->"
@@ -990,7 +995,11 @@ def update_workflow_state(repo_root: Path, rendered_provenance: dict[str, Any], 
         "lane_leases": existing_lane_leases,
         "state_revision": existing_state_revision,
     }
-    write_json(workflow_path, payload)
+    run_generated_tool(
+        repo_root,
+        ".opencode/tools/repair_follow_on_refresh.ts",
+        {"workflow_state_json": json.dumps(payload)},
+    )
     initialize_follow_on_tracking_state(
         repo_root,
         process_version=process_version,
