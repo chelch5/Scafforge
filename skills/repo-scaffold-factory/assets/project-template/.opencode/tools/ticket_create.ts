@@ -78,10 +78,6 @@ export default tool({
       }
       sourceTicket = getTicket(manifest, sourceTicketId)
 
-      if (ticket.depends_on.includes(sourceTicket.id)) {
-        throw new Error(`Ticket ${ticket.id} cannot depend on its source ticket ${sourceTicket.id}; reconcile lineage or split scope instead of creating a contradictory dependency.`)
-      }
-
       if (sourceMode === "process_verification") {
         if (!workflow.pending_process_verification) {
           throw new Error("process_verification ticket creation is only available while pending_process_verification is true.")

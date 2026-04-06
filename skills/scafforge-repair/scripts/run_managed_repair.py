@@ -91,9 +91,9 @@ def _repair_ticket_graph_contradictions(repo_root: Path) -> list[str]:
             changes.append(f"{tid}: removed self-referencing source_ticket_id")
             continue
 
-        # Fix 2: source_ticket_id duplicated in depends_on
+        # Fix 2: source_ticket_id duplicated in depends_on for non-split follow-ups
         depends_on = ticket.get("depends_on")
-        if isinstance(depends_on, list) and source_id in depends_on:
+        if isinstance(depends_on, list) and source_id in depends_on and str(ticket.get("source_mode", "")).strip() != "split_scope":
             ticket["depends_on"] = [d for d in depends_on if d != source_id]
             changes.append(
                 f"{tid}: removed {source_id} from depends_on (source_ticket_id already encodes ordering)"

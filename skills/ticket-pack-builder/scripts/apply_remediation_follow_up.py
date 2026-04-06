@@ -19,6 +19,12 @@ from target_completion import (
     expected_android_debug_apk_relpath,
 )
 
+RUNTIME_SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scafforge-pivot" / "scripts"
+if str(RUNTIME_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_SCRIPT_DIR))
+
+from shared_generated_tool_runtime import run_generated_tool
+
 
 def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -215,6 +221,36 @@ def build_ticket_record(recommendation: dict[str, Any], manifest: dict[str, Any]
     }
 
 
+def create_ticket_via_runtime(repo_root: Path, ticket: dict[str, Any], *, activate: bool | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "id": ticket["id"],
+        "title": ticket["title"],
+        "lane": ticket["lane"],
+        "wave": ticket["wave"],
+        "summary": ticket["summary"],
+        "acceptance": ticket["acceptance"],
+    }
+    if activate is not None:
+        payload["activate"] = activate
+    if ticket.get("depends_on"):
+        payload["depends_on"] = ticket["depends_on"]
+    if ticket.get("decision_blockers"):
+        payload["decision_blockers"] = ticket["decision_blockers"]
+    if ticket.get("parallel_safe") is not None:
+        payload["parallel_safe"] = ticket["parallel_safe"]
+    if ticket.get("overlap_risk"):
+        payload["overlap_risk"] = ticket["overlap_risk"]
+    if ticket.get("finding_source"):
+        payload["finding_source"] = ticket["finding_source"]
+    if ticket.get("source_ticket_id"):
+        payload["source_ticket_id"] = ticket["source_ticket_id"]
+    if ticket.get("source_mode"):
+        payload["source_mode"] = ticket["source_mode"]
+    if ticket.get("evidence_artifact_path"):
+        payload["evidence_artifact_path"] = ticket["evidence_artifact_path"]
+    return run_generated_tool(repo_root, ".opencode/tools/ticket_create.ts", payload)
+
+
 def ensure_ticket_state(workflow: dict[str, Any], ticket_id: str) -> None:
     ticket_state = workflow.setdefault("ticket_state", {})
     if ticket_id not in ticket_state:
@@ -395,56 +431,50 @@ def ensure_android_target_completion_tickets(
         return []
 
     created_or_updated: list[str] = []
-    base_wave = next_wave(manifest)
     source_ticket_id = str(active_ticket.get("id", "")).strip() if isinstance(active_ticket, dict) else None
+    manifest_path = repo_root / "tickets" / "manifest.json"
+    current_manifest = read_json(manifest_path)
+    current_tickets = current_manifest.get("tickets", []) if isinstance(current_manifest, dict) else []
     android_record = next(
         (
             item
-            for item in manifest.get("tickets", [])
+            for item in current_tickets
             if isinstance(item, dict) and str(item.get("id", "")).strip() == ANDROID_EXPORT_TICKET_ID
         ),
         None,
     )
-    if source_ticket_id == ANDROID_EXPORT_TICKET_ID and isinstance(android_record, dict):
-        # Preserve the open Android parent exactly as-is when it is already the active follow-up ticket.
-        ensure_ticket_state(workflow, ANDROID_EXPORT_TICKET_ID)
-    else:
-        android_source_ticket_id = source_ticket_id if source_ticket_id and source_ticket_id != ANDROID_EXPORT_TICKET_ID else None
-        android_ticket = build_android_export_ticket(wave=base_wave, source_ticket_id=android_source_ticket_id)
-        touched_android = upsert_ticket(repo_root=repo_root, manifest=manifest, workflow=workflow, ticket=android_ticket)
-        if touched_android:
-            created_or_updated.append(touched_android)
-        android_record = next(
-            item
-            for item in manifest.get("tickets", [])
-            if isinstance(item, dict) and str(item.get("id", "")).strip() == ANDROID_EXPORT_TICKET_ID
-        )
-    active_ticket_changed = False
-    if source_ticket_id and source_ticket_id != ANDROID_EXPORT_TICKET_ID:
-        if ensure_follow_up_link(active_ticket, ANDROID_EXPORT_TICKET_ID):
-            active_ticket_changed = True
-        if ensure_split_scope_note(active_ticket, ANDROID_EXPORT_TICKET_ID):
-            active_ticket_changed = True
-    if active_ticket_changed and isinstance(active_ticket, dict):
-        active_ticket_path = repo_root / "tickets" / f"{active_ticket['id']}.md"
-        active_ticket_path.write_text(render_ticket_document(active_ticket), encoding="utf-8")
 
-    release_ticket = build_android_release_ticket(
-        wave=max(base_wave + 1, int(android_record.get("wave", base_wave)) + 1),
-        source_ticket_id=ANDROID_EXPORT_TICKET_ID,
-        repo_root=repo_root,
+    if not isinstance(android_record, dict):
+        android_source_ticket_id = source_ticket_id if source_ticket_id and source_ticket_id != ANDROID_EXPORT_TICKET_ID else None
+        android_ticket = build_android_export_ticket(
+            wave=next_wave(current_manifest if isinstance(current_manifest, dict) else manifest),
+            source_ticket_id=android_source_ticket_id,
+        )
+        create_ticket_via_runtime(repo_root, android_ticket, activate=True if android_source_ticket_id else None)
+        created_or_updated.append(ANDROID_EXPORT_TICKET_ID)
+        current_manifest = read_json(manifest_path)
+        current_tickets = current_manifest.get("tickets", []) if isinstance(current_manifest, dict) else []
+        android_record = next(
+            (
+                item
+                for item in current_tickets
+                if isinstance(item, dict) and str(item.get("id", "")).strip() == ANDROID_EXPORT_TICKET_ID
+            ),
+            None,
+        )
+
+    release_exists = any(
+        isinstance(item, dict) and str(item.get("id", "")).strip() == ANDROID_RELEASE_TICKET_ID
+        for item in current_tickets
     )
-    touched_release = upsert_ticket(repo_root=repo_root, manifest=manifest, workflow=workflow, ticket=release_ticket)
-    if touched_release:
-        created_or_updated.append(touched_release)
-    android_record_changed = False
-    if ensure_follow_up_link(android_record, ANDROID_RELEASE_TICKET_ID):
-        android_record_changed = True
-    if ensure_split_scope_note(android_record, ANDROID_RELEASE_TICKET_ID):
-        android_record_changed = True
-    if android_record_changed:
-        android_ticket_path = repo_root / "tickets" / f"{ANDROID_EXPORT_TICKET_ID}.md"
-        android_ticket_path.write_text(render_ticket_document(android_record), encoding="utf-8")
+    if isinstance(android_record, dict) and not release_exists:
+        release_ticket = build_android_release_ticket(
+            wave=max(next_wave(current_manifest if isinstance(current_manifest, dict) else manifest), int(android_record.get("wave", 0)) + 1),
+            source_ticket_id=ANDROID_EXPORT_TICKET_ID,
+            repo_root=repo_root,
+        )
+        create_ticket_via_runtime(repo_root, release_ticket, activate=True)
+        created_or_updated.append(ANDROID_RELEASE_TICKET_ID)
     return created_or_updated
 
 
@@ -467,61 +497,39 @@ def main() -> int:
     ]
 
     manifest_path = repo_root / "tickets" / "manifest.json"
-    workflow_path = repo_root / ".opencode" / "state" / "workflow-state.json"
-    board_path = repo_root / "tickets" / "BOARD.md"
-
     manifest = read_json(manifest_path)
-    workflow = read_json(workflow_path)
+    if not isinstance(manifest, dict):
+        manifest = {"tickets": []}
     existing_ids = {str(ticket.get("id")) for ticket in manifest.get("tickets", []) if isinstance(ticket, dict)}
     created_ids: list[str] = []
     active_ticket = active_open_ticket(manifest)
     wave = next_wave(manifest)
 
     for recommendation in recommendations:
-      ticket_id = str(recommendation.get("id", "")).strip()
-      if not ticket_id:
-          continue
-      if ticket_id in existing_ids:
-          append_unique(created_ids, ticket_id)
-          continue
-      ticket = build_ticket_record(recommendation, manifest, active_ticket, wave)
-      manifest.setdefault("tickets", []).append(ticket)
-      active_ticket_changed = False
-      if ensure_follow_up_link(active_ticket, ticket_id):
-          active_ticket_changed = True
-      if ensure_split_scope_note(active_ticket, ticket_id):
-          active_ticket_changed = True
-      if active_ticket_changed:
-          active_ticket_path = repo_root / "tickets" / f"{active_ticket['id']}.md"
-          active_ticket_path.write_text(render_ticket_document(active_ticket), encoding="utf-8")
-      ensure_ticket_state(workflow, ticket_id)
-      ticket_path = repo_root / "tickets" / f"{ticket_id}.md"
-      ticket_path.write_text(render_ticket_document(ticket), encoding="utf-8")
-      created_ids.append(ticket_id)
-      existing_ids.add(ticket_id)
+        ticket_id = str(recommendation.get("id", "")).strip()
+        if not ticket_id:
+            continue
+        if ticket_id in existing_ids:
+            append_unique(created_ids, ticket_id)
+            continue
+        ticket = build_ticket_record(recommendation, manifest, active_ticket, wave)
+        create_ticket_via_runtime(repo_root, ticket, activate=bool(args.activate_new_ticket and not created_ids))
+        created_ids.append(ticket_id)
+        existing_ids.add(ticket_id)
 
     android_follow_up_ids = ensure_android_target_completion_tickets(
         repo_root=repo_root,
-        manifest=manifest,
-        workflow=workflow,
+        manifest=read_json(manifest_path) or {"tickets": []},
+        workflow={},
         active_ticket=active_ticket,
     )
     for ticket_id in android_follow_up_ids:
         append_unique(created_ids, ticket_id)
 
+    _ = render_board(manifest)
+
     if not created_ids:
         return 0
-
-    if args.activate_new_ticket:
-        manifest["active_ticket"] = created_ids[0]
-        workflow["active_ticket"] = created_ids[0]
-        workflow["stage"] = "planning"
-        workflow["status"] = "todo"
-        workflow["approved_plan"] = False
-
-    write_json(manifest_path, manifest)
-    write_json(workflow_path, workflow)
-    board_path.write_text(render_board(manifest), encoding="utf-8")
 
     print(
         json.dumps(
