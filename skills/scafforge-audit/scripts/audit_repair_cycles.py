@@ -35,7 +35,9 @@ def latest_repair_history_entry_after(
         if not isinstance(item, dict):
             continue
         repaired_at = parse_iso_timestamp(item.get("repaired_at") or item.get("timestamp"))
-        if repaired_at is None or repaired_at <= diagnosis_generated_at:
+        # Diagnosis and repair timestamps are stored at second precision, so an
+        # equal-second repair entry may still be the first later repair run.
+        if repaired_at is None or repaired_at < diagnosis_generated_at:
             continue
         if latest_repaired_at is None or repaired_at > latest_repaired_at:
             latest_repaired_at = repaired_at
