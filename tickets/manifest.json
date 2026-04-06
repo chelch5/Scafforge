@@ -2,7 +2,7 @@
   "version": 3,
   "project": "Scafforge",
   "tracking_mode": "package-backlog",
-  "current_focus_ticket": "MUT-002",
+  "current_focus_ticket": "REPAIR-002",
   "tickets": [
     {
       "id": "SETUP-001",
@@ -271,10 +271,10 @@
       "lane": "ticket-mutation",
       "parallel_safe": true,
       "overlap_risk": "medium",
-      "stage": "planning",
-      "status": "todo",
-      "resolution_state": "open",
-      "verification_state": "suspect",
+      "stage": "complete",
+      "status": "done",
+      "resolution_state": "completed",
+      "verification_state": "verified",
       "depends_on": [
         "MUT-001",
         "PIVOT-001"
@@ -298,10 +298,10 @@
       "lane": "repair-engine",
       "parallel_safe": false,
       "overlap_risk": "high",
-      "stage": "planning",
-      "status": "todo",
-      "resolution_state": "open",
-      "verification_state": "suspect",
+      "stage": "complete",
+      "status": "done",
+      "resolution_state": "completed",
+      "verification_state": "verified",
       "depends_on": [
         "MUT-001",
         "RESTART-001"
@@ -325,10 +325,10 @@
       "lane": "restart-surfaces",
       "parallel_safe": false,
       "overlap_risk": "high",
-      "stage": "planning",
-      "status": "todo",
-      "resolution_state": "open",
-      "verification_state": "suspect",
+      "stage": "complete",
+      "status": "done",
+      "resolution_state": "completed",
+      "verification_state": "verified",
       "depends_on": [
         "REPAIR-001",
         "RESTART-001"
@@ -352,10 +352,10 @@
       "lane": "mutation-invariants",
       "parallel_safe": true,
       "overlap_risk": "medium",
-      "stage": "planning",
-      "status": "todo",
-      "resolution_state": "open",
-      "verification_state": "suspect",
+      "stage": "complete",
+      "status": "done",
+      "resolution_state": "completed",
+      "verification_state": "verified",
       "depends_on": [
         "INV-001",
         "PIVOT-001",

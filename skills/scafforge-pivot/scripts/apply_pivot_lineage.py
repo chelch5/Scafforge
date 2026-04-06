@@ -42,6 +42,17 @@ def normalize_selected_labels(values: list[str]) -> set[str]:
     return {value.strip() for value in values if isinstance(value, str) and value.strip()}
 
 
+def action_priority(action: dict[str, Any]) -> int:
+    action_type = str(action.get("action", "")).strip()
+    priority = {
+        "reconcile": 0,
+        "reopen": 1,
+        "create_ticket": 2,
+        "create_follow_up": 3,
+    }
+    return priority.get(action_type, 99)
+
+
 def load_manifest(repo_root: Path) -> dict[str, Any]:
     return json.loads((repo_root / "tickets" / "manifest.json").read_text(encoding="utf-8"))
 
@@ -158,7 +169,9 @@ def main() -> int:
     applied: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
 
-    for action in actions:
+    ordered_actions = [action for _, action in sorted(enumerate(actions), key=lambda item: (action_priority(item[1]), item[0]))]
+
+    for action in ordered_actions:
         label = str(action.get("label", "")).strip()
         if not label:
             continue

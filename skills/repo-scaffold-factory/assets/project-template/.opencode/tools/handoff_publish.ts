@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises"
 import {
   bootstrapProvenancePath,
   ensureRequiredFile,
+  loadWorkflowState,
   mergeStartHere,
   refreshRestartSurfaces,
   latestHandoffPath,
@@ -28,7 +29,7 @@ export default tool({
     await ensureRequiredFile(ticketsManifestPath(rootPath()), "tickets/manifest.json")
     await ensureRequiredFile(workflowStatePath(rootPath()), ".opencode/state/workflow-state.json")
     const manifest = await loadManifest()
-    const workflow = await readJson(workflowStatePath(rootPath()), {})
+    const workflow = await loadWorkflowState()
     const pivot = await loadPivotState()
     const publicationBlocker = validateRestartSurfacePublication(manifest, workflow, pivot)
     if (publicationBlocker) {

@@ -30,10 +30,6 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-
-
 def normalize_path(path: Path, root: Path) -> str:
     return str(path.relative_to(root)).replace("\\", "/")
 
@@ -74,95 +70,6 @@ def load_ticket_recommendations(diagnosis_manifest: Path) -> list[dict[str, Any]
         if isinstance(managed_repair, dict) and isinstance(managed_repair.get("ticket_recommendations"), list):
             return [item for item in managed_repair["ticket_recommendations"] if isinstance(item, dict)]
     return []
-
-
-def render_ticket_document(ticket: dict[str, Any]) -> str:
-    depends_on = ticket.get("depends_on") or []
-    follow_ups = ticket.get("follow_up_ticket_ids") or []
-    blockers = ticket.get("decision_blockers") or []
-    acceptance = ticket.get("acceptance") or []
-    artifacts = ticket.get("artifacts") or []
-    return "\n".join(
-        [
-            f"# {ticket['id']}: {ticket['title']}",
-            "",
-            "## Summary",
-            "",
-            str(ticket["summary"]),
-            "",
-            "## Wave",
-            "",
-            str(ticket["wave"]),
-            "",
-            "## Lane",
-            "",
-            str(ticket["lane"]),
-            "",
-            "## Parallel Safety",
-            "",
-            f"- parallel_safe: {'true' if ticket.get('parallel_safe') else 'false'}",
-            f"- overlap_risk: {ticket['overlap_risk']}",
-            "",
-            "## Stage",
-            "",
-            str(ticket["stage"]),
-            "",
-            "## Status",
-            "",
-            str(ticket["status"]),
-            "",
-            "## Trust",
-            "",
-            f"- resolution_state: {ticket['resolution_state']}",
-            f"- verification_state: {ticket['verification_state']}",
-            f"- finding_source: {ticket.get('finding_source') or 'None'}",
-            f"- source_ticket_id: {ticket.get('source_ticket_id') or 'None'}",
-            f"- source_mode: {ticket.get('source_mode') or 'None'}",
-            "",
-            "## Depends On",
-            "",
-            ", ".join(depends_on) if depends_on else "None",
-            "",
-            "## Follow-up Tickets",
-            "",
-            "\n".join(f"- {item}" for item in follow_ups) if follow_ups else "None",
-            "",
-            "## Decision Blockers",
-            "",
-            "\n".join(f"- {item}" for item in blockers) if blockers else "None",
-            "",
-            "## Acceptance Criteria",
-            "",
-            "\n".join(f"- [ ] {item}" for item in acceptance) if acceptance else "None",
-            "",
-            "## Artifacts",
-            "",
-            "\n".join(f"- {item.get('kind')}: {item.get('path')} ({item.get('stage')})" for item in artifacts) if artifacts else "- None yet",
-            "",
-            "## Notes",
-            "",
-            "Generated from audit remediation recommendations.",
-            "",
-        ]
-    )
-
-
-def render_board(manifest: dict[str, Any]) -> str:
-    lines = [
-        "# Ticket Board",
-        "",
-        "| Wave | ID | Title | Lane | Stage | Status | Resolution | Verification | Parallel Safe | Overlap Risk | Depends On | Follow-ups |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-    ]
-    tickets = sorted(manifest.get("tickets", []), key=lambda item: (item.get("wave", 0), item.get("id", "")))
-    for ticket in tickets:
-        depends_on = ", ".join(ticket.get("depends_on", [])) or "-"
-        follow_ups = ", ".join(ticket.get("follow_up_ticket_ids", [])) or "-"
-        lines.append(
-            f"| {ticket.get('wave', 0)} | {ticket['id']} | {ticket['title']} | {ticket['lane']} | {ticket['stage']} | {ticket['status']} | {ticket['resolution_state']} | {ticket['verification_state']} | {'yes' if ticket.get('parallel_safe') else 'no'} | {ticket['overlap_risk']} | {depends_on} | {follow_ups} |"
-        )
-    lines.append("")
-    return "\n".join(lines)
 
 
 def next_wave(manifest: dict[str, Any]) -> int:
@@ -251,52 +158,11 @@ def create_ticket_via_runtime(repo_root: Path, ticket: dict[str, Any], *, activa
     return run_generated_tool(repo_root, ".opencode/tools/ticket_create.ts", payload)
 
 
-def ensure_ticket_state(workflow: dict[str, Any], ticket_id: str) -> None:
-    ticket_state = workflow.setdefault("ticket_state", {})
-    if ticket_id not in ticket_state:
-        ticket_state[ticket_id] = {
-            "approved_plan": False,
-            "reopen_count": 0,
-            "needs_reverification": False,
-        }
-
-
 def append_unique(items: list[str], value: str) -> None:
     if value and value not in items:
         items.append(value)
 
 
-def ensure_follow_up_link(source_ticket: dict[str, Any] | None, target_id: str) -> bool:
-    if not isinstance(source_ticket, dict):
-        return False
-    follow_ups = source_ticket.setdefault("follow_up_ticket_ids", [])
-    if isinstance(follow_ups, list):
-        before = list(follow_ups)
-        append_unique(follow_ups, target_id)
-        return before != follow_ups
-    return False
-
-
-def ensure_split_scope_note(source_ticket: dict[str, Any] | None, target_id: str) -> bool:
-    if not isinstance(source_ticket, dict):
-        return False
-    blockers = source_ticket.setdefault("decision_blockers", [])
-    if not isinstance(blockers, list):
-        return False
-    note = f"Split scope delegated to follow-up ticket {target_id}. Keep the parent open and non-foreground until the child work lands."
-    before = list(blockers)
-    append_unique(blockers, note)
-    return before != blockers
-
-
-def ensure_target_depends(ticket: dict[str, Any], depends_on: list[str]) -> bool:
-    existing = ticket.get("depends_on")
-    current = [str(item).strip() for item in existing if isinstance(item, str) and str(item).strip()] if isinstance(existing, list) else []
-    before = list(current)
-    for item in depends_on:
-        append_unique(current, item)
-    ticket["depends_on"] = current
-    return before != current
 
 
 def android_export_summary() -> str:
@@ -347,7 +213,7 @@ def build_android_release_ticket(*, wave: int, source_ticket_id: str | None, rep
         "overlap_risk": "medium",
         "stage": "planning",
         "status": "todo",
-        "depends_on": [source_ticket_id] if source_ticket_id else [],
+        "depends_on": [],
         "summary": (
             f"Produce and validate the canonical debug APK for this Android target at `{apk_relpath}` using the repo's resolved Godot binary and Android export pipeline."
         ),
@@ -367,64 +233,10 @@ def build_android_release_ticket(*, wave: int, source_ticket_id: str | None, rep
     }
 
 
-def upsert_ticket(
-    *,
-    repo_root: Path,
-    manifest: dict[str, Any],
-    workflow: dict[str, Any],
-    ticket: dict[str, Any],
-) -> str | None:
-    tickets = manifest.setdefault("tickets", [])
-    existing = next(
-        (
-            item
-            for item in tickets
-            if isinstance(item, dict) and str(item.get("id", "")).strip() == str(ticket.get("id", "")).strip()
-        ),
-        None,
-    )
-    touched = False
-    if existing is None:
-        tickets.append(ticket)
-        existing = ticket
-        touched = True
-    else:
-        for key in (
-            "title",
-            "wave",
-            "lane",
-            "parallel_safe",
-            "overlap_risk",
-            "summary",
-            "acceptance",
-            "finding_source",
-            "source_mode",
-        ):
-            if existing.get(key) != ticket.get(key):
-                existing[key] = ticket.get(key)
-                touched = True
-        if ensure_target_depends(existing, ticket.get("depends_on", [])):
-            touched = True
-        if ticket.get("source_ticket_id") and existing.get("source_ticket_id") != ticket.get("source_ticket_id"):
-            existing["source_ticket_id"] = ticket.get("source_ticket_id")
-            touched = True
-        if str(existing.get("resolution_state", "open")).strip() in {"done", "superseded"} or str(existing.get("status", "")).strip() == "done":
-            existing["stage"] = "planning"
-            existing["status"] = "todo"
-            existing["resolution_state"] = "open"
-            existing["verification_state"] = "suspect"
-            touched = True
-    ensure_ticket_state(workflow, str(ticket["id"]))
-    ticket_path = repo_root / "tickets" / f"{ticket['id']}.md"
-    ticket_path.write_text(render_ticket_document(existing), encoding="utf-8")
-    return str(ticket["id"]) if touched else None
-
-
 def ensure_android_target_completion_tickets(
     *,
     repo_root: Path,
     manifest: dict[str, Any],
-    workflow: dict[str, Any],
     active_ticket: dict[str, Any] | None,
 ) -> list[str]:
     if not declares_godot_android_target(repo_root):
@@ -473,7 +285,7 @@ def ensure_android_target_completion_tickets(
             source_ticket_id=ANDROID_EXPORT_TICKET_ID,
             repo_root=repo_root,
         )
-        create_ticket_via_runtime(repo_root, release_ticket, activate=True)
+        create_ticket_via_runtime(repo_root, release_ticket, activate=False)
         created_or_updated.append(ANDROID_RELEASE_TICKET_ID)
     return created_or_updated
 
@@ -520,13 +332,10 @@ def main() -> int:
     android_follow_up_ids = ensure_android_target_completion_tickets(
         repo_root=repo_root,
         manifest=read_json(manifest_path) or {"tickets": []},
-        workflow={},
         active_ticket=active_ticket,
     )
     for ticket_id in android_follow_up_ids:
         append_unique(created_ids, ticket_id)
-
-    _ = render_board(manifest)
 
     if not created_ids:
         return 0
