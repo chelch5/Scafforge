@@ -74,6 +74,17 @@ def main() -> int:
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
+    done = completed_stage_names(tracking_state)
+    required: list[str] = (
+        tracking_state.get("required_stages")
+        if isinstance(tracking_state.get("required_stages"), list)
+        else []
+    )
+    # Stages whose completion can be registered via this script (excludes
+    # handoff-brief which is optional and is not a required blocker).
+    required_non_optional = [s for s in required if s != "handoff-brief"]
+    all_required_done = bool(required_non_optional) and all(s in done for s in required_non_optional)
+
     payload = {
         "repo_root": str(repo_root),
         "follow_on_state_path": str(FOLLOW_ON_TRACKING_PATH).replace("\\", "/"),
@@ -81,8 +92,17 @@ def main() -> int:
         "completed_by": args.completed_by.strip(),
         "summary": args.summary.strip(),
         "evidence_paths": evidence_paths,
-        "completed_stage_names": completed_stage_names(tracking_state),
+        "completed_stage_names": done,
         "recorded_stage": tracking_state["stage_records"][stage],
+        # Guidance only — does not trigger any action automatically.
+        "reconcile_required": all_required_done,
+        "reconcile_hint": (
+            "All required follow-on stages are recorded as complete. "
+            "Run reconcile_repair_follow_on.py <repo_root> to update "
+            "workflow-state.json and regenerate restart surfaces."
+            if all_required_done
+            else None
+        ),
     }
 
     print(json.dumps(payload, indent=2))

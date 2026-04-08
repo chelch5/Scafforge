@@ -101,6 +101,14 @@ That artifact is only trusted for the current repair cycle when it includes both
 
 If a follow-on stage does not yet emit a canonical completion artifact, use `record_repair_stage_completion.py`.
 If recorded execution uses the canonical repair completion artifact path for a stage, that artifact must also match the current repair cycle before Scafforge accepts the recorded completion.
+
+**After recording the last required follow-on stage**, the `repair_follow_on` nested object in `workflow-state.json` will still reflect the prior `managed_blocked` state because the recorder only writes the persistent ledger. Run the reconciler to update `workflow-state.json` and regenerate restart surfaces:
+
+```sh
+python3 scripts/reconcile_repair_follow_on.py <repo-root>
+```
+
+The reconciler is the only path that transitions `repair_follow_on.outcome` from `managed_blocked` to `source_follow_up` outside of a full `run_managed_repair.py` cycle. It acts only when every blocking reason is stage-completion-based and all named stages are present in the persistent ledger. If any blocking reason is verification-derived (skipped verification, new critical findings, contract failures), it exits with a non-zero status and explains what must be resolved first. It does not modify `verification_passed`, `current_state_clean`, or `causal_regression_verified` — those fields are audit-derived and are preserved verbatim from the last repair run. When in doubt, use `--dry-run` to preview what would change before writing.
 If a previously recorded canonical repair completion artifact is later edited so its `completed_stage` or `cycle_id` no longer matches the current repair cycle, Scafforge must invalidate that recorded execution automatically instead of continuing to trust it.
 If recorded execution evidence is later deleted, moved, or was never recorded at all, Scafforge must stop trusting that recorded completion automatically instead of silently continuing to reuse stale completion state.
 The public runner must also fail explicit repair-contract consistency checks. At minimum, do not allow it to report verification success when restart surfaces still drift, placeholder local skills survive refresh, or it somehow reports zero findings while still not being current-state clean.
@@ -286,6 +294,25 @@ Keep the diagnosis decision and the repair action separated.
 - If the prior repo history contains coordinator-authored PASS artifacts or bypass transitions, leave `pending_process_verification: true` and require backlog reverification before treating those historical closeouts as trusted
 - If the prior repo history shows verification failed and then later recovered with real command evidence, do not treat the recovered run as fabricated PASS proof
 - Treat missing host prerequisites and blocked verification commands as first-class post-repair outputs, not as clean verification
+
+## Emergency: lifecycle corruption deadlock
+
+If `ticket_claim` or `ticket_reconcile` fails with **"Unsupported ticket status: \<value\>"**, the repo has lifecycle corruption: a lifecycle stage name (e.g. `planning`, `implementation`) was written into a ticket's `status` field instead of a valid coarse status (`todo`, `ready`, `plan_review`, `in_progress`, `blocked`, `review`, `qa`, `smoke_test`, `done`).
+
+This creates a circular deadlock: the TypeScript runtime rejects every manifest save, so `ticket_claim` and `ticket_reconcile` both fail, and neither can be used to fix the state through normal tools.
+
+**Escape path:** run the managed repair runner. It applies a lifecycle-corruption preflight before any validation:
+
+```sh
+python3 scripts/run_managed_repair.py <repo-root>
+```
+
+The repair runner's `_repair_lifecycle_corruption` preflight:
+- Coerces any invalid status to `blocked` (when the stage allows it) — the conservative choice that signals operator review
+- Falls back to the stage's default valid status only for stages that do not allow `blocked` (e.g. `closeout` → `done`)
+- Runs **before** graph-contradiction repair and before any save-path validation, so the runtime deadlock cannot block it
+
+After the repair runner completes, derived surfaces are refreshed and the ticket is in a valid state for normal lifecycle operations.
 
 ## References
 

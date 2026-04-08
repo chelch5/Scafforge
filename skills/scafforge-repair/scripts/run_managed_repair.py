@@ -230,6 +230,74 @@ def _reconcile_stale_stage_for_active_ticket(repo_root: Path) -> dict[str, Any] 
     }
 
 
+_VALID_TICKET_STATUSES = frozenset({
+    "todo", "ready", "plan_review", "in_progress", "blocked", "review", "qa", "smoke_test", "done",
+})
+_STAGE_COERCE_STATUS: dict[str, str] = {
+    "planning": "todo",
+    "plan_review": "plan_review",
+    "implementation": "in_progress",
+    "review": "review",
+    "qa": "qa",
+    "smoke-test": "smoke_test",
+    "closeout": "done",
+}
+# Stages that allow `blocked` as a valid coarse status (mirrors STAGE_ALLOWED_STATUSES in workflow.ts).
+_STAGES_ALLOWING_BLOCKED = frozenset({
+    "planning", "plan_review", "implementation", "review", "qa", "smoke-test",
+})
+
+
+def _repair_lifecycle_corruption(repo_root: Path) -> list[str]:
+    """Pre-flight: fix tickets whose status field holds an invalid value (e.g. a lifecycle stage
+    name written in place of a coarse status).
+
+    This MUST run before graph-contradiction repair and before any verification pass, because an
+    invalid status in ANY ticket causes the TypeScript runtime's validateTicketGraphInvariants to
+    reject every manifest save — creating a circular deadlock where ticket_claim and
+    ticket_reconcile both fail with no escape path for normal agents.
+
+    Coercion strategy (conservative, in priority order):
+    1. If the ticket's stage allows `blocked` as a valid status → coerce to `blocked`.
+       This is the safest choice: it signals that something is wrong and operator review
+       is needed, without falsely implying the ticket is ready to advance.
+    2. Otherwise fall back to the stage's default valid status (e.g. `done` for closeout).
+    """
+    manifest_path = repo_root / "tickets" / "manifest.json"
+    if not manifest_path.exists():
+        return []
+    try:
+        manifest: dict[str, Any] = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) else None
+    if not isinstance(tickets, list):
+        return []
+
+    changes: list[str] = []
+    for ticket in tickets:
+        if not isinstance(ticket, dict):
+            continue
+        tid = ticket.get("id")
+        stage = str(ticket.get("stage", "")).strip()
+        status = str(ticket.get("status", "")).strip()
+        if not status or status in _VALID_TICKET_STATUSES:
+            continue
+        # Status is invalid — coerce conservatively.
+        if stage in _STAGES_ALLOWING_BLOCKED:
+            coerced = "blocked"
+        else:
+            coerced = _STAGE_COERCE_STATUS.get(stage, "todo")
+        ticket["status"] = coerced
+        changes.append(
+            f"{tid}: lifecycle-corruption repair — invalid status '{status}' → '{coerced}' (stage '{stage}')"
+        )
+
+    if changes:
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return changes
+
+
 def _repair_ticket_graph_contradictions(repo_root: Path) -> list[str]:
     """Auto-fix WFLOW019: remove deterministic contradictions from the ticket graph.
 
@@ -925,6 +993,11 @@ def main() -> int:
             candidate_root,
             ignore=shutil.ignore_patterns(".git"),
         )
+
+        # Pre-flight: fix any lifecycle corruption (invalid status values) before anything else.
+        # Invalid statuses block ALL subsequent manifest save paths in the TypeScript runtime,
+        # so this must run first or downstream validation/graph repairs cannot proceed.
+        _repair_lifecycle_corruption(candidate_root)
 
         # Auto-fix deterministic ticket graph contradictions (WFLOW019) inside the staged
         # candidate before any verification or publication occurs.
