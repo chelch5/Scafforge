@@ -1,0 +1,230 @@
+{
+  "generated_at": "2026-04-08T02:21:17Z",
+  "repo_root": "/home/pc/projects/GPTTalker",
+  "finding_count": 4,
+  "finding_codes": [
+    "EXEC001",
+    "REF-003",
+    "WFLOW008",
+    "WFLOW010"
+  ],
+  "source_findings": [
+    {
+      "code": "EXEC001",
+      "severity": "error"
+    },
+    {
+      "code": "REF-003",
+      "severity": "error"
+    }
+  ],
+  "result_state": "validated failures found",
+  "diagnosis_kind": "initial_diagnosis",
+  "evidence_mode": "current_state_only",
+  "audit_package_commit": "001c661b5d06e4e8371884d84a7636e87ddef2ea",
+  "report_files": {
+    "report_1": "01-initial-codebase-review.md",
+    "report_2": "02-scafforge-process-failures.md",
+    "report_3": "03-scafforge-prevention-actions.md",
+    "report_4": "04-live-repo-repair-plan.md"
+  },
+  "disposition_bundle_file": "disposition-bundle.json",
+  "disposition_bundle": {
+    "version": 1,
+    "generated_at": "2026-04-08T02:21:17Z",
+    "repo_root": "/home/pc/projects/GPTTalker",
+    "audit_package_commit": "001c661b5d06e4e8371884d84a7636e87ddef2ea",
+    "allowed_classes": [
+      "managed_blocker",
+      "manual_prerequisite_blocker",
+      "source_follow_up",
+      "process_state_only",
+      "advisory"
+    ],
+    "finding_count": 4,
+    "findings": [
+      {
+        "code": "EXEC001",
+        "severity": "error",
+        "disposition_class": "source_follow_up",
+        "legacy_disposition_class": "source_follow_up",
+        "route": "ticket-pack-builder",
+        "repair_class": "generated-repo remediation ticket",
+        "evidence_grade": "repo-state validation",
+        "source_files": [
+          "/home/pc/projects/GPTTalker/src"
+        ],
+        "provenance": "script"
+      },
+      {
+        "code": "REF-003",
+        "severity": "error",
+        "disposition_class": "source_follow_up",
+        "legacy_disposition_class": "source_follow_up",
+        "route": "ticket-pack-builder",
+        "repair_class": "generated-repo remediation ticket",
+        "evidence_grade": "repo-state validation",
+        "source_files": [
+          ".opencode/node_modules/zod/src/index.ts"
+        ],
+        "provenance": "script"
+      },
+      {
+        "code": "WFLOW010",
+        "severity": "error",
+        "disposition_class": "managed_blocker",
+        "legacy_disposition_class": "managed_blocker",
+        "route": "scafforge-repair",
+        "repair_class": "safe Scafforge package change",
+        "evidence_grade": "repo-state validation",
+        "source_files": [
+          "tickets/manifest.json",
+          ".opencode/state/workflow-state.json",
+          ".opencode/meta/pivot-state.json",
+          "START-HERE.md",
+          ".opencode/state/context-snapshot.md",
+          ".opencode/state/latest-handoff.md"
+        ],
+        "provenance": "script"
+      },
+      {
+        "code": "WFLOW008",
+        "severity": "warning",
+        "disposition_class": "process_state_only",
+        "legacy_disposition_class": "process_state_only",
+        "route": "scafforge-repair",
+        "repair_class": "safe Scafforge package change",
+        "evidence_grade": "repo-state validation",
+        "source_files": [
+          ".opencode/state/workflow-state.json",
+          "tickets/manifest.json",
+          "START-HERE.md",
+          ".opencode/state/latest-handoff.md",
+          ".opencode/tools/ticket_lookup.ts",
+          ".opencode/tools/ticket_update.ts",
+          ".opencode/plugins/stage-gate-enforcer.ts"
+        ],
+        "provenance": "script"
+      }
+    ],
+    "counts": {
+      "managed_blocker": 1,
+      "manual_prerequisite_blocker": 0,
+      "source_follow_up": 2,
+      "process_state_only": 1,
+      "advisory": 0
+    },
+    "shadow_mode_deltas": []
+  },
+  "ticket_recommendations": [
+    {
+      "id": "REMED-001",
+      "title": "One or more Python packages fail to import \u2014 the service cannot start",
+      "description": "Remediate EXEC001 by correcting the validated issue and rerunning the relevant quality checks.",
+      "affected_files": [
+        "/home/pc/projects/GPTTalker/src"
+      ],
+      "suggested_fix_approach": "Verify every import succeeds: `python -c 'from src.<pkg>.main import app'`. Use string annotations (`-> \"TypeName\"`) for TYPE_CHECKING-only imports. Use `request: Request` (not `app: FastAPI`) in FastAPI dependency functions.",
+      "assignee": "implementer",
+      "source_finding_code": "EXEC001",
+      "source_finding_codes": [
+        "EXEC001"
+      ],
+      "severity": "error",
+      "route": "ticket-pack-builder",
+      "repair_class": "generated-repo remediation ticket",
+      "summary": "Verify every import succeeds: `python -c 'from src.<pkg>.main import app'`. Use string annotations (`-> \"TypeName\"`) for TYPE_CHECKING-only imports. Use `request: Request` (not `app: FastAPI`) in FastAPI dependency functions.",
+      "source_files": [
+        "/home/pc/projects/GPTTalker/src"
+      ]
+    },
+    {
+      "id": "REMED-002",
+      "title": "Source imports reference missing local modules",
+      "description": "Remediate REF-003 by correcting the validated issue and rerunning the relevant quality checks.",
+      "affected_files": [
+        ".opencode/node_modules/zod/src/index.ts"
+      ],
+      "suggested_fix_approach": "Audit local relative import paths and fail when the referenced module file is missing.",
+      "assignee": "implementer",
+      "source_finding_code": "REF-003",
+      "source_finding_codes": [
+        "REF-003"
+      ],
+      "severity": "error",
+      "route": "ticket-pack-builder",
+      "repair_class": "generated-repo remediation ticket",
+      "summary": "Audit local relative import paths and fail when the referenced module file is missing.",
+      "source_files": [
+        ".opencode/node_modules/zod/src/index.ts"
+      ]
+    },
+    {
+      "id": "REMED-003",
+      "title": "Derived restart surfaces disagree with canonical workflow state, so resume guidance can route work from stale or contradictory facts",
+      "description": "Remediate WFLOW010 by correcting the validated issue and rerunning the relevant quality checks.",
+      "affected_files": [
+        "tickets/manifest.json",
+        ".opencode/state/workflow-state.json",
+        ".opencode/meta/pivot-state.json",
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "suggested_fix_approach": "Regenerate `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` from canonical manifest, workflow state, and pivot state after every workflow save, compute handoff readiness from bootstrap plus repair-follow-on plus verification state in one shared contract, and fail repair verification if any derived restart surface drifts.",
+      "assignee": "implementer",
+      "source_finding_code": "WFLOW010",
+      "source_finding_codes": [
+        "WFLOW010"
+      ],
+      "severity": "error",
+      "route": "scafforge-repair",
+      "repair_class": "safe Scafforge package change",
+      "summary": "Regenerate `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` from canonical manifest, workflow state, and pivot state after every workflow save, compute handoff readiness from bootstrap plus repair-follow-on plus verification state in one shared contract, and fail repair verification if any derived restart surface drifts.",
+      "source_files": [
+        "tickets/manifest.json",
+        ".opencode/state/workflow-state.json",
+        ".opencode/meta/pivot-state.json",
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ]
+    },
+    {
+      "id": "REMED-004",
+      "title": "Post-repair process verification is still pending, but the restart surfaces or legal next move contradict the canonical workflow state",
+      "description": "Remediate WFLOW008 by correcting the validated issue and rerunning the relevant quality checks.",
+      "affected_files": [
+        ".opencode/state/workflow-state.json",
+        "tickets/manifest.json",
+        "START-HERE.md",
+        ".opencode/state/latest-handoff.md",
+        ".opencode/tools/ticket_lookup.ts",
+        ".opencode/tools/ticket_update.ts",
+        ".opencode/plugins/stage-gate-enforcer.ts"
+      ],
+      "suggested_fix_approach": "Keep `pending_process_verification` visible, route the backlog verifier across the affected done-ticket set, expose `ticket_reverify` as the legal trust-restoration path, and when that affected set is empty leave a direct legal clear path for `pending_process_verification = false` instead of implying the repo is already clean or leaving the flag stranded.",
+      "assignee": "implementer",
+      "source_finding_code": "WFLOW008",
+      "source_finding_codes": [
+        "WFLOW008"
+      ],
+      "severity": "warning",
+      "route": "scafforge-repair",
+      "repair_class": "safe Scafforge package change",
+      "summary": "Keep `pending_process_verification` visible, route the backlog verifier across the affected done-ticket set, expose `ticket_reverify` as the legal trust-restoration path, and when that affected set is empty leave a direct legal clear path for `pending_process_verification = false` instead of implying the repo is already clean or leaving the flag stranded.",
+      "source_files": [
+        ".opencode/state/workflow-state.json",
+        "tickets/manifest.json",
+        "START-HERE.md",
+        ".opencode/state/latest-handoff.md",
+        ".opencode/tools/ticket_lookup.ts",
+        ".opencode/tools/ticket_update.ts",
+        ".opencode/plugins/stage-gate-enforcer.ts"
+      ]
+    }
+  ],
+  "package_work_required_first": false,
+  "recommended_next_step": "subject_repo_repair",
+  "recommended_ticket_payload": "recommended-ticket-payload.json"
+}

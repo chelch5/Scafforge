@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "generated_at": "2026-04-08T02:21:17Z",
+  "repo_root": "/home/pc/projects/GPTTalker",
+  "audit_package_commit": "001c661b5d06e4e8371884d84a7636e87ddef2ea",
+  "allowed_classes": [
+    "managed_blocker",
+    "manual_prerequisite_blocker",
+    "source_follow_up",
+    "process_state_only",
+    "advisory"
+  ],
+  "finding_count": 4,
+  "findings": [
+    {
+      "code": "EXEC001",
+      "severity": "error",
+      "disposition_class": "source_follow_up",
+      "legacy_disposition_class": "source_follow_up",
+      "route": "ticket-pack-builder",
+      "repair_class": "generated-repo remediation ticket",
+      "evidence_grade": "repo-state validation",
+      "source_files": [
+        "/home/pc/projects/GPTTalker/src"
+      ],
+      "provenance": "script"
+    },
+    {
+      "code": "REF-003",
+      "severity": "error",
+      "disposition_class": "source_follow_up",
+      "legacy_disposition_class": "source_follow_up",
+      "route": "ticket-pack-builder",
+      "repair_class": "generated-repo remediation ticket",
+      "evidence_grade": "repo-state validation",
+      "source_files": [
+        ".opencode/node_modules/zod/src/index.ts"
+      ],
+      "provenance": "script"
+    },
+    {
+      "code": "WFLOW010",
+      "severity": "error",
+      "disposition_class": "managed_blocker",
+      "legacy_disposition_class": "managed_blocker",
+      "route": "scafforge-repair",
+      "repair_class": "safe Scafforge package change",
+      "evidence_grade": "repo-state validation",
+      "source_files": [
+        "tickets/manifest.json",
+        ".opencode/state/workflow-state.json",
+        ".opencode/meta/pivot-state.json",
+        "START-HERE.md",
+        ".opencode/state/context-snapshot.md",
+        ".opencode/state/latest-handoff.md"
+      ],
+      "provenance": "script"
+    },
+    {
+      "code": "WFLOW008",
+      "severity": "warning",
+      "disposition_class": "process_state_only",
+      "legacy_disposition_class": "process_state_only",
+      "route": "scafforge-repair",
+      "repair_class": "safe Scafforge package change",
+      "evidence_grade": "repo-state validation",
+      "source_files": [
+        ".opencode/state/workflow-state.json",
+        "tickets/manifest.json",
+        "START-HERE.md",
+        ".opencode/state/latest-handoff.md",
+        ".opencode/tools/ticket_lookup.ts",
+        ".opencode/tools/ticket_update.ts",
+        ".opencode/plugins/stage-gate-enforcer.ts"
+      ],
+      "provenance": "script"
+    }
+  ],
+  "counts": {
+    "managed_blocker": 1,
+    "manual_prerequisite_blocker": 0,
+    "source_follow_up": 2,
+    "process_state_only": 1,
+    "advisory": 0
+  },
+  "shadow_mode_deltas": []
+}
