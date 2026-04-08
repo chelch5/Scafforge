@@ -834,6 +834,46 @@ def update_provenance(
     write_json(provenance_path, payload)
 
 
+def _warn_if_split_scope_deadlock_present(repo_root: Path) -> None:
+    """Emit a host-side warning if the installed workflow.ts has the split-scope deadlock throw
+    and the manifest contains open split_scope children with done parents.
+    After managed surface replacement the deadlock will be gone and no ticket_reconcile is needed.
+    """
+    installed_workflow = repo_root / ".opencode" / "lib" / "workflow.ts"
+    if not installed_workflow.exists():
+        return
+    workflow_text = installed_workflow.read_text(encoding="utf-8")
+    has_deadlock_throw = (
+        "Split-scope child" in workflow_text
+        and "cannot point at a completed source ticket" in workflow_text
+    )
+    if not has_deadlock_throw:
+        return
+    manifest = read_json(repo_root / "tickets" / "manifest.json")
+    if not isinstance(manifest, dict):
+        return
+    tickets = manifest.get("tickets", [])
+    completed_ids = {
+        t["id"] for t in tickets
+        if isinstance(t, dict)
+        and (t.get("status") == "done" or t.get("resolution_state") == "superseded")
+    }
+    blocked_children = [
+        t["id"] for t in tickets
+        if isinstance(t, dict)
+        and t.get("source_mode") == "split_scope"
+        and t.get("source_ticket_id") in completed_ids
+        and t.get("status") != "done"
+    ]
+    if blocked_children:
+        print(
+            f"[scafforge-repair] NOTICE: Installed workflow.ts contains the split-scope deadlock throw. "
+            f"Tickets {blocked_children} are currently blocked from all writes. "
+            f"This repair will install the fixed workflow.ts that removes the erroneous invariant. "
+            f"After replacement, agents can claim these tickets directly — no ticket_reconcile is needed."
+        )
+
+
 def apply_repair(repo_root: Path, rendered_root: Path, change_summary: str, *, preserve_backups: bool = False) -> dict[str, Any]:
     replaced_surfaces: list[str] = []
     diff_summary = build_managed_surface_diff_summary(repo_root, rendered_root)
@@ -849,6 +889,8 @@ def apply_repair(repo_root: Path, rendered_root: Path, change_summary: str, *, p
             "Deterministic managed repair would change intent-sensitive workflow contract surfaces.",
             escalation,
         )
+
+    _warn_if_split_scope_deadlock_present(repo_root)
 
     workflow_before = read_json(repo_root / ".opencode" / "state" / "workflow-state.json")
     process_version_before = workflow_before.get("process_version") if isinstance(workflow_before, dict) else None

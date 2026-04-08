@@ -177,6 +177,8 @@ def prevention_action(finding: Finding) -> str:
         return "Teach the shared artifact verdict extractor to accept markdown-emphasized labels like `**Verdict**: PASS`, then route ticket_lookup and ticket_update through that single parser."
     if finding.code == "WFLOW027":
         return "Return verification metadata from restart-surface tools so callers can confirm what handoff and snapshot publication actually wrote."
+    if finding.code == "WFLOW028":
+        return "Remove the global split-scope completion invariant from workflow.ts validateTicketGraphInvariants so sequential-dependent split children can exist alongside completed parents, then install the fix via scafforge-repair."
     if finding.code == "SESSION001":
         return "Teach scafforge-audit to treat supplied session logs as first-class temporal evidence and explain final reasoning failures before reconciling current repo state."
     if finding.code == "SESSION002":
@@ -262,11 +264,34 @@ def package_has_verdict_parser_fix(ctx: AuditReportingContext) -> bool:
     return "(?:\\*\\*|__)?" in workflow_lib and "WFLOW026" in lifecycle_audit
 
 
+def package_has_split_scope_deadlock_fix(ctx: AuditReportingContext) -> bool:
+    workflow_lib = read_text(
+        ctx.package_root
+        / "skills"
+        / "repo-scaffold-factory"
+        / "assets"
+        / "project-template"
+        / ".opencode"
+        / "lib"
+        / "workflow.ts"
+    )
+    ticket_graph_audit = read_text(ctx.package_root / "skills" / "scafforge-audit" / "scripts" / "audit_ticket_graph.py")
+    # Fix is present when BOTH bad substrings are absent from the template AND WFLOW028 detection is present.
+    # Require both substrings absent — absence of just one could be a message/comment rewrite, not a real fix.
+    has_no_deadlock_throw = (
+        "Split-scope child" not in workflow_lib
+        and "cannot point at a completed source ticket" not in workflow_lib
+    )
+    has_wflow028_detection = "WFLOW028" in ticket_graph_audit
+    return has_no_deadlock_throw and has_wflow028_detection
+
+
 def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingContext) -> list[dict[str, Any]]:
     recommendations: list[dict[str, Any]] = []
     wflow024_package_fix_available = package_has_wflow024_fix(ctx)
     target_completion_fix_available = package_has_target_completion_fix(ctx)
     verdict_parser_fix_available = package_has_verdict_parser_fix(ctx)
+    split_scope_deadlock_fix_available = package_has_split_scope_deadlock_fix(ctx)
     grouped_follow_up: dict[str, list[Finding]] = {}
     next_index = 1
     for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
@@ -292,6 +317,13 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
                 repair_class = "Scafforge package work required before the next subject-repo repair run"
         elif finding.code == "WFLOW026":
             if verdict_parser_fix_available:
+                route = "scafforge-repair"
+                repair_class = "safe Scafforge package change"
+            else:
+                route = "manual-prerequisite"
+                repair_class = "Scafforge package work required before the next subject-repo repair run"
+        elif finding.code == "WFLOW028":
+            if split_scope_deadlock_fix_available:
                 route = "scafforge-repair"
                 repair_class = "safe Scafforge package change"
             else:

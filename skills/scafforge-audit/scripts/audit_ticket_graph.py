@@ -295,9 +295,108 @@ def audit_android_target_completion_backlog(root: Path, findings: list[Finding],
     )
 
 
+def audit_completed_parent_split_scope_children(root: Path, findings: list[Finding], ctx: TicketGraphAuditContext) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    workflow_path = root / ".opencode" / "state" / "workflow-state.json"
+    workflow_lib_path = root / ".opencode" / "lib" / "workflow.ts"
+    if not manifest_path.exists():
+        return
+
+    # Only flag deadlock if the installed workflow.ts still contains the bad throw.
+    # An open split_scope child with a done parent is canonical for sequential-dependent splits
+    # (ticket_update.ts explicitly requires the parent to be done before activating the child).
+    # The defect is the TOOL, not the manifest state. If the tool is already fixed, this is valid state.
+    if workflow_lib_path.exists():
+        workflow_lib_text = ctx.read_text(workflow_lib_path)
+        if "Split-scope child" not in workflow_lib_text and "cannot point at a completed source ticket" not in workflow_lib_text:
+            return
+
+    manifest = ctx.read_json(manifest_path)
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) and isinstance(manifest.get("tickets"), list) else []
+    if not tickets:
+        return
+
+    tickets_by_id = {
+        str(t.get("id")): t
+        for t in tickets
+        if isinstance(t, dict) and isinstance(t.get("id"), str)
+    }
+    evidence: list[str] = []
+
+    for ticket_id, ticket in tickets_by_id.items():
+        if str(ticket.get("source_mode", "")).strip() != "split_scope":
+            continue
+        source_ticket_id = str(ticket.get("source_ticket_id", "")).strip()
+        if not source_ticket_id:
+            continue
+        source = tickets_by_id.get(source_ticket_id)
+        if not isinstance(source, dict):
+            continue
+        source_status = str(source.get("status", "")).strip()
+        source_resolution = str(source.get("resolution_state", "")).strip()
+        if source_status == "done" or source_resolution == "superseded":
+            child_status = str(ticket.get("status", "")).strip()
+            if child_status not in {"done"}:
+                evidence.append(
+                    f"{ticket_id} (status={child_status}) is a split_scope child of {source_ticket_id}"
+                    f" (status={source_status}, resolution_state={source_resolution or 'none'})."
+                    f" The installed workflow.ts still contains the deadlock throw that blocks all manifest"
+                    f" mutations whenever this state exists. Run scafforge-repair to install fixed tools."
+                )
+
+    if not evidence:
+        return
+
+    workflow = ctx.read_json(workflow_path) if workflow_path.exists() else {}
+    active_ticket = str(workflow.get("active_ticket", "")).strip() if isinstance(workflow, dict) else ""
+    affected_ids = [e.split(" ")[0] for e in evidence]
+    if active_ticket in affected_ids:
+        evidence.insert(
+            0,
+            f"Active ticket {active_ticket} is one of the affected split_scope children."
+            f" ALL manifest mutations are currently blocked — this is a global workflow deadlock.",
+        )
+
+    ctx.add_finding(
+        findings,
+        Finding(
+            code="WFLOW028",
+            severity="error",
+            problem="Installed workflow.ts blocks all manifest mutations when a split-scope child's parent ticket closes.",
+            root_cause=(
+                "The installed workflow.ts contains a global invariant that throws when any split_scope child ticket"
+                " has a completed source ticket. This fires during every manifest write, not just for the affected ticket."
+                " Sequential-dependent split children are designed to activate AFTER their parent closes (per ticket_update.ts),"
+                " so this invariant contradicts the intended workflow and causes a global write deadlock."
+                " The fix is to install the corrected workflow.ts via scafforge-repair."
+            ),
+            files=[
+                ctx.normalize_path(manifest_path, root),
+                ctx.normalize_path(workflow_lib_path, root),
+                *(
+                    [ctx.normalize_path(workflow_path, root)]
+                    if workflow_path.exists()
+                    else []
+                ),
+            ],
+            safer_pattern=(
+                "After scafforge-repair installs the fixed workflow.ts, the sequential-dependent split-scope pattern"
+                " works correctly: split children wait while parent is open, activate after parent closes."
+                " No ticket_reconcile is needed — the manifest state is valid once the tool is fixed."
+                " If ticket_reconcile must be called on a split child for any other reason (evidence update, lineage"
+                " repair), explicitly pass replacement_source_mode with a non-split_scope value; leaving it defaulted"
+                " will cause ticket_reconcile to reject the completed source and appear to deadlock again."
+            ),
+            evidence=evidence,
+            provenance="script",
+        ),
+    )
+
+
 def run_ticket_graph_audits(root: Path, findings: list[Finding], ctx: TicketGraphAuditContext) -> None:
     audit_closed_ticket_follow_up_deadlock(root, findings, ctx)
     audit_stale_ticket_graph(root, findings, ctx)
     audit_historical_reconciliation_deadlock(root, findings, ctx)
     audit_open_ticket_split_routing(root, findings, ctx)
     audit_android_target_completion_backlog(root, findings, ctx)
+    audit_completed_parent_split_scope_children(root, findings, ctx)

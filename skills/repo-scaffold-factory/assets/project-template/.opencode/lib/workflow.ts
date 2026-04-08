@@ -889,9 +889,6 @@ function validateTicketGraphInvariants(manifest: Manifest): void {
       if (!sourceTicket.follow_up_ticket_ids.includes(ticket.id)) {
         throw new Error(`Ticket ${ticket.id} is missing symmetric follow-up linkage from ${sourceTicket.id}.`)
       }
-      if (ticket.source_mode === "split_scope" && (sourceTicket.status === "done" || sourceTicket.resolution_state === "superseded")) {
-        throw new Error(`Split-scope child ${ticket.id} cannot point at a completed source ticket ${sourceTicket.id}.`)
-      }
       if (ticket.source_mode === "process_verification" && sourceTicket.status !== "done") {
         throw new Error(`Process-verification ticket ${ticket.id} must point at a done source ticket.`)
       }
