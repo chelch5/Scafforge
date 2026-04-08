@@ -523,6 +523,182 @@ def seed_closed_ticket_with_blocked_dependent(dest: Path) -> None:
     workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
 
 
+def seed_finish_claim_with_open_finish_ticket(dest: Path) -> None:
+    seed_godot_android_target(dest)
+    seed_minimal_godot_project(dest)
+    brief_path = dest / "docs" / "spec" / "CANONICAL-BRIEF.md"
+    brief_path.write_text(
+        brief_path.read_text(encoding="utf-8")
+        + "\n## 13. Product Finish Contract\n\n"
+        + "- deliverable_kind: packaged mobile product\n"
+        + "- placeholder_policy: no_placeholders\n"
+        + "- visual_finish_target: authored production visuals required\n"
+        + "- audio_finish_target: authored production audio required\n"
+        + "- content_source_plan: custom authored\n"
+        + "- licensing_or_provenance_constraints: project-owned assets only\n"
+        + "- finish_acceptance_signals: finish ownership tickets are closed with real content proof\n",
+        encoding="utf-8",
+    )
+    append_manifest_ticket(
+        dest,
+        {
+            "id": "VISUAL-001",
+            "title": "Integrate production visuals",
+            "wave": 3,
+            "lane": "visual-content",
+            "parallel_safe": False,
+            "overlap_risk": "medium",
+            "stage": "planning",
+            "status": "todo",
+            "depends_on": [],
+            "summary": "Replace placeholder visuals with production-ready assets.",
+            "acceptance": ["Production visual assets are integrated."],
+            "decision_blockers": [],
+            "artifacts": [],
+            "resolution_state": "open",
+            "verification_state": "suspect",
+            "follow_up_ticket_ids": [],
+        },
+    )
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    workflow["active_ticket"] = ""
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    start_here_path = dest / "START-HERE.md"
+    start_here_path.write_text(
+        start_here_path.read_text(encoding="utf-8")
+        + "\nready for continued development\n",
+        encoding="utf-8",
+    )
+
+
+def seed_reference_scan_exclusion_case(dest: Path) -> None:
+    (dest / "src").mkdir(parents=True, exist_ok=True)
+    (dest / "src" / "owned_bad.py").write_text(
+        "from .missing_module import demo\n",
+        encoding="utf-8",
+    )
+    (dest / "node_modules" / "fakepkg").mkdir(parents=True, exist_ok=True)
+    (dest / "node_modules" / "fakepkg" / "index.js").write_text(
+        'require("./missing-runtime")\n',
+        encoding="utf-8",
+    )
+
+
+def seed_incomplete_finish_contract(dest: Path) -> None:
+    brief_path = dest / "docs" / "spec" / "CANONICAL-BRIEF.md"
+    brief_path.write_text(
+        brief_path.read_text(encoding="utf-8")
+        + "\n## 13. Product Finish Contract\n\n- `deliverable_kind` — playable prototype\n",
+        encoding="utf-8",
+    )
+    (dest / "project.godot").write_text(
+        "; Engine configuration file.\nconfig_version=5\n",
+        encoding="utf-8",
+    )
+
+
+def seed_broken_repo_venv(dest: Path) -> None:
+    (dest / "pyproject.toml").write_text(
+        "[project]\nname = \"broken-venv\"\nversion = \"0.1.0\"\n",
+        encoding="utf-8",
+    )
+    broken_python = dest / ".venv" / "bin" / "python"
+    broken_python.parent.mkdir(parents=True, exist_ok=True)
+    broken_python.write_text("#!/broken/python\n", encoding="utf-8")
+    broken_python.chmod(0o644)
+
+
+def seed_remediation_review_without_command_evidence(dest: Path) -> None:
+    append_manifest_ticket(
+        dest,
+        {
+            "id": "EXEC-001-FIX",
+            "title": "Fix failing import surface",
+            "wave": 2,
+            "lane": "implementation",
+            "parallel_safe": False,
+            "overlap_risk": "medium",
+            "stage": "review",
+            "status": "review",
+            "depends_on": [],
+            "summary": "Remediate a previously validated execution finding.",
+            "acceptance": ["Original failing command now passes."],
+            "decision_blockers": [],
+            "artifacts": [],
+            "resolution_state": "open",
+            "verification_state": "suspect",
+            "finding_source": "EXEC001",
+            "follow_up_ticket_ids": [],
+        },
+    )
+    register_current_ticket_artifact(
+        dest,
+        ticket_id="EXEC-001-FIX",
+        kind="review",
+        stage="review",
+        relative_path=".opencode/state/artifacts/history/review/EXEC-001-FIX-review.md",
+        summary="APPROVED",
+        content="# Review\n\n- Verdict: PASS\n- Notes: import surface looks fixed.\n",
+    )
+
+
+def seed_remediation_review_with_empty_output_block(dest: Path) -> None:
+    append_manifest_ticket(
+        dest,
+        {
+            "id": "EXEC-002-FIX",
+            "title": "Fix broken runtime command",
+            "wave": 2,
+            "lane": "implementation",
+            "parallel_safe": False,
+            "overlap_risk": "medium",
+            "stage": "review",
+            "status": "review",
+            "depends_on": [],
+            "summary": "Remediate a validated execution finding with command evidence.",
+            "acceptance": ["Original failing command now passes."],
+            "decision_blockers": [],
+            "artifacts": [],
+            "resolution_state": "open",
+            "verification_state": "suspect",
+            "finding_source": "EXEC002",
+            "follow_up_ticket_ids": [],
+        },
+    )
+    register_current_ticket_artifact(
+        dest,
+        ticket_id="EXEC-002-FIX",
+        kind="review",
+        stage="review",
+        relative_path=".opencode/state/artifacts/history/review/EXEC-002-FIX-review.md",
+        summary="APPROVED",
+        content=(
+            "# Review\n\n"
+            "- Command: `pytest -q tests/test_runtime.py`\n"
+            "## Raw Command Output\n\n"
+            "```text\n```\n\n"
+            "- Result: PASS\n"
+        ),
+    )
+
+
+def seed_stale_godot_project_config(dest: Path) -> None:
+    (dest / "project.godot").write_text(
+        "\n".join(
+            [
+                "; Engine configuration file.",
+                "config_version=2",
+                "",
+                "[rendering]",
+                'renderer/rendering_method="GLES2"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def seed_closed_ticket_needing_explicit_reverification(dest: Path) -> None:
     manifest_path = dest / "tickets" / "manifest.json"
     workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
@@ -1450,6 +1626,7 @@ def seed_contradictory_follow_up_graph(dest: Path) -> None:
             "source_ticket_id": source["id"],
             "follow_up_ticket_ids": [],
             "source_mode": "split_scope",
+            "split_kind": "sequential_dependent",
         }
     )
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -1518,6 +1695,7 @@ def seed_blocked_split_parent(dest: Path) -> None:
             "source_ticket_id": source["id"],
             "follow_up_ticket_ids": [],
             "source_mode": "split_scope",
+            "split_kind": "sequential_dependent",
         }
     )
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -2383,6 +2561,7 @@ def main() -> int:
             "SCAFFOLD-002",
             "SCAFFOLD-003",
             "SCAFFOLD-004",
+            "SCAFFOLD-005",
             "placeholder_findings",
             "agent_reference_findings",
         ):
@@ -2423,14 +2602,86 @@ def main() -> int:
         for expected in (
             "def audit_node_execution",
             "def audit_godot_execution",
+            "def audit_godot_project_version",
             "def audit_reference_integrity",
+            "SCAN_EXCLUDED_DIRS",
+            "iter_source_files",
             "EXEC-GODOT-002",
+            "EXEC-GODOT-005a",
+            "EXEC-GODOT-005b",
+            "PROJ-VER-001",
             'code="REF-002"',
         ):
             if expected not in generated_audit_execution:
                 raise RuntimeError(
                     "Audit execution surfaces should include stack-specific execution checks and reference integrity findings"
                 )
+        generated_audit_contract = (
+            ROOT
+            / "skills"
+            / "scafforge-audit"
+            / "scripts"
+            / "audit_contract_surfaces.py"
+        ).read_text(encoding="utf-8")
+        for expected in ("FINISH001", "FINISH002", "audit_product_finish_contract"):
+            if expected not in generated_audit_contract:
+                raise RuntimeError(
+                    "Audit contract surfaces should include Product Finish Contract checks for consumer-facing repos"
+                )
+        spec_pack_skill = (ROOT / "skills" / "spec-pack-normalizer" / "SKILL.md").read_text(encoding="utf-8")
+        if "Product Finish Contract" not in spec_pack_skill:
+            raise RuntimeError(
+                "spec-pack-normalizer should require Product Finish Contract handling for consumer-facing repos"
+            )
+        scaffold_kickoff_skill = (ROOT / "skills" / "scaffold-kickoff" / "SKILL.md").read_text(encoding="utf-8")
+        if "finish contract (section 13" not in scaffold_kickoff_skill:
+            raise RuntimeError(
+                "scaffold-kickoff should treat the finish contract as required intake for consumer-facing repos"
+            )
+        ticket_pack_builder_skill = (ROOT / "skills" / "ticket-pack-builder" / "SKILL.md").read_text(encoding="utf-8")
+        for expected in ("split_kind", "sequential_dependent", "SIGNING-001", "Product Finish Contract"):
+            if expected not in ticket_pack_builder_skill:
+                raise RuntimeError(
+                    f"ticket-pack-builder should include split sequencing and finish-contract backlog guidance: {expected}"
+                )
+        project_skill_bootstrap_skill = (ROOT / "skills" / "project-skill-bootstrap" / "SKILL.md").read_text(encoding="utf-8")
+        if "finish-pipeline skill" not in project_skill_bootstrap_skill:
+            raise RuntimeError(
+                "project-skill-bootstrap should synthesize finish-pipeline guidance when the brief forbids placeholders"
+            )
+        repair_skill = (ROOT / "skills" / "scafforge-repair" / "SKILL.md").read_text(encoding="utf-8")
+        if "exact command, raw command output, and explicit PASS/FAIL result" not in repair_skill:
+            raise RuntimeError(
+                "scafforge-repair should require command-evidence remediation review for finding_source follow-up tickets"
+            )
+        reviewer_prompt_template = (
+            ROOT
+            / "skills"
+            / "repo-scaffold-factory"
+            / "assets"
+            / "project-template"
+            / ".opencode"
+            / "agents"
+            / "__AGENT_PREFIX__-reviewer-code.md"
+        ).read_text(encoding="utf-8")
+        if "raw command output" not in reviewer_prompt_template:
+            raise RuntimeError(
+                "reviewer-code agent template should require remediation command output evidence"
+            )
+        team_leader_template = (
+            ROOT
+            / "skills"
+            / "repo-scaffold-factory"
+            / "assets"
+            / "project-template"
+            / ".opencode"
+            / "agents"
+            / "__AGENT_PREFIX__-team-leader.md"
+        ).read_text(encoding="utf-8")
+        if "must not call `artifact_write` or `artifact_register`" not in team_leader_template:
+            raise RuntimeError(
+                "team-leader agent template should explicitly forbid coordinator-authored stage artifacts"
+            )
         generated_audit_reporting = (
             ROOT
             / "skills"
@@ -4430,6 +4681,16 @@ def main() -> int:
             raise RuntimeError(
                 "Managed repair follow-on should create the canonical Android export and release tickets for Godot Android repos"
             )
+        missing_repair_surfaces = [
+            relative
+            for relative in ("export_presets.cfg", "android/scafforge-managed.json")
+            if not (public_repair_android_dest / relative).exists()
+        ]
+        if missing_repair_surfaces:
+            raise RuntimeError(
+                "Managed repair should regenerate every Scafforge-owned Android surface. "
+                f"Missing: {', '.join(missing_repair_surfaces)}"
+            )
         if "ANDROID-001" in release_ticket.get("depends_on", []):
             raise RuntimeError(
                 "RELEASE-001 should remain a split-scope child of ANDROID-001 without blocking on its open parent"
@@ -4437,9 +4698,10 @@ def main() -> int:
         if (
             release_ticket.get("source_ticket_id") != "ANDROID-001"
             or release_ticket.get("source_mode") != "split_scope"
+            or release_ticket.get("split_kind") != "sequential_dependent"
         ):
             raise RuntimeError(
-                "RELEASE-001 should preserve split-scope lineage to ANDROID-001 when repair creates the Android target-completion ticket pair"
+                "RELEASE-001 should preserve sequential split-scope lineage to ANDROID-001 when repair creates the Android target-completion ticket pair"
             )
 
         repeat_dest = workspace / "repeat-cycle"
@@ -5473,15 +5735,16 @@ def main() -> int:
                 "acceptance": ["Child scope is tracked independently."],
                 "source_ticket_id": "SETUP-001",
                 "source_mode": "split_scope",
-                "activate": True,
+                "split_kind": "sequential_dependent",
             },
         )
         if (
             split_scope_result["created_ticket"] != "EXEC-SPLIT"
             or split_scope_result["source_mode"] != "split_scope"
+            or split_scope_result["split_kind"] != "sequential_dependent"
         ):
             raise RuntimeError(
-                "ticket_create should report the created split-scope child and its source_mode"
+                "ticket_create should report the created split-scope child, source_mode, and split_kind"
             )
         split_scope_manifest = json.loads(
             (executed_split_scope_dest / "tickets" / "manifest.json").read_text(
@@ -5498,28 +5761,29 @@ def main() -> int:
             for ticket in split_scope_manifest["tickets"]
             if ticket["id"] == "EXEC-SPLIT"
         )
-        if split_scope_manifest["active_ticket"] != "EXEC-SPLIT":
+        if split_scope_manifest["active_ticket"] != "SETUP-001":
             raise RuntimeError(
-                "ticket_create should activate the split-scope child when requested"
+                "ticket_create should keep sequential split children behind the active parent at creation time"
             )
         if (
             split_child["source_ticket_id"] != "SETUP-001"
             or split_child["source_mode"] != "split_scope"
+            or split_child.get("split_kind") != "sequential_dependent"
         ):
             raise RuntimeError(
-                "ticket_create should persist split-scope lineage on the created child"
+                "ticket_create should persist split-scope lineage and split_kind on the created child"
             )
         if "EXEC-SPLIT" not in split_source["follow_up_ticket_ids"]:
             raise RuntimeError(
                 "ticket_create should append split-scope children to the source follow_up_ticket_ids"
             )
         if not any(
-            "Keep the parent open and non-foreground until the child work lands."
+            "must complete its parent-owned work before child ticket EXEC-SPLIT may be foregrounded."
             in item
             for item in split_source["decision_blockers"]
         ):
             raise RuntimeError(
-                "ticket_create should record the split-scope parent guidance on the source ticket"
+                "ticket_create should record sequential split guidance on the source ticket"
             )
 
         split_scope_dependency_error = run_generated_tool_error(
@@ -5534,6 +5798,7 @@ def main() -> int:
                 "acceptance": ["This ticket should never be created."],
                 "source_ticket_id": "SETUP-001",
                 "source_mode": "split_scope",
+                "split_kind": "sequential_dependent",
                 "depends_on": ["SETUP-001"],
             },
         )
@@ -7516,11 +7781,149 @@ def main() -> int:
         spinner_gap_codes = {
             finding["code"] for finding in spinner_gap_audit.get("findings", [])
         }
-        for expected_code in ("WFLOW025", "EXEC-GODOT-005"):
+        for expected_code in ("WFLOW025", "EXEC-GODOT-005a", "FINISH001"):
             if expected_code not in spinner_gap_codes:
                 raise RuntimeError(
                     f"Spinner-like Android completion gaps should emit {expected_code}"
                 )
+
+        finish_claim_dest = workspace / "finish-claim-gap"
+        shutil.copytree(full_dest, finish_claim_dest)
+        make_stack_skill_non_placeholder(finish_claim_dest)
+        seed_finish_claim_with_open_finish_ticket(finish_claim_dest)
+        finish_claim_audit = run_json(
+            [sys.executable, str(AUDIT), str(finish_claim_dest), "--format", "json"],
+            ROOT,
+        )
+        finish_claim_codes = {
+            finding["code"] for finding in finish_claim_audit.get("findings", [])
+        }
+        if "FINISH002" not in finish_claim_codes:
+            raise RuntimeError(
+                "Consumer-facing repos that claim ready state while finish-owning tickets remain open should emit FINISH002"
+            )
+
+        incomplete_finish_dest = workspace / "incomplete-finish-contract"
+        shutil.copytree(full_dest, incomplete_finish_dest)
+        make_stack_skill_non_placeholder(incomplete_finish_dest)
+        seed_incomplete_finish_contract(incomplete_finish_dest)
+        incomplete_finish_audit = run_json(
+            [sys.executable, str(AUDIT), str(incomplete_finish_dest), "--format", "json"],
+            ROOT,
+        )
+        incomplete_finish_findings = [
+            finding
+            for finding in incomplete_finish_audit.get("findings", [])
+            if isinstance(finding, dict) and finding.get("code") == "FINISH001"
+        ]
+        if not incomplete_finish_findings:
+            raise RuntimeError(
+                "Consumer-facing repos with an incomplete Product Finish Contract should emit FINISH001"
+            )
+        incomplete_finish_evidence = "\n".join(
+            line
+            for finding in incomplete_finish_findings
+            for line in finding.get("evidence", [])
+            if isinstance(line, str)
+        )
+        if "missing finish-contract fields" not in incomplete_finish_evidence:
+            raise RuntimeError(
+                "FINISH001 should explain which Product Finish Contract fields are missing"
+            )
+
+        ref_scan_dest = workspace / "reference-scan-exclusion"
+        shutil.copytree(full_dest, ref_scan_dest)
+        make_stack_skill_non_placeholder(ref_scan_dest)
+        seed_reference_scan_exclusion_case(ref_scan_dest)
+        ref_scan_audit = run_json(
+            [sys.executable, str(AUDIT), str(ref_scan_dest), "--format", "json"],
+            ROOT,
+        )
+        ref_findings = [
+            finding
+            for finding in ref_scan_audit.get("findings", [])
+            if isinstance(finding, dict) and finding.get("code") == "REF-003"
+        ]
+        if not ref_findings:
+            raise RuntimeError(
+                "Reference-integrity audit should still emit REF-003 for repo-owned broken imports"
+            )
+        ref_evidence = "\n".join(
+            line
+            for finding in ref_findings
+            for line in finding.get("evidence", [])
+            if isinstance(line, str)
+        )
+        if "node_modules" in ref_evidence:
+            raise RuntimeError(
+                "Reference-integrity audit should ignore broken imports under excluded dependency trees such as node_modules"
+            )
+
+        broken_venv_dest = workspace / "broken-venv"
+        shutil.copytree(full_dest, broken_venv_dest)
+        make_stack_skill_non_placeholder(broken_venv_dest)
+        seed_broken_repo_venv(broken_venv_dest)
+        broken_venv_audit = run_json(
+            [sys.executable, str(AUDIT), str(broken_venv_dest), "--format", "json"],
+            ROOT,
+        )
+        broken_venv_codes = {
+            finding["code"] for finding in broken_venv_audit.get("findings", [])
+        }
+        if "EXEC-ENV-001" not in broken_venv_codes:
+            raise RuntimeError(
+                "Audit should emit EXEC-ENV-001 when a repo-local .venv exists but its interpreter is broken"
+            )
+
+        remediation_review_dest = workspace / "remediation-review-evidence"
+        shutil.copytree(full_dest, remediation_review_dest)
+        make_stack_skill_non_placeholder(remediation_review_dest)
+        seed_remediation_review_without_command_evidence(remediation_review_dest)
+        remediation_review_audit = run_json(
+            [sys.executable, str(AUDIT), str(remediation_review_dest), "--format", "json"],
+            ROOT,
+        )
+        remediation_review_codes = {
+            finding["code"] for finding in remediation_review_audit.get("findings", [])
+        }
+        if "EXEC-REMED-001" not in remediation_review_codes:
+            raise RuntimeError(
+                "Audit should emit EXEC-REMED-001 when a remediation review artifact lacks runnable command evidence"
+            )
+
+        empty_remediation_dest = workspace / "remediation-review-empty-output"
+        shutil.copytree(full_dest, empty_remediation_dest)
+        make_stack_skill_non_placeholder(empty_remediation_dest)
+        seed_remediation_review_with_empty_output_block(empty_remediation_dest)
+        empty_remediation_audit = run_json(
+            [sys.executable, str(AUDIT), str(empty_remediation_dest), "--format", "json"],
+            ROOT,
+        )
+        empty_remediation_findings = [
+            finding
+            for finding in empty_remediation_audit.get("findings", [])
+            if isinstance(finding, dict) and finding.get("code") == "EXEC-REMED-001"
+        ]
+        if not empty_remediation_findings:
+            raise RuntimeError(
+                "Audit should emit EXEC-REMED-001 when a remediation review artifact uses an empty raw-output block"
+            )
+
+        stale_godot_dest = workspace / "stale-godot-project"
+        shutil.copytree(full_dest, stale_godot_dest)
+        make_stack_skill_non_placeholder(stale_godot_dest)
+        seed_stale_godot_project_config(stale_godot_dest)
+        stale_godot_audit = run_json(
+            [sys.executable, str(AUDIT), str(stale_godot_dest), "--format", "json"],
+            ROOT,
+        )
+        stale_godot_codes = {
+            finding["code"] for finding in stale_godot_audit.get("findings", [])
+        }
+        if "PROJ-VER-001" not in stale_godot_codes:
+            raise RuntimeError(
+                "Audit should emit PROJ-VER-001 for stale Godot 4 project configuration markers"
+            )
 
         repair_dest = workspace / "repair"
         shutil.copytree(full_dest, repair_dest)

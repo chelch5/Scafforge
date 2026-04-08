@@ -12,13 +12,54 @@ from shared_verifier_types import Finding
 from target_completion import (
     debug_apk_path,
     declares_godot_android_target,
+    deliverable_proof_path,
     expected_android_debug_apk_relpath,
     has_android_export_preset,
     has_android_support_surfaces,
+    has_signing_ownership,
     load_manifest,
     release_lane_started_or_done,
     repo_claims_completion,
+    requires_packaged_android_product,
 )
+
+# Directories excluded from repo-owned source file walks (dependency/build trees).
+SCAN_EXCLUDED_DIRS: frozenset[str] = frozenset({
+    ".git",
+    "node_modules",
+    ".venv",
+    "venv",
+    ".env",
+    "dist",
+    "build",
+    "target",
+    "vendor",
+    ".tox",
+    "site-packages",
+    "__pycache__",
+    ".cache",
+    ".gradle",
+    ".idea",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    "coverage",
+    ".coverage",
+    "htmlcov",
+})
+
+
+def iter_source_files(root: Path, suffixes: tuple[str, ...]) -> list[Path]:
+    """Iterate repo-owned source files, skipping dependency and build trees."""
+    results: list[Path] = []
+    for path in root.rglob("*"):
+        if path.is_file() and path.suffix in suffixes:
+            # Skip any file whose path passes through an excluded directory
+            relative_parts = path.relative_to(root).parts
+            if any(part in SCAN_EXCLUDED_DIRS for part in relative_parts[:-1]):
+                continue
+            results.append(path)
+    return results
 
 
 @dataclass(frozen=True)
@@ -35,6 +76,7 @@ class ExecutionSurfaceAuditContext:
     detect_python: Callable[[Path], str | None]
     detect_pytest_command: Callable[[Path], list[str] | None]
     run_command: Callable[[list[str], Path, int], tuple[int, str]]
+    is_venv_broken: Callable[[Path], str | None]
 
 
 def repo_venv_executable_candidates(root: Path, executable: str) -> list[Path]:
@@ -488,6 +530,30 @@ def audit_python_execution(root: Path, findings: list[Finding], ctx: ExecutionSu
     if not (root / "pyproject.toml").exists() and not (root / "setup.py").exists():
         return
 
+    broken_reason = ctx.is_venv_broken(root)
+    if broken_reason is not None:
+        ctx.add_finding(
+            findings,
+            Finding(
+                code="EXEC-ENV-001",
+                severity="error",
+                problem="Repo-local Python virtual environment exists but is broken — the expected interpreter cannot execute.",
+                root_cause=(
+                    "The repo has a `.venv` directory, but the Python executable inside it is missing, "
+                    "corrupt, or fails to start. Source import validation and test execution cannot be "
+                    "attributed to the repo-local environment."
+                ),
+                files=[str(root / ".venv")],
+                safer_pattern=(
+                    "Delete and recreate the virtual environment (`rm -rf .venv && uv sync` or "
+                    "`python3 -m venv .venv && pip install -e .`), then rerun the audit."
+                ),
+                evidence=[broken_reason],
+                provenance="script",
+            ),
+        )
+        return
+
     python = ctx.detect_python(root)
     if python is None:
         return
@@ -833,17 +899,6 @@ def audit_godot_execution(root: Path, findings: list[Finding], ctx: ExecutionSur
     if not (release_lane_started_or_done(manifest) or repo_claims_completion(manifest)):
         return
 
-    missing_surfaces: list[str] = []
-    if not has_android_export_preset(root):
-        missing_surfaces.append("export_presets.cfg Android preset")
-    if not has_android_support_surfaces(root):
-        missing_surfaces.append("repo-local android support surfaces")
-    apk_path = debug_apk_path(root)
-    if apk_path is None:
-        missing_surfaces.append(f"debug APK proof at {expected_android_debug_apk_relpath(root)}")
-    if not missing_surfaces:
-        return
-
     manifest_tickets = manifest.get("tickets") if isinstance(manifest.get("tickets"), list) else []
     open_ticket_count = sum(
         1
@@ -862,23 +917,102 @@ def audit_godot_execution(root: Path, findings: list[Finding], ctx: ExecutionSur
     build_dir = root / "build" / "android"
     if build_dir.exists():
         files.append(ctx.normalize_path(build_dir, root))
-    ctx.add_finding(
+
+    # --- EXEC-GODOT-005a: missing export surfaces or runnable proof (debug APK) ---
+    missing_runnable: list[str] = []
+    if not has_android_export_preset(root):
+        missing_runnable.append("export_presets.cfg Android preset")
+    if not has_android_support_surfaces(root):
+        missing_runnable.append("repo-local android support surfaces")
+    apk_path = debug_apk_path(root)
+    if apk_path is None:
+        missing_runnable.append(f"debug APK runnable proof at {expected_android_debug_apk_relpath(root)}")
+    if missing_runnable:
+        ctx.add_finding(
+            findings,
+            Finding(
+                code="EXEC-GODOT-005a",
+                severity="error",
+                problem="Android-targeted Godot repo is missing export surfaces or debug APK runnable proof.",
+                root_cause=(
+                    "The repo has started or closed Android release work but is still missing the "
+                    "repo-managed export preset, android/ support surfaces, or the canonical debug APK. "
+                    "Runnable proof requires export_presets.cfg, non-placeholder android/ surfaces, "
+                    "and a debug APK at the canonical build path."
+                ),
+                files=list(dict.fromkeys(files)),
+                safer_pattern=(
+                    "Emit export_presets.cfg and android/ surfaces at scaffold time. "
+                    "Block RELEASE-001 closeout until debug APK runnable proof exists at the canonical path."
+                ),
+                evidence=[
+                    f"open_ticket_count = {open_ticket_count}",
+                    f"release_lane_started_or_done = {release_lane_started_or_done(manifest)}",
+                    f"repo_claims_completion = {repo_claims_completion(manifest)}",
+                    f"missing runnable surfaces: {', '.join(missing_runnable)}",
+                ],
+                provenance="script",
+            ),
+        )
+
+    # --- EXEC-GODOT-005b: missing deliverable proof when packaged product is required ---
+    if requires_packaged_android_product(root):
+        missing_deliverable: list[str] = []
+        d_path = deliverable_proof_path(root)
+        if d_path and not (root / d_path).exists():
+            missing_deliverable.append(f"signed release artifact at {d_path}")
+        if not has_signing_ownership(root):
+            missing_deliverable.append("signing prerequisites (SIGNING-001 not closed or keystore not declared)")
+        if missing_deliverable:
+            ctx.add_finding(
+                findings,
+                Finding(
+                    code="EXEC-GODOT-005b",
+                    severity="error",
+                    problem="Godot Android repo with packaged-product requirement is missing deliverable proof or signing ownership.",
+                    root_cause=(
+                        "The canonical brief requires a packaged Android deliverable, but a signed release APK/AAB "
+                        "or signing ownership has not been established. Debug APK proof alone is insufficient "
+                        "when the brief declares a packaged Android product goal."
+                    ),
+                    files=list(dict.fromkeys(files)),
+                    safer_pattern=(
+                        "Create SIGNING-001 to own signing prerequisites before RELEASE-001 closes. "
+                        "Require a signed release APK or AAB as deliverable proof when the brief mandates packaged delivery."
+                    ),
+                    evidence=[
+                        f"requires_packaged_android_product = True",
+                        f"repo_claims_completion = {repo_claims_completion(manifest)}",
+                        f"missing deliverable surfaces: {', '.join(missing_deliverable)}",
+                    ],
+                    provenance="script",
+                ),
+            )
+
+
+def audit_godot_project_version(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
+    project_file = root / "project.godot"
+    if not project_file.exists():
+        return
+    project_text = ctx.read_text(project_file)
+    stale_markers: list[str] = []
+    if re.search(r"^config_version\s*=\s*2\b", project_text, re.MULTILINE):
+        stale_markers.append("project.godot still declares config_version=2")
+    if re.search(r"GLES2", project_text, re.IGNORECASE):
+        stale_markers.append("project.godot still references deprecated GLES2 renderer settings")
+    if not stale_markers:
+        return
+    _add_execution_finding(
         findings,
-        Finding(
-            code="EXEC-GODOT-005",
-            severity="error",
-            problem="Android-targeted Godot repo still lacks export surfaces or debug APK proof while the repo claims release progress or completion.",
-            root_cause="The repo treats Android delivery as complete enough to close or advance release-facing work, but the canonical export preset, repo-local Android support surfaces, or debug APK artifact proof are still missing.",
-            files=list(dict.fromkeys(files)),
-            safer_pattern="Keep Godot Android repos blocked on explicit export surfaces plus debug APK proof. Once release work starts or the repo claims completion, require `export_presets.cfg`, non-placeholder `android/` support surfaces, and a debug APK at the canonical build path.",
-            evidence=[
-                f"open_ticket_count = {open_ticket_count}",
-                f"release_lane_started_or_done = {release_lane_started_or_done(manifest)}",
-                f"repo_claims_completion = {repo_claims_completion(manifest)}",
-                f"missing Android delivery surfaces: {', '.join(missing_surfaces)}",
-            ],
-            provenance="script",
-        ),
+        ctx,
+        code="PROJ-VER-001",
+        severity="error",
+        problem="Godot project configuration contains clearly stale pre-Godot-4 settings.",
+        root_cause="The repo declares Godot 4-era project surfaces, but project.godot still contains stale config_version or renderer values that belong to older project formats and can invalidate execution or packaging assumptions.",
+        files=[project_file],
+        safer_pattern="Keep project.godot on current Godot 4.x configuration values and reject stale config_version=2 or GLES2-era renderer references before claiming the repo is clean.",
+        evidence=stale_markers,
+        root=root,
     )
 
 
@@ -946,6 +1080,9 @@ def audit_dotnet_execution(root: Path, findings: list[Finding], ctx: ExecutionSu
 
 
 def _resolve_relative_import_path(base_file: Path, value: str) -> list[Path]:
+    if value.startswith(".") and not value.startswith("./") and not value.startswith("../"):
+        return _resolve_relative_python_import_path(base_file, value)
+
     base = (base_file.parent / value).resolve()
     candidates = [base]
     if base.suffix:
@@ -956,6 +1093,21 @@ def _resolve_relative_import_path(base_file: Path, value: str) -> list[Path]:
     candidates.append(base / "index.ts")
     candidates.append(base / "index.tsx")
     candidates.append(base / "index.js")
+    return candidates
+
+
+def _resolve_relative_python_import_path(base_file: Path, value: str) -> list[Path]:
+    level = len(value) - len(value.lstrip("."))
+    module_path = value[level:].replace(".", "/")
+    anchor = base_file.parent
+    for _ in range(max(level - 1, 0)):
+        anchor = anchor.parent
+    base = (anchor / module_path).resolve() if module_path else anchor.resolve()
+    candidates = [base]
+    if base.suffix:
+        return candidates
+    candidates.append(Path(f"{base}.py"))
+    candidates.append(base / "__init__.py")
     return candidates
 
 
@@ -986,8 +1138,13 @@ def audit_reference_integrity(root: Path, findings: list[Finding], ctx: Executio
         _add_execution_finding(findings, ctx, code="REF-002", severity="error", problem="Configuration surfaces reference missing code or asset files.", root_cause="A canonical config surface points at files that do not exist, so runtime setup and package entrypoints drift from repo truth.", files=[path for path in (root / "package.json", root / "project.godot") if path.exists()], safer_pattern="Audit config-managed code and asset paths and keep config surfaces aligned with real files before handoff.", evidence=config_missing[:8], root=root)
 
     import_missing: list[str] = []
-    for path in list(root.rglob("*.py")) + list(root.rglob("*.ts")) + list(root.rglob("*.tsx")) + list(root.rglob("*.js")) + list(root.rglob("*.jsx")):
+    source_suffixes = (".py", ".ts", ".tsx", ".js", ".jsx")
+    for path in iter_source_files(root, source_suffixes):
         text = ctx.read_text(path)
+        for match in re.finditer(r"from\s+(\.{1,}[A-Za-z0-9_\.]*)\s+import\b", text):
+            if any(candidate.exists() for candidate in _resolve_relative_import_path(path, match.group(1))):
+                continue
+            import_missing.append(f"{ctx.normalize_path(path, root)} -> {match.group(1)}")
         for match in re.finditer(r"(?:from|import)\s+[\"'](\.[^\"']+)[\"']", text):
             if any(candidate.exists() for candidate in _resolve_relative_import_path(path, match.group(1))):
                 continue
@@ -1012,6 +1169,7 @@ def run_execution_surface_audits(root: Path, findings: list[Finding], ctx: Execu
     audit_rust_execution(root, findings, ctx)
     audit_go_execution(root, findings, ctx)
     audit_godot_execution(root, findings, ctx)
+    audit_godot_project_version(root, findings, ctx)
     audit_java_android_execution(root, findings, ctx)
     audit_cpp_execution(root, findings, ctx)
     audit_dotnet_execution(root, findings, ctx)

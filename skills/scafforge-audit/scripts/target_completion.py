@@ -8,8 +8,10 @@ from typing import Any
 
 ANDROID_EXPORT_TICKET_ID = "ANDROID-001"
 ANDROID_RELEASE_TICKET_ID = "RELEASE-001"
+ANDROID_SIGNING_TICKET_ID = "SIGNING-001"
 ANDROID_EXPORT_LANE = "android-export"
 ANDROID_RELEASE_LANE = "release-readiness"
+ANDROID_SIGNING_LANE = "signing-prerequisites"
 
 
 def read_text(path: Path) -> str:
@@ -68,6 +70,7 @@ def declares_godot_android_target(root: Path) -> bool:
 
 
 def expected_android_debug_apk_relpath(root: Path) -> str:
+    """Return the canonical runnable-proof APK path (debug APK only)."""
     return f"build/android/{project_slug(root)}-debug.apk"
 
 
@@ -85,12 +88,82 @@ def ticket_by_id(manifest: dict[str, Any], ticket_id: str) -> dict[str, Any] | N
     return next((ticket for ticket in manifest_tickets(manifest) if str(ticket.get("id", "")).strip() == ticket_id), None)
 
 
-def missing_android_completion_ticket_ids(manifest: dict[str, Any]) -> list[str]:
+def requires_packaged_android_product(root: Path) -> bool:
+    """Return True when the canonical brief requires a packaged Android product (release APK/AAB).
+
+    Runnable proof (debug APK) is always meaningful. Deliverable proof applies only when
+    the brief explicitly requires a packaged consumer-facing Android product.
+    """
+    brief = canonical_brief_text(root).lower()
+    provenance = bootstrap_provenance(root)
+    deliverable_kind = str(provenance.get("deliverable_kind", "")).lower()
+    if deliverable_kind in {"release_apk", "release_aab", "packaged_apk", "packaged_aab"}:
+        return True
+    packaged_indicators = [
+        "packaged mobile product",
+        "store-ready build",
+        "packaged android app",
+        "release apk",
+        "release aab",
+        "signed apk",
+        "signed aab",
+        "play store",
+        "google play",
+        "packaged android product",
+        "deliverable proof",
+        "release-ready",
+    ]
+    return any(indicator in brief for indicator in packaged_indicators)
+
+
+def deliverable_proof_path(root: Path) -> str | None:
+    """Return the canonical deliverable-proof artifact path, or None when not applicable.
+
+    Deliverable proof is only applicable when the brief requires a packaged Android product.
+    """
+    if not requires_packaged_android_product(root):
+        return None
+    provenance = bootstrap_provenance(root)
+    declared = provenance.get("deliverable_artifact_path")
+    if isinstance(declared, str) and declared.strip():
+        return declared.strip()
+    slug = project_slug(root)
+    return f"build/android/{slug}-release.apk"
+
+
+def has_signing_ownership(root: Path) -> bool:
+    """Return True when signing prerequisites are declared and owned in the repo.
+
+    Checks for:
+    - SIGNING-001 ticket present in the manifest with a completed or in-progress state
+    - A non-empty release keystore reference in provenance or CANONICAL-BRIEF.md
+    """
+    manifest = load_manifest(root)
+    signing_ticket = ticket_by_id(manifest, ANDROID_SIGNING_TICKET_ID)
+    if signing_ticket is not None:
+        state = str(signing_ticket.get("resolution_state", "open")).strip()
+        status = str(signing_ticket.get("status", "todo")).strip()
+        if state == "done" or status == "done":
+            return True
+    brief = canonical_brief_text(root).lower()
+    provenance = bootstrap_provenance(root)
+    keystore_ref = provenance.get("keystore_path") or provenance.get("keystore_ref")
+    if isinstance(keystore_ref, str) and keystore_ref.strip():
+        return True
+    if "keystore" in brief or "signing key" in brief or "release key" in brief:
+        return True
+    return False
+
+
+def missing_android_completion_ticket_ids(manifest: dict[str, Any], root: Path | None = None) -> list[str]:
     missing: list[str] = []
-    for ticket_id, lane in (
+    required_tickets: list[tuple[str, str]] = [
         (ANDROID_EXPORT_TICKET_ID, ANDROID_EXPORT_LANE),
         (ANDROID_RELEASE_TICKET_ID, ANDROID_RELEASE_LANE),
-    ):
+    ]
+    if root is not None and requires_packaged_android_product(root):
+        required_tickets.insert(1, (ANDROID_SIGNING_TICKET_ID, ANDROID_SIGNING_LANE))
+    for ticket_id, lane in required_tickets:
         ticket = ticket_by_id(manifest, ticket_id)
         if ticket is None or str(ticket.get("lane", "")).strip() != lane:
             missing.append(ticket_id)

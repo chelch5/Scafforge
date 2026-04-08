@@ -105,6 +105,14 @@ For each baseline skill in `.opencode/skills/`, rewrite the SKILL.md with actual
 
 From the canonical brief, generated repo structure, and local references, identify whether the project needs additional stack- or domain-specific skills beyond the baseline pack.
 
+When the canonical brief includes a Product Finish Contract (section 13) with `placeholder_policy: no_placeholders`, identify whether a finish-pipeline skill is warranted. This skill should encode:
+- the stack-specific content pipeline for the repo (asset formats, tooling, import conventions)
+- the finish acceptance signals from the canonical brief
+- guidance on what constitutes placeholder versus real output for this project's stack
+- any licensing or provenance gates that must be verified before content is committed
+
+Do not synthesize a finish-pipeline skill when the finish contract explicitly allows placeholder or procedural output as final output.
+
 ### 4. Review reference patterns
 
 Use project documentation, framework documentation, package references, and other external research as reference material only. Review patterns that match the selected stack and workflow, then synthesize repo-specific procedure from that evidence.

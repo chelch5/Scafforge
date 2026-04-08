@@ -1,0 +1,13 @@
+{
+  "managed_by": "Scafforge",
+  "surface_type": "godot-android-support",
+  "project_slug": "__PROJECT_SLUG__",
+  "package_name": "__PACKAGE_NAME__",
+  "debug_export_artifact": "build/android/__PROJECT_SLUG__-debug.apk",
+  "release_artifact_hint": "build/android/__PROJECT_SLUG__-release.apk",
+  "signing_mode": "project-owned",
+  "notes": [
+    "This file is a package-owned Android support surface.",
+    "Scafforge manages this metadata and export_presets.cfg, but does not generate keystores or signing secrets."
+  ]
+}

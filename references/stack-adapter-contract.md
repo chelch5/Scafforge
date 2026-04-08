@@ -103,10 +103,39 @@ This target-completion metadata is internal package contract state. It should in
 
 ### Godot Android target-completion expectations
 
-- host prerequisites: Godot, Java, `javac`, Android SDK path, and Godot export templates
-- repo prerequisites: `export_presets.cfg` with an Android preset and non-placeholder repo-local `android/` support surfaces
-- canonical backlog ownership: `ANDROID-001` in lane `android-export` and `RELEASE-001` in lane `release-readiness`
-- release proof: a debug APK at `build/android/<project-slug>-debug.apk`
+**Repo-managed surfaces** (owned by Scafforge scaffold and managed repair):
+- `export_presets.cfg` with an Android preset (rendered from project provenance at scaffold time)
+- repo-local `android/` support surfaces when the generated workflow declares the repo owns them
+- export path, package name, and version metadata derived from canonical project truth
+
+**Host prerequisites** (detected by bootstrap and audit; Scafforge cannot fabricate these):
+- Godot executable
+- Java and `javac`
+- Android SDK path
+- Godot export templates
+
+**Signing inputs** (modeled explicitly; Scafforge must not auto-generate secrets or keystores):
+- release keystore path or CI secret reference
+- keystore alias and password ownership
+- release artifact format (`apk` or `aab`)
+- signing-mode decision when the brief requires packaged delivery
+
+**Canonical backlog ownership:**
+- `ANDROID-001` in lane `android-export` — owns repo-managed export surfaces and first non-placeholder android/` support surfaces
+- `SIGNING-001` in lane `signing-prerequisites` — owns signing prerequisites when the brief requires a packaged Android product; must be resolved before `RELEASE-001` may close
+- `RELEASE-001` in lane `release-readiness` — owns runnable proof and, when packaged delivery is required, deliverable proof
+
+**Runnable proof** (answers: can the repo produce and validate a first runnable Android build?):
+- `godot --headless --quit --path .` or the resolved equivalent
+- debug export success for the canonical Android export command
+- debug APK present at `build/android/<project-slug>-debug.apk`
+
+**Deliverable proof** (answers: can the repo produce the packaged Android artifact the brief actually requires? — only relevant when brief declares a packaged Android product):
+- a signed release APK or AAB
+- explicit signing ownership already satisfied via `SIGNING-001`
+- artifact path declared in canonical truth
+
+Debug APK proof is valid runnable proof. It must not be treated as deliverable proof when the brief requires a packaged Android product.
 
 Treat explicit target facts from `docs/spec/CANONICAL-BRIEF.md` and `.opencode/meta/bootstrap-provenance.json` as authoritative even before repo-local export files such as `export_presets.cfg` exist.
 

@@ -172,6 +172,13 @@ Safe repair examples:
 
 When the diagnosis includes source-layer `EXEC*` or `REF*` findings, create the recommended remediation tickets through the repo's canonical ticket flow or ticket-pack-builder follow-up mode. Do not fix product code inside `scafforge-repair`; repair owns workflow and ticket-routing surfaces only.
 
+When the diagnosis includes a finish-contract audit finding (missing finish ownership, premature ready-state narrative with unresolved finish bar, or missing Product Finish Contract section in canonical truth), repair may:
+- regenerate managed workflow surfaces that encode finish truth (restart narrative, `START-HERE.md`, workflow state)
+- create or normalize finish follow-up tickets when audit proved finish-owning work is missing
+- update `START-HERE.md` and `context-snapshot.md` so they stop claiming ready-state when the finish contract requires unfinished content work
+
+Repair may not generate art assets, audio content, or creative material. Do not treat an empty asset folder as a repair target when the brief still owns the finish direction decision. Route that through a decision ticket instead of auto-populating content.
+
 Intent-changing repair examples that must be escalated:
 - project-scope changes
 - runtime or stack changes
@@ -214,6 +221,7 @@ When repair reveals unfinished or source-layer follow-up work:
 - use `ticket_reconcile` when the existing source/follow-up graph is stale or contradictory to the current evidence
 - keep this ticket generation inside the same repair run when the diagnosis already proved it is needed
 - keep repo-local review skills advisory only; they are not the canonical ticket owner
+- when the follow-up ticket carries `finding_source`, the downstream review artifact must rerun the original failing command or the canonical acceptance command for the repaired surface and record the exact command, raw command output, and explicit PASS/FAIL result before that review counts as trustworthy closure
 
 ### 9. Re-run verification
 

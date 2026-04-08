@@ -182,6 +182,20 @@ export const StageGateEnforcer: Plugin = async () => {
           }
         } else if (sourceMode === "split_scope") {
           if (!sourceTicketId) throw new Error("split_scope ticket creation requires source_ticket_id.")
+          const splitKind = typeof output.args.split_kind === "string" ? output.args.split_kind : ""
+          if (!splitKind || !["parallel_independent", "sequential_dependent"].includes(splitKind)) {
+            throw new Error(
+              "split_scope ticket creation requires an explicit split_kind. " +
+              "Use \"sequential_dependent\" when child work must wait until the parent finishes its own lane, " +
+              "or \"parallel_independent\" when child work can run safely alongside the still-open parent."
+            )
+          }
+          if (splitKind === "sequential_dependent" && output.args.activate === true) {
+            throw new Error(
+              "sequential_dependent split children cannot be activated at creation time. " +
+              "Keep the parent foregrounded until its own work is done, then activate the child explicitly."
+            )
+          }
           await ensureTargetTicketWriteLease(sourceTicketId)
           const sourceTicket = getTicket(manifest, sourceTicketId)
           if (!["open", "reopened"].includes(sourceTicket.resolution_state) || sourceTicket.status === "done") {

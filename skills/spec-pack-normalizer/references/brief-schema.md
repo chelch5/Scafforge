@@ -67,3 +67,16 @@ Use this structure when normalizing a spec pack or opportunistically scanned inp
 ## 12. Assumptions
 
 - Only include non-blocking assumptions that do not silently decide major project behavior
+
+## 13. Product Finish Contract
+
+For consumer-facing repos, unresolved finish requirements must become explicit blocking decisions rather than implicit assumptions.
+For internal tools and services, this section may be intentionally minimal.
+
+- `deliverable_kind` — what the user expects at the end: service, internal tool, playable prototype, packaged mobile product, store-ready build, etc.
+- `placeholder_policy` — whether placeholder or procedural output is acceptable as final output (`placeholder_ok` or `no_placeholders`)
+- `visual_finish_target` — the visual quality bar that counts as done for this repo; describe explicitly or note "procedural-only acceptable"
+- `audio_finish_target` — the audio bar that counts as done; describe explicitly or note "no audio required" or "procedural-only acceptable"
+- `content_source_plan` — where visuals, audio, and other creative content come from: custom authored, licensed pack, procedural-only, mixed, or intentionally none
+- `licensing_or_provenance_constraints` — any constraints on generated, licensed, or bundled assets
+- `finish_acceptance_signals` — the explicit signals that let audit and closeout know the finish bar was met

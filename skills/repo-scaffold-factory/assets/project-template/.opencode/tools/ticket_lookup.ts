@@ -21,7 +21,10 @@ import {
   loadManifest,
   loadWorkflowState,
   nextRepairFollowOnStage,
+  openParallelSplitChildren,
+  openSequentialSplitChildren,
   openSplitScopeChildren,
+  reconcileStaleStageIfNeeded,
   repairFollowOnBlockingReason,
   readArtifactContent,
   ticketNeedsHistoricalReconciliation,
@@ -45,6 +48,9 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
   const repairFollowOnStage = nextRepairFollowOnStage(workflow)
   const repairFollowOnBlocker = repairFollowOnBlockingReason(workflow)
   const splitChildren = openSplitScopeChildren(manifest, ticket.id)
+  const parallelSplitChildren = openParallelSplitChildren(manifest, ticket.id)
+  const sequentialSplitChildren = openSequentialSplitChildren(manifest, ticket.id)
+  const staleStageReconciliation = reconcileStaleStageIfNeeded(ticket)
   const blockedDependents = blockedDependentTickets(manifest, ticket.id)
   const base = {
     current_stage: ticket.stage,
@@ -63,8 +69,8 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
     artifact_kind: null as string | null,
     recommended_action: "",
     recommended_ticket_update: null as Record<string, unknown> | null,
-    recovery_action: null as string | null,
-    warnings: [] as string[],
+    recovery_action: staleStageReconciliation.recovery_action,
+    warnings: staleStageReconciliation.stale ? [staleStageReconciliation.recovery_action!] : [] as string[],
     review_verdict: null as string | null,
     qa_verdict: null as string | null,
     verdict_unclear: false,
@@ -84,8 +90,11 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
     }
   }
 
-  if (splitChildren.length > 0 && ticket.status !== "done") {
-    const foregroundChild = splitChildren[0]
+  // parallel_independent children run alongside the parent — foreground the child so it
+  // advances first.  sequential_dependent children must wait for the parent's own work to
+  // complete, so the parent stays in the foreground and we emit a warning instead.
+  if (parallelSplitChildren.length > 0 && ticket.status !== "done") {
+    const foregroundChild = parallelSplitChildren[0]
     return {
       ...base,
       next_allowed_stages: [foregroundChild.stage],
@@ -94,8 +103,33 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
       next_action_tool: "ticket_update",
       delegate_to_agent: null,
       required_owner: "team-leader",
-      recommended_action: `Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly.`,
+        recommended_action: `Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly.`,
       recommended_ticket_update: { ticket_id: foregroundChild.id, activate: true },
+    }
+  }
+
+  if (sequentialSplitChildren.length > 0 && ticket.status !== "done" && parallelSplitChildren.length === 0) {
+    const sequentialIds = sequentialSplitChildren.map((c) => c.id).join(", ")
+    base.warnings.push(
+      `Sequential split child ticket(s) [${sequentialIds}] exist and will become active after parent-owned work in ${ticket.id} is complete. ` +
+      `Continue advancing ${ticket.id} through its remaining lifecycle stages first.`
+    )
+  }
+
+  // When artifact evidence is ahead of the manifest stage, routing from the stale manifest
+  // state would give the agent wrong guidance.  Return a dedicated recovery path instead so
+  // the team leader can align stage/status before resuming lifecycle routing.
+  if (staleStageReconciliation.stale && staleStageReconciliation.recovery_action) {
+    return {
+      ...base,
+      next_allowed_stages: [staleStageReconciliation.evidenced_stage!],
+      required_artifacts: [],
+      next_action_kind: "ticket_update",
+      next_action_tool: "ticket_update",
+      delegate_to_agent: null,
+      required_owner: "team-leader",
+      recommended_action: staleStageReconciliation.recovery_action,
+      current_state_blocker: staleStageReconciliation.recovery_action,
     }
   }
 

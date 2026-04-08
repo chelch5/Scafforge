@@ -1,322 +1,133 @@
-# 04 — Prevention Strategy
+# Prevention Strategy
 
-**Created:** 2026-04-08  
-**Scope:** Systemic prevention for each defect class found across three audits
+This strategy is about preventing Scafforge from drifting back into the same package failures after the code changes land.
 
----
+## 1. Prevent stale plan drift
 
-## 1. Ticket Split-Scope Routing Failures
+Rules for future package planning work:
 
-### Class of defect
-Split-scope tickets using the wrong template for the relationship type, causing
-transition_guidance to route against the intended work order.
+- corrections must be folded into the active defect register and implementation plan, not parked in a sidecar addendum
+- repo-local remediation instructions do not belong in package planning documents
+- if a finding is already fixed in package code, remove it from the active plan set instead of preserving it for narrative continuity
+- if a claim about current package behavior changes, update the active plan files in the same change that updates the underlying code
 
-### Root cause
-`ticket_create` applies identical `decision_blockers` text for all split types.
-`ticket_lookup` reads that text and routes unconditionally to children.
-No schema field records the semantic relationship between parent and child.
+This directly addresses the failure mode that produced the previous `active-plans/` corpus.
 
-### Prevention package changes
+## 2. Bundle related contract changes together
 
-**Primary:** Add `split_kind` to the Ticket schema (DEF-001 fix in `02-implementation-plan.md`).
-Require `split_kind` on all split-scope `ticket_create` calls.
+Several of the remaining defects only stay fixed if multiple package seams move together.
 
-**Secondary — enforce at ticket generation time:**
+### Lifecycle bundle
 
-All tools and skills that create split-scope tickets (`ticket-pack-builder`, `scaffold-kickoff`
-generated backlogs, agent task delegation prompts) must be updated to pass `split_kind`.
-The `ticket_create` tool should emit a `warnings: ["split_kind not specified; defaulting to
-parallel_fragment — verify this is correct"]` when `split_kind` is absent from a split_scope
-creation call.
+Any split-scope or stale-stage change must ship as one bundle:
 
-**Tertiary — pre-activation invariant:**
+- generated runtime contract (`workflow.ts`)
+- ticket creation and lookup tools
+- stage-gate enforcement
+- ticket-pack-builder guidance
+- smoke and integration coverage
 
-`ticket_update` rejects `activate: true` for a `sequential_dependent` child whose parent
-is not yet done. This is an unmissable safety gate even if the routing guidance is wrong.
+Do not land a split-scope change in just one of those layers.
 
-**Repair path:**
+### Android bundle
 
-scafforge-repair should detect the deadlock pattern (parent has split children with no
-implementation artifact, children are blocked) and offer a targeted repair: set
-`split_kind: "sequential_dependent"` on stuck sequential children and re-run
-`ticket_lookup` to get routing unstuck.
+Any Godot Android contract change must ship as one bundle:
 
-**Audit check:**
+- stack adapter contract
+- project template
+- environment bootstrap
+- target completion and execution audit
+- ticket generation and remediation follow-up
+- greenfield verifier and smoke coverage
 
-Add a `ticket_graph` audit check that detects WFLOW-LOOP patterns: a parent and its split
-child are both in non-done state but the child's plan says its prerequisites (from the parent)
-don't exist. Flag as WFLOW-LOOP-001.
+Do not land a new Android proof rule in audit without updating scaffold, repair, and ticket ownership.
 
----
+### Finished-product bundle
 
-## 2. Workflow State Non-Atomic Stage Updates
+Any product-finish change must ship as one bundle:
 
-### Class of defect
-Artifact registration and stage advancement are separate operations. If stage advancement
-fails or is skipped after artifact registration, the manifest stage field becomes stale
-relative to the artifact record.
+- canonical brief schema
+- kickoff and normalization rules
+- backlog generation
+- local-skill generation when needed
+- audit comparison logic
+- repair follow-up routing
+- harness fixtures
 
-### Root cause
-`artifact_register` updates `ticket.artifacts` but not `ticket.stage`.
-`ticket_update` is required as a separate operation to advance the stage.
-`ticket_lookup` does not detect when stage and artifact record disagree.
+Do not add a finish contract to intake without giving backlog, audit, and repair a way to consume it.
 
-### Prevention package changes
+### Evidence bundle
 
-**Primary:** Add stale-stage detection to `ticket_lookup` (DEF-002 fix in `02-implementation-plan.md`).
-This is the main recovery gate: when divergence exists, surface it immediately with a
-concrete repair action.
+Any evidence-enforcement change must ship as one bundle:
 
-**Secondary — consider moving stage advancement into `artifact_register`:**
+- the generated prompt or tool contract that asks for the evidence
+- the audit or transcript parser that rejects missing evidence
+- the harness case that proves the package fails when the evidence is absent
 
-When registering an artifact for stage X, if the ticket's current stage is earlier than X,
-automatically advance `ticket.stage` to X in the manifest write. This makes stage tracking
-automatic and atomic.
+## 3. Keep audit rules scoped to repo-owned truth
 
-Pseudo-implementation:
-```typescript
-// In artifact_register execute():
-const STAGE_ADVANCEMENT = {"planning": "planning", "implementation": "implementation", "review": "review", "qa": "qa"}
-if (STAGE_ADVANCEMENT[args.stage] && STAGE_ORDER.indexOf(args.stage) > STAGE_ORDER.indexOf(ticket.stage)) {
-  ticket.stage = args.stage  // advance stage atomically with artifact registration
-}
-```
+To prevent false positives:
 
-This is a bigger change with more unknowns (backward compatibility, parallel lane effects),
-so it should be implemented in a follow-up after the stale-stage detection patch.
+- file-walk audits must use shared exclusion-aware iteration
+- environment execution audits must classify repo-env failure before source failure
+- finish-contract audits must compare repo claims against explicit canonical truth, not subjective quality guesses
 
-**Tertiary — test protocol:**
+The rule is simple: audit repo-owned truth, not dependency noise and not unrecorded assumptions.
 
-Every integration test should verify that a ticket's stage in manifest equals the highest
-stage for which artifacts are registered, after a complete implementation cycle.
+## 4. Keep repair inside its real boundary
 
----
+To prevent repair overreach:
 
-## 3. Restart Surface Drift
+- repair may regenerate managed workflow and repo-owned config surfaces
+- repair may create or normalize tickets for missing source work
+- repair may not fabricate secrets, signing material, or content assets
+- repair may not present a repo as clean when only host or source follow-up remains
 
-### Class of defect
-Derived restart surfaces (START-HERE.md, context-snapshot.md, latest-handoff.md) disagree
-with canonical workflow state.
+This boundary must stay explicit in the repair skill, runtime, and plan documents.
 
-### Root cause
-Sessions that mutate workflow state may not always trigger `handoff_publish` to regenerate
-derived surfaces. The repair runner calls `regenerate_restart_surfaces` but sessions that
-crash or are incomplete may not.
+## 5. Encode consumer-finish requirements as contract, not aspiration
 
-### Prevention package changes
+To prevent another Spinner-style ambiguity:
 
-**Already largely addressed:** The current Scafforge `regenerate_restart_surfaces.py` calls
-`handoff_publish.ts` which generates the canonical machine-parseable format. The WFLOW010
-finding in GPTTalker was historical (pre-overhaul).
+- consumer-facing repos need an explicit finish contract when the product bar is above runnable prototype
+- backlog generation must create ownership for finish work when placeholders are not final output
+- audit must compare completion claims to that contract
 
-**Remaining gap — session lifecycle regeneration:**
+This prevents the package from silently treating "it runs" as equivalent to "it is finished".
 
-Add a recommendation to the `ticket_update` tool (when advancing via `stage: "closeout"`)
-to emit a `handoff_publish` call automatically. Currently, `handoff_publish` must be called
-explicitly. Agents that skip it leave surfaces stale.
+## 6. Add fixture pairs for every ambiguous contract
 
-**Audit gate:**
+For each defect class in this bundle, add both:
 
-`scafforge-audit` WFLOW010 already detects surface drift. This audit check is correct and
-should be kept. The prevention is that `handoff_publish` is called as part of the stage-gate
-enforcer: after every `ticket_update` that reaches `closeout`, the stage-gate-enforcer
-plugin should trigger a `handoff_publish` automatically.
+- one fixture that should pass under the new contract
+- one fixture that should fail under the new contract
 
-**Stage-gate enforcer enhancement:**
+Required fixture pairs:
 
-In `skills/repo-scaffold-factory/assets/project-template/.opencode/plugins/stage-gate-enforcer.ts`,
-add a post-hook for `ticket_update` that triggers `handoff_publish` when the ticket
-advances to `closeout`.
+- split child may run now versus split child must stay behind its parent
+- current artifact/state aligned versus artifact-backed stale-stage drift
+- Android runnable proof only versus packaged Android deliverable proof required
+- procedural visuals explicitly acceptable versus procedural-only state not acceptable as final product
+- healthy repo-local Python env versus broken repo-local Python env with system fallback available
+- remediation review with real command proof versus remediation review with prose only
+- current Godot 4 config versus stale `config_version=2` and `GLES2`
 
----
+## 7. Make the greenfield verifier stricter where the package is stricter
 
-## 4. Coordinator Role Boundary Violations
+Today the greenfield verifier checks placeholders, JSON validity, cross-reference integrity, and some bootstrap/continuation rules. Once this bundle lands, it also needs to reject:
 
-### Class of defect
-Team-leader writes specialist artifacts directly (coordinator artifact authorship).
-Task delegation prompts ask specialists to return content instead of writing it themselves.
+- declared Godot Android targets missing owned Android export surfaces
+- declared packaged Android targets missing deliverable-proof ownership
+- declared consumer-facing finished-product repos missing finish-contract ownership surfaces
 
-### Root cause
-Advisory language ("treat as suspect") vs imperative prohibition ("you MUST NOT").
-Delegation prompt design that incentivizes content return instead of self-write.
+If the verifier does not fail on those conditions, the package will drift back into warning-only behavior.
 
-### Prevention package changes
+## 8. Keep the package-only boundary visible
 
-**Primary:** Imperative prohibition in team-leader template (DEF-006 fix in `02-implementation-plan.md`).
+To prevent future plan or repair drift:
 
-**Secondary — delegation prompt standardization:**
+- package plans must describe package changes and package-observed outcomes
+- subject-repo edit instructions belong in subject-repo work, not in `Scafforge/active-plans/`
+- evidence repos may be used to prove the package problem, but not as the implementation surface for the package fix
 
-All task delegation patterns in agent templates should follow the canonical pattern:
-- Correct: "Write the artifact yourself. Return only the registered path and summary."
-- Wrong: "Return the full artifact body in your final message."
-
-Add a standard delegation prompt pattern to the team-leader template's delegation section
-that ALL agent delegation follows.
-
-**Tertiary — `artifact_write` tool role awareness (future):**
-
-Consider adding an optional `author_role` argument to `artifact_write`. If the team-leader
-calls `artifact_write` with `author_role: "coordinator"`, the tool logs a warning. If a
-future version enforces this, it becomes a hard gate. This is a future enhancement.
-
-**Audit check:**
-
-`scafforge-audit` could detect coordinator-written artifacts by looking at tool call logs
-(if available). In the absence of logs, check artifact paths: if a plan artifact exists but
-no planner subagent log is present, emit SESSION005 as a warning.
-
----
-
-## 5. Missing Godot/Android Execution Surfaces
-
-### Class of defect
-Godot Android repos are scaffolded without required export configuration.
-Android export prerequisites are not validated early enough in the lifecycle.
-
-### Root cause
-No Godot/Android adapter in Scafforge that specifies required scaffold outputs.
-EXEC-GODOT-005 fires too late (only after release lane starts).
-ticket-pack-builder generates release tickets without prerequisite tracking.
-
-### Prevention package changes (consolidated from DEF-003, DEF-004)
-
-**Scaffold time:**
-- `repo-scaffold-factory` emits `export_presets.cfg` template for Godot Android repos
-- SETUP-001 accept criteria template for Godot Android includes: verify export_presets.cfg,
-  verify export templates directory, verify android_source.zip availability
-
-**Backlog generation:**
-- `ticket-pack-builder` gates Android release tickets on `export_presets.cfg` existence
-- RELEASE-001 is generated as `sequential_dependent` on ANDROID-001
-
-**Audit time:**
-- EXEC-GODOT-005-EARLY fires when Android tickets are active and export_presets.cfg missing
-- EXEC-GODOT-006 fires when android_source.zip is absent from export templates
-
-**Repair time:**
-- `scafforge-repair` detects and auto-generates `export_presets.cfg` from template
-
-**Future — Godot/Android adapter section in `adapters/manifest.json`:**
-
-```json
-{
-  "godot-android": {
-    "stack_labels": ["Godot 4.x Android", "godot android", "gdscript android"],
-    "required_scaffold_outputs": [
-      "export_presets.cfg",
-      "android/.gitkeep",
-      "build/android/.gitkeep"
-    ],
-    "setup_prerequisites": [
-      "Godot export templates installed",
-      "Android SDK configured",
-      "android_source.zip in export templates"
-    ],
-    "template_substitutions": {
-      "export_presets.cfg": {
-        "__PACKAGE_NAME__": "canonical_brief.package_name",
-        "__PROJECT_NAME__": "canonical_brief.project_name"
-      }
-    }
-  }
-}
-```
-
----
-
-## 6. Audit False Positives (node_modules)
-
-### Class of defect
-Import scanner files enumerate node_modules contents, flagging TypeScript packages'
-compiled-import references as broken imports.
-
-### Root cause
-No exclusion list in the file enumeration phase of the import scanner.
-
-### Prevention package changes
-
-**Primary:** Add `IMPORT_SCAN_EXCLUSIONS` (DEF-005 fix in `02-implementation-plan.md`).
-
-**General principle — scan exclusion scoping:**
-
-Any audit checker that scans file contents should use a standardized exclusion helper.
-The same `should_exclude_from_scan` function should be reusable across all audit checkers
-that enumerate repo files. Define it in a shared `audit_shared_utils.py` module and import
-it in each checker.
-
-```python
-# In a new file: skills/scafforge-audit/scripts/audit_shared_utils.py
-SCAN_EXCLUSION_DIRS = frozenset([
-    "node_modules", ".git", "vendor", "__pycache__",
-    ".venv", "venv", ".tox", "dist", "build"
-])
-
-def iter_repo_files(root: Path, extensions: tuple[str, ...] | None = None) -> Iterator[Path]:
-    """Yield files in root, excluding standard third-party and generated directories."""
-    for path in root.rglob("*"):
-        if path.is_file():
-            if any(part in SCAN_EXCLUSION_DIRS for part in path.relative_to(root).parts):
-                continue
-            if extensions and path.suffix not in extensions:
-                continue
-            yield path
-```
-
-All audit checkers should use `iter_repo_files` rather than `root.rglob("*")` directly.
-
----
-
-## 7. Model Reference Format
-
-### Class of defect
-Generated agent files may use incorrect model path formats.
-
-### Root cause recommendation
-
-The GPTTalker audit confirmed that all 20 agent files had correct `model: minimax-coding-plan/MiniMax-M2.7` format. No package defect was confirmed.
-
-**Prevention — template validation:**
-
-Add a check in `scripts/validate-skills.sh` (or the smoke test) that validates agent template files in `skills/repo-scaffold-factory/assets/project-template/.opencode/agents/` use the correct `__DEFAULT_MODEL__` placeholder (substituted at scaffold time, not hardcoded).
-
-If any agent template contains a hardcoded model string instead of `__DEFAULT_MODEL__`,
-flag it as a drift finding.
-
----
-
-## 8. Immediately Continuable Greenfield Output Verification
-
-### Class of defect
-Generated repos may not be immediately continuable after scaffold.
-
-### Prevention package changes
-
-**Immediate continuability gate in `scaffold-kickoff` SKILL.md:**
-
-The greenfield one-shot generation contract must include a post-generation verification step:
-1. `ticket_lookup` returns a valid `next_action_tool` (not null, not "report_blocker")
-2. `workflow-state.json` and `manifest.json` are syntactically valid JSON
-3. `export_presets.cfg` exists for Godot Android repos
-4. Bootstrap status is `ready` OR explicit blockers are documented with operator instructions
-5. `START-HERE.md` contains all required machine-parseable fields
-
-This verification should be automated in a post-scaffold script and the result recorded in
-`.opencode/meta/bootstrap-provenance.json` under a `continuability_verification` key.
-
----
-
-## 9. Repair Run Benefits
-
-Every fix in this plan should benefit repair runs, not just greenfield:
-
-| Fix | Benefits Repair |
-|---|---|
-| DEF-001 split_kind | Repair detects deadlock pattern and offers split_kind fix |
-| DEF-002 stale-stage detection | Runs in any session; repair runner checks for stale tickets |
-| DEF-003 export_presets.cfg | scafforge-repair auto-generates from template |
-| DEF-004 ticket-pack-builder prereqs | Repair remediation mode generates missing ANDROID-EXPORT-SETUP ticket |
-| DEF-005 node_modules exclusion | Runs in all audit executions including post-repair audits |
-| DEF-006 team-leader prohibition | New agent template distributed to all repaired repos via managed surface replacement |
-| DEF-007 Godot version check | Runs in all audit executions |
-| DEF-008 remediation evidence gate | Adds EXEC-REMED-001 to repair audit output |
-| DEF-009 TYPE_CHECKING guidance | stack-standards skill updated via managed surface replacement |
+This boundary is especially important for Android export, signing, and product-finish work because those areas tempt package plans to collapse into repo-local playbooks.

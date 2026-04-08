@@ -15,8 +15,11 @@ from target_completion import (
     ANDROID_EXPORT_TICKET_ID,
     ANDROID_RELEASE_LANE,
     ANDROID_RELEASE_TICKET_ID,
+    ANDROID_SIGNING_LANE,
+    ANDROID_SIGNING_TICKET_ID,
     declares_godot_android_target,
     expected_android_debug_apk_relpath,
+    requires_packaged_android_product,
 )
 
 RUNTIME_SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scafforge-pivot" / "scripts"
@@ -102,6 +105,7 @@ def build_acceptance(recommendation: dict[str, Any]) -> list[str]:
 def build_ticket_record(recommendation: dict[str, Any], manifest: dict[str, Any], active_ticket: dict[str, Any] | None, wave: int) -> dict[str, Any]:
     source_ticket_id = active_ticket["id"] if active_ticket else None
     source_mode = "split_scope" if source_ticket_id else "net_new_scope"
+    split_kind = "sequential_dependent" if source_ticket_id else None
     source_files = recommendation.get("affected_files") or recommendation.get("source_files") or []
     files_display = ", ".join(str(item) for item in source_files) if source_files else "the affected repo area"
     description = str(recommendation.get("description") or recommendation.get("summary") or recommendation.get("title") or "")
@@ -125,6 +129,7 @@ def build_ticket_record(recommendation: dict[str, Any], manifest: dict[str, Any]
         "source_ticket_id": source_ticket_id,
         "follow_up_ticket_ids": [],
         "source_mode": source_mode,
+        "split_kind": split_kind,
     }
 
 
@@ -153,6 +158,8 @@ def create_ticket_via_runtime(repo_root: Path, ticket: dict[str, Any], *, activa
         payload["source_ticket_id"] = ticket["source_ticket_id"]
     if ticket.get("source_mode"):
         payload["source_mode"] = ticket["source_mode"]
+    if ticket.get("split_kind"):
+        payload["split_kind"] = ticket["split_kind"]
     if ticket.get("evidence_artifact_path"):
         payload["evidence_artifact_path"] = ticket["evidence_artifact_path"]
     return run_generated_tool(repo_root, ".opencode/tools/ticket_create.ts", payload)
@@ -198,29 +205,78 @@ def build_android_export_ticket(*, wave: int, source_ticket_id: str | None) -> d
         "source_ticket_id": source_ticket_id,
         "follow_up_ticket_ids": [],
         "source_mode": "split_scope" if source_ticket_id else "net_new_scope",
+        "split_kind": "sequential_dependent" if source_ticket_id else None,
+    }
+
+
+def build_android_signing_ticket(*, wave: int, source_ticket_id: str | None) -> dict[str, Any]:
+    return {
+        "id": ANDROID_SIGNING_TICKET_ID,
+        "title": "Own Android signing prerequisites",
+        "wave": wave,
+        "lane": ANDROID_SIGNING_LANE,
+        "parallel_safe": False,
+        "overlap_risk": "medium",
+        "stage": "planning",
+        "status": "todo",
+        "depends_on": [ANDROID_EXPORT_TICKET_ID] if source_ticket_id != ANDROID_EXPORT_TICKET_ID else [],
+        "summary": (
+            "Establish signing ownership for packaged Android delivery. "
+            "This includes declaring the release keystore path or CI secret reference, "
+            "recording the alias and password ownership strategy, and verifying that the "
+            "project can produce an authentic signed APK or AAB before RELEASE-001 closes. "
+            "Scafforge does not generate keystores or secrets — the project team must own this surface."
+        ),
+        "acceptance": [
+            "The signing keystore path or CI secret reference is declared in the canonical brief or project provenance.",
+            "Keystore alias and password ownership is documented and accessible to the build pipeline.",
+            "A signed release APK or AAB can be produced from the current export pipeline.",
+        ],
+        "decision_blockers": [
+            "Signing key must be owned by the project team. Scafforge cannot generate or assume a keystore."
+        ],
+        "artifacts": [],
+        "resolution_state": "open",
+        "verification_state": "suspect",
+        "finding_source": "WFLOW025",
+        "source_ticket_id": source_ticket_id,
+        "follow_up_ticket_ids": [],
+        "source_mode": "split_scope" if source_ticket_id else "net_new_scope",
+        "split_kind": "sequential_dependent" if source_ticket_id else None,
     }
 
 
 def build_android_release_ticket(*, wave: int, source_ticket_id: str | None, repo_root: Path) -> dict[str, Any]:
     apk_relpath = expected_android_debug_apk_relpath(repo_root)
     export_command = f"godot --headless --path . --export-debug Android {apk_relpath}"
+    needs_deliverable = requires_packaged_android_product(repo_root)
+    depends_on: list[str] = [ANDROID_SIGNING_TICKET_ID] if needs_deliverable else []
+    deliverable_acceptance = [
+        "A signed release APK or AAB is produced once signing prerequisites are satisfied via SIGNING-001.",
+        f"The signed artifact path is declared in canonical project truth.",
+    ] if needs_deliverable else []
     return {
         "id": ANDROID_RELEASE_TICKET_ID,
-        "title": "Build Android debug APK",
+        "title": "Build Android runnable proof" + (" and deliverable APK/AAB" if needs_deliverable else " (debug APK)"),
         "wave": wave,
         "lane": ANDROID_RELEASE_LANE,
         "parallel_safe": False,
         "overlap_risk": "medium",
         "stage": "planning",
         "status": "todo",
-        "depends_on": [],
+        "depends_on": depends_on,
         "summary": (
-            f"Produce and validate the canonical debug APK for this Android target at `{apk_relpath}` using the repo's resolved Godot binary and Android export pipeline."
+            f"Produce and validate the canonical debug APK runnable proof at `{apk_relpath}` using the repo's resolved Godot binary and Android export pipeline."
+            + (
+                " When signing prerequisites are satisfied, additionally produce a packaged signed release artifact as deliverable proof."
+                if needs_deliverable else ""
+            )
         ),
         "acceptance": [
             f"`{export_command}` succeeds or the exact resolved Godot binary equivalent is recorded with the same arguments.",
             f"The APK exists at `{apk_relpath}`.",
             f"`unzip -l {apk_relpath}` shows Android manifest and classes/resources content.",
+            *deliverable_acceptance,
         ],
         "decision_blockers": [],
         "artifacts": [],
@@ -230,6 +286,7 @@ def build_android_release_ticket(*, wave: int, source_ticket_id: str | None, rep
         "source_ticket_id": source_ticket_id,
         "follow_up_ticket_ids": [],
         "source_mode": "split_scope" if source_ticket_id else "net_new_scope",
+        "split_kind": "sequential_dependent" if source_ticket_id else None,
     }
 
 
@@ -262,7 +319,7 @@ def ensure_android_target_completion_tickets(
             wave=next_wave(current_manifest if isinstance(current_manifest, dict) else manifest),
             source_ticket_id=android_source_ticket_id,
         )
-        create_ticket_via_runtime(repo_root, android_ticket, activate=True if android_source_ticket_id else None)
+        create_ticket_via_runtime(repo_root, android_ticket, activate=False if android_source_ticket_id else None)
         created_or_updated.append(ANDROID_EXPORT_TICKET_ID)
         current_manifest = read_json(manifest_path)
         current_tickets = current_manifest.get("tickets", []) if isinstance(current_manifest, dict) else []
@@ -279,9 +336,35 @@ def ensure_android_target_completion_tickets(
         isinstance(item, dict) and str(item.get("id", "")).strip() == ANDROID_RELEASE_TICKET_ID
         for item in current_tickets
     )
+    # Create SIGNING-001 when the brief requires a packaged Android product and the ticket
+    # doesn't exist yet.  RELEASE-001 depends on SIGNING-001 in packaged-delivery mode.
+    needs_deliverable = requires_packaged_android_product(repo_root)
+    signing_exists = any(
+        isinstance(item, dict) and str(item.get("id", "")).strip() == ANDROID_SIGNING_TICKET_ID
+        for item in current_tickets
+    )
+    if isinstance(android_record, dict) and needs_deliverable and not signing_exists:
+        signing_wave = max(
+            next_wave(current_manifest if isinstance(current_manifest, dict) else manifest),
+            int(android_record.get("wave", 0)) + 1,
+        )
+        signing_ticket = build_android_signing_ticket(
+            wave=signing_wave,
+            source_ticket_id=ANDROID_EXPORT_TICKET_ID,
+        )
+        create_ticket_via_runtime(repo_root, signing_ticket, activate=False)
+        created_or_updated.append(ANDROID_SIGNING_TICKET_ID)
+        current_manifest = read_json(manifest_path)
+        current_tickets = current_manifest.get("tickets", []) if isinstance(current_manifest, dict) else []
+        signing_exists = True
+
     if isinstance(android_record, dict) and not release_exists:
+        release_wave = max(
+            next_wave(current_manifest if isinstance(current_manifest, dict) else manifest),
+            int(android_record.get("wave", 0)) + (2 if needs_deliverable and signing_exists else 1),
+        )
         release_ticket = build_android_release_ticket(
-            wave=max(next_wave(current_manifest if isinstance(current_manifest, dict) else manifest), int(android_record.get("wave", 0)) + 1),
+            wave=release_wave,
             source_ticket_id=ANDROID_EXPORT_TICKET_ID,
             repo_root=repo_root,
         )

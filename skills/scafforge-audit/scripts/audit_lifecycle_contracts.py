@@ -413,6 +413,87 @@ def audit_smoke_test_artifact_bypass(
     )
 
 
+def _latest_current_stage_artifact(ticket: dict[str, Any], stage: str) -> dict[str, Any] | None:
+    artifacts = ticket.get("artifacts") if isinstance(ticket.get("artifacts"), list) else []
+    current = [
+        artifact
+        for artifact in artifacts
+        if isinstance(artifact, dict)
+        and str(artifact.get("trust_state", "current")).strip() == "current"
+        and str(artifact.get("stage", "")).strip() == stage
+    ]
+    if not current:
+        return None
+    current.sort(key=lambda artifact: str(artifact.get("created_at", "")))
+    return current[-1]
+
+
+def audit_remediation_review_evidence(
+    root: Path, findings: list[Finding], ctx: LifecycleContractAuditContext
+) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    if not manifest_path.exists():
+        return
+
+    manifest = ctx.read_json(manifest_path)
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) and isinstance(manifest.get("tickets"), list) else []
+    if not tickets:
+        return
+
+    command_pattern = re.compile(r"(?:^|\n)(?:-\s*)?(?:command|command run)\s*:\s*`[^`]+`", re.IGNORECASE)
+    output_heading_pattern = re.compile(r"(?:raw\s+command\s+output|command\s+output)", re.IGNORECASE)
+    result_pattern = re.compile(r"(?:^|\n)(?:-\s*)?(?:result|post-fix\s+result|pass/fail\s+result)\s*:\s*(?:`)?(?:PASS|FAIL|BLOCKED|ERROR)(?:`)?", re.IGNORECASE)
+    code_block_pattern = re.compile(r"```(?:[^\n]*)\n([\s\S]*?)```", re.MULTILINE)
+
+    for ticket in tickets:
+        if not isinstance(ticket, dict):
+            continue
+        finding_source = str(ticket.get("finding_source", "")).strip()
+        if not finding_source:
+            continue
+        artifact = _latest_current_stage_artifact(ticket, "review")
+        if artifact is None:
+            continue
+        artifact_path_value = str(artifact.get("path", "")).strip()
+        if not artifact_path_value:
+            continue
+        artifact_path = root / artifact_path_value
+        artifact_text = ctx.read_text(artifact_path)
+        if not artifact_text:
+            continue
+
+        missing: list[str] = []
+        if not command_pattern.search(artifact_text):
+            missing.append("missing exact command record")
+        output_blocks = [match.group(1).strip() for match in code_block_pattern.finditer(artifact_text)]
+        has_output = bool(output_heading_pattern.search(artifact_text)) and any(block for block in output_blocks)
+        if not has_output:
+            missing.append("missing raw command output section with non-empty code block")
+        if not result_pattern.search(artifact_text):
+            missing.append("missing explicit post-fix PASS/FAIL result")
+
+        if not missing:
+            continue
+
+        ctx.add_finding(
+            findings,
+            Finding(
+                code="EXEC-REMED-001",
+                severity="error",
+                problem="Remediation review artifact does not contain runnable command evidence.",
+                root_cause="A ticket created from a validated finding is being reviewed on prose alone, so the audit cannot confirm that the original failing command or canonical acceptance command was actually rerun after the fix.",
+                files=[ctx.normalize_path(manifest_path, root), ctx.normalize_path(artifact_path, root)],
+                safer_pattern="For remediation tickets with `finding_source`, require the review artifact to record the exact command run, include raw command output, and state the explicit PASS/FAIL result before the review counts as trustworthy closure.",
+                evidence=[
+                    f"ticket {ticket.get('id', '(unknown)')} carries finding_source `{finding_source}`",
+                    f"review artifact: {ctx.normalize_path(artifact_path, root)}",
+                    *missing,
+                ],
+                provenance="script",
+            ),
+        )
+
+
 def audit_handoff_artifact_ownership_conflict(
     root: Path, findings: list[Finding], ctx: LifecycleContractAuditContext
 ) -> None:
@@ -673,4 +754,5 @@ def run_lifecycle_contract_audits(
     audit_markdown_verdict_parser_mismatch(root, findings, ctx)
     audit_reverification_deadlock(root, findings, ctx)
     audit_smoke_test_artifact_bypass(root, findings, ctx)
+    audit_remediation_review_evidence(root, findings, ctx)
     audit_handoff_artifact_ownership_conflict(root, findings, ctx)

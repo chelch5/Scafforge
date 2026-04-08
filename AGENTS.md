@@ -29,6 +29,8 @@ It contains:
 - contract references under `references/`
 - package planning artifacts under `tickets/`
 - live test repos under `livetesting/`
+- active audit collections from generated repos under `active-audits/`
+- active implementation plans for Scafforge work under `active-plans/`
 
 ### Output layer
 
@@ -88,6 +90,22 @@ The package-level validation entrypoints are:
 - `python3 scripts/validate_gpttalker_migration.py`
 
 Use `python3` or `sys.executable` for Python entrypoints in this repository. Do not assume a `python` shim exists or points to the correct interpreter.
+
+## Active Audits and Plans
+
+`active-audits/` holds diagnosis packs copied from generated repositories for cross-repo analysis and Scafforge package improvement work.
+
+- Each generated repo gets its own subfolder named after the repo (e.g., `active-audits/gpttalker/`, `active-audits/spinner/`, `active-audits/glitch/`).
+- Each subfolder contains the full `diagnosis/` folder from the subject repo plus the agent log file from the audit run.
+- When an audit has been fully consumed by a Scafforge patch, move the subfolder contents to `archive/archived-audits/`.
+- Do not edit copied audit files; they are evidence, not working documents.
+
+`active-plans/` holds implementation planning documents for Scafforge package work.
+
+- Plans are created here as the output of cross-audit analysis sessions.
+- Each plan document includes identified defects, verification steps, implementation instructions, and prevention strategy.
+- When a plan has been fully implemented and verified, move it to `archive/archived-diagnosis-plans/`.
+- Plans must not be marked complete until all verification steps pass.
 
 ## Live Testing
 

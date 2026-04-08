@@ -69,6 +69,7 @@ For each piece of work, create a ticket with these fields:
 - `source_ticket_id` — source ticket when this is a follow-up or remediation ticket, otherwise `null`
 - `follow_up_ticket_ids` — linked downstream remediation or expansion tickets, initially empty
 - `source_mode` — `process_verification`, `post_completion_issue`, `net_new_scope`, or `split_scope` when the ticket was created from later diagnosis, reverification work, or open-parent decomposition; omit for greenfield bootstrap tickets
+- `split_kind` — required when `source_mode` is `split_scope`; use `sequential_dependent` when the child must not run until the parent-owned work is complete, or `parallel_independent` when the child can truly advance independently; default to `sequential_dependent` unless project evidence proves the child has no dependency on the parent's open work
 - `finding_source` — original audit, review, QA, or smoke finding code when this ticket exists to remediate a validated issue
 - `summary` — one-paragraph description of what needs to be done
 - `acceptance` — list of specific acceptance criteria tied to finalized repo-local commands, checks, or observable workflow surfaces; these must be scope-isolated to the ticket's own work
@@ -107,6 +108,7 @@ If the canonical brief or bootstrap provenance declares a Tier 1 release target,
 For Godot Android repos, always create:
 
 - `ANDROID-001` in lane `android-export`
+- `SIGNING-001` in lane `signing-prerequisites` (only when the brief requires packaged delivery; see Product Finish Contract below)
 - `RELEASE-001` in lane `release-readiness`
 
 `ANDROID-001` acceptance must cover:
@@ -115,13 +117,39 @@ For Godot Android repos, always create:
 - repo-local `android/` support surfaces exist and are non-placeholder
 - the canonical Android export command is recorded in the ticket and repo-local skills
 
+`SIGNING-001` acceptance must cover (when packaged delivery is required):
+
+- keystore ownership decision is made by the project team and recorded in the brief
+- keystore path, alias, and password are available to the build environment
+- signing mode (debug-only vs release-signed) is explicitly resolved in canonical truth
+
 `RELEASE-001` acceptance must cover:
 
-- `godot --headless --path . --export-debug Android build/android/<project-slug>-debug.apk` or the exact resolved Godot-binary equivalent succeeds
+- `godot --headless --path . --export-debug Android build/android/<project-slug>-debug.apk` or the exact resolved Godot-binary equivalent succeeds (runnable proof)
 - the APK exists at `build/android/<project-slug>-debug.apk`
 - `unzip -l` confirms Android manifest plus compiled classes or resources content
+- when the finish contract requires packaged delivery: a signed release APK or AAB exists and `SIGNING-001` is closed
+
+`RELEASE-001` must depend on `SIGNING-001` when the brief requires packaged delivery. In debug-only mode, `SIGNING-001` is not required and `RELEASE-001` may depend on `ANDROID-001` directly.
 
 Do not let a generic `POLISH-001`, UX, or validation ticket stand in for Android export or release proof ownership.
+
+### Mandatory finish-ownership tickets for consumer-facing repos
+
+If the canonical brief includes a Product Finish Contract (section 13) with `placeholder_policy: no_placeholders`, create explicit finish-ownership tickets instead of burying finish work in a generic polish bucket.
+
+Finish work must be split into owned tickets that cover:
+
+- finish direction or style decision if unresolved (create as a `blocked` or `decision` ticket)
+- visual content production or integration (one ticket per distinct visual domain when scope warrants separation)
+- audio content production or integration when the brief requires audio deliverables
+- final finish validation against the recorded contract
+
+Do not create one generic `FINISH-001` or `POLISH-001` ticket for all content work. The backlog must be specific enough for an agent to determine what constitutes completion for each owned area.
+
+When `placeholder_policy: placeholder_ok` is explicitly recorded in the brief, do not invent finish-ownership tickets for those content areas.
+
+Leaving finish work as unwritten commentary outside the canonical backlog is not permitted when the Product Finish Contract records a non-placeholder finish bar.
 
 ### Handling unresolved decisions
 

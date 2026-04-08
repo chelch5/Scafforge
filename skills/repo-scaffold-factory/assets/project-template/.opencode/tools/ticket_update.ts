@@ -158,6 +158,15 @@ export default tool({
       }
     }
 
+    if (args.activate && ticket.source_mode === "split_scope" && ticket.split_kind === "sequential_dependent" && ticket.source_ticket_id) {
+      const sourceTicket = getTicket(manifest, ticket.source_ticket_id)
+      if (sourceTicket.status !== "done") {
+        throw new Error(
+          `Cannot activate sequential split child ${ticket.id} before source ticket ${sourceTicket.id} is done. Complete the parent-owned work first.`,
+        )
+      }
+    }
+
     ticket.stage = targetStage
     if (targetStatus === "done") {
       markTicketDone(ticket, workflow)

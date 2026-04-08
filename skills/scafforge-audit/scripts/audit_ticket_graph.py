@@ -267,7 +267,7 @@ def audit_android_target_completion_backlog(root: Path, findings: list[Finding],
         return
 
     manifest = load_manifest(root)
-    missing_ids = missing_android_completion_ticket_ids(manifest)
+    missing_ids = missing_android_completion_ticket_ids(manifest, root)
     if not missing_ids:
         return
 
@@ -286,9 +286,9 @@ def audit_android_target_completion_backlog(root: Path, findings: list[Finding],
             code="WFLOW025",
             severity="error",
             problem="Declared Godot Android target lacks canonical backlog ownership for export surfaces and debug APK proof.",
-            root_cause="The repo declares Android delivery in canonical truth, but the backlog never created the dedicated `ANDROID-001` and `RELEASE-001` lanes. That lets presentation or validation tickets absorb Android work without a real export or release-proof path.",
+            root_cause="The repo declares Android delivery in canonical truth, but the backlog never created the dedicated Android export, signing when required, and release lanes. That lets presentation or validation tickets absorb Android work without a real export or release-proof path.",
             files=[ctx.normalize_path(manifest_path, root), ctx.normalize_path(root / "docs" / "spec" / "CANONICAL-BRIEF.md", root)],
-            safer_pattern="For Godot Android repos, always create `ANDROID-001` in lane `android-export` for repo-local export surfaces and `RELEASE-001` in lane `release-readiness` for debug APK proof. Do not let generic polish tickets stand in for release ownership.",
+            safer_pattern="For Godot Android repos, always create `ANDROID-001` in lane `android-export` for repo-local export surfaces, add `SIGNING-001` when packaged delivery is required, and keep `RELEASE-001` in lane `release-readiness` for runnable and deliverable proof ownership. Do not let generic polish tickets stand in for release ownership.",
             evidence=evidence,
             provenance="script",
         ),

@@ -43,6 +43,14 @@ Scafforge should be treated as a skill bundle, not as a CLI product.
 
 Historical implementation-planning context for the reliability re-architecture is archived in [references/archived-diagnosis-plans/recovery-plan/00-PLAN-INDEX.md](references/archived-diagnosis-plans/recovery-plan/00-PLAN-INDEX.md).
 
+## Active audits and plans
+
+`active-audits/` collects diagnosis packs and agent log files copied from generated repositories for package-level analysis. Each generated repo gets its own named subfolder (`gpttalker/`, `spinner/`, `glitch/`, etc.). When an audit has been consumed by a Scafforge patch, its contents move to `archive/archived-audits/`.
+
+`active-plans/` holds Scafforge implementation planning documents produced from cross-audit analysis. Plans include defect descriptions, verification steps, implementation instructions, and prevention strategy. Completed and verified plans move to `archive/archived-diagnosis-plans/`.
+
+See `AGENTS.md` for the full lifecycle rules governing both folders.
+
 ## Live testing sandbox
 
 The `livetesting` folder is reserved for in-repo experimentation where Scafforge is used to scaffold and iterate prototypes from inside this repo. Use the integrated IDE terminal plus `opencode` to run the full greenfield chain and inspect generated beams in `.opencode`, `tickets`, and `START-HERE.md`.

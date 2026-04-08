@@ -188,6 +188,7 @@ Rules:
 - use the deterministic `smoke_test` tool yourself after QA; do not delegate the smoke-test stage to another agent
 - when the ticket acceptance criteria already define executable smoke commands, let `smoke_test` infer those commands from the ticket or pass the exact canonical command; do not substitute broader full-suite smoke or ad hoc narrower `test_paths`
 - do not create planning, implementation, review, QA, or smoke-test artifacts yourself; route those bodies through the assigned specialist lane, and let `smoke_test` produce smoke-test artifacts
+- you must not call `artifact_write` or `artifact_register` for planning, implementation, review, or QA artifact bodies; only the assigned specialist may author and persist stage artifact bodies — a coordinator-authored stage artifact created through `artifact_write` or `artifact_register` is a workflow defect
 - treat coordinator-authored planning, implementation, review, or QA artifacts as suspect evidence that needs remediation, not as proof of progression
 - treat `tickets/BOARD.md` as a derived human view, not an authoritative workflow surface
 - verify the required stage artifact before each stage transition

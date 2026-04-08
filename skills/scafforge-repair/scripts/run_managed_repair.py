@@ -49,12 +49,185 @@ from follow_on_tracking import (
 from shared_verifier import audit_repo
 from regenerate_restart_surfaces import regenerate_restart_surfaces
 
+SCAFFOLD_SCRIPT_DIR = Path(__file__).resolve().parents[2] / "repo-scaffold-factory" / "scripts"
+if str(SCAFFOLD_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCAFFOLD_SCRIPT_DIR))
+
+from android_scaffold import (
+    ANDROID_MANAGED_SURFACE_RELATIVE_PATHS,
+    load_android_surface_values,
+    repo_declares_godot_android,
+)
+
 
 EXECUTION_RECORD_PATH = Path(".opencode/meta/repair-execution.json")
 CURRENT_PROCESS_VERSION = 7
 RECENT_LEGACY_PROCESS_VERSION = 6
 LEGACY_MIGRATION_STAGE = "legacy-contract-migration"
 LEGACY_COMPATIBILITY_SHIM_SCOPE = "package-internal"
+
+
+def _is_godot_android_repo(repo_root: Path) -> bool:
+    """Return True when the repo declares a Godot Android target."""
+    return repo_declares_godot_android(repo_root)
+
+
+def _export_presets_template_path() -> Path:
+    """Return the canonical path to the Scafforge-managed export_presets.cfg template."""
+    return (
+        Path(__file__).resolve().parents[2]
+        / "repo-scaffold-factory"
+        / "assets"
+        / "project-template"
+        / "export_presets.cfg"
+    )
+
+
+def _render_android_template(template_text: str, project_slug: str, package_name: str) -> str:
+    return template_text.replace("__PROJECT_SLUG__", project_slug).replace("__PACKAGE_NAME__", package_name)
+
+
+def _template_root() -> Path:
+    return Path(__file__).resolve().parents[2] / "repo-scaffold-factory" / "assets" / "project-template"
+
+
+def regenerate_android_surfaces(repo_root: Path) -> dict[str, Any]:
+    """Re-emit owned repo-managed Android export surfaces when they are missing or stale.
+
+    Scope is intentionally limited to surfaces Scafforge owns:
+    - export_presets.cfg (rendered from canonical project provenance)
+    - android/scafforge-managed.json (managed Android support metadata)
+
+    This function must not touch keystore files, signing secrets, gameplay code, or any surface
+    that is classified as a host prerequisite or signing input under the stack-adapter contract.
+    """
+    if not _is_godot_android_repo(repo_root):
+        return {"performed": False, "reason": "not a Godot Android repo", "regenerated": []}
+
+    template_root = _template_root()
+    values = load_android_surface_values(repo_root)
+    project_slug = values["project_slug"]
+    package_name = values["package_name"]
+    regenerated: list[str] = []
+    placeholder_repairs = 0
+
+    for relative_path in ANDROID_MANAGED_SURFACE_RELATIVE_PATHS:
+        template_path = template_root / relative_path
+        if not template_path.exists():
+            return {"performed": False, "reason": f"template not found in package: {relative_path.as_posix()}", "regenerated": []}
+        destination = repo_root / relative_path
+        existing_text = destination.read_text(encoding="utf-8") if destination.exists() else ""
+        needs_write = (not destination.exists()) or "__PACKAGE_NAME__" in existing_text or "__PROJECT_SLUG__" in existing_text
+        if not needs_write:
+            continue
+        rendered = _render_android_template(template_path.read_text(encoding="utf-8"), project_slug, package_name)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(rendered, encoding="utf-8")
+        regenerated.append(relative_path.as_posix())
+        if existing_text:
+            placeholder_repairs += 1
+
+    if not regenerated:
+        return {"performed": False, "reason": "all managed Android surfaces already exist", "regenerated": []}
+
+    return {
+        "performed": True,
+        "reason": "Managed Android surfaces were missing or still contained unresolved placeholders; regenerated from Scafforge templates",
+        "regenerated": regenerated,
+        "placeholder_repairs": placeholder_repairs,
+        "project_slug": project_slug,
+        "package_name": package_name,
+    }
+
+
+def _reconcile_stale_stage_for_active_ticket(repo_root: Path) -> dict[str, Any] | None:
+    """Compare the active ticket's current artifact evidence against its manifest stage.
+
+    When artifact evidence is ahead of the manifest stage (stale-stage drift), update the
+    manifest ticket's stage and status to match the highest evidenced stage.
+
+    Returns a reconciliation summary dict, or None if no manifest was found.
+    The returned dict always includes a ``stale`` boolean field.
+    """
+    ORDERED_STAGES = ["planning", "plan_review", "implementation", "review", "qa", "smoke-test", "closeout"]
+    STAGE_DEFAULT_STATUS: dict[str, str] = {
+        "planning": "ready",
+        "plan_review": "plan_review",
+        "implementation": "in_progress",
+        "review": "review",
+        "qa": "qa",
+        "smoke-test": "smoke_test",
+        "closeout": "done",
+    }
+
+    manifest_path = repo_root / "tickets" / "manifest.json"
+    workflow_path = repo_root / ".opencode" / "state" / "workflow-state.json"
+    if not manifest_path.exists():
+        return None
+
+    try:
+        manifest: dict[str, Any] = json.loads(manifest_path.read_text(encoding="utf-8"))
+        workflow: dict[str, Any] = json.loads(workflow_path.read_text(encoding="utf-8")) if workflow_path.exists() else {}
+    except Exception:
+        return None
+
+    active_id = manifest.get("active_ticket") if isinstance(manifest, dict) else None
+    if not isinstance(active_id, str) or not active_id:
+        return {"stale": False, "reason": "no active ticket"}
+
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) else []
+    if not isinstance(tickets, list):
+        return {"stale": False, "reason": "no tickets list"}
+
+    active_ticket = next((t for t in tickets if isinstance(t, dict) and t.get("id") == active_id), None)
+    if active_ticket is None:
+        return {"stale": False, "reason": f"active ticket {active_id!r} not found"}
+
+    manifest_stage = active_ticket.get("stage", "planning")
+    artifacts = active_ticket.get("artifacts", [])
+    if not isinstance(artifacts, list):
+        return {"stale": False, "manifest_stage": manifest_stage, "reason": "no artifacts"}
+
+    # Find the highest lifecycle stage with a current artifact
+    manifest_idx = ORDERED_STAGES.index(manifest_stage) if manifest_stage in ORDERED_STAGES else -1
+    highest_evidenced_stage: str | None = None
+    for candidate in reversed(ORDERED_STAGES):
+        has_current = any(
+            isinstance(a, dict) and a.get("stage") == candidate and a.get("trust_state") == "current"
+            for a in artifacts
+        )
+        if has_current:
+            highest_evidenced_stage = candidate
+            break
+
+    if highest_evidenced_stage is None:
+        return {"stale": False, "manifest_stage": manifest_stage, "evidenced_stage": None}
+
+    evidenced_idx = ORDERED_STAGES.index(highest_evidenced_stage)
+    if evidenced_idx <= manifest_idx:
+        return {"stale": False, "manifest_stage": manifest_stage, "evidenced_stage": highest_evidenced_stage}
+
+    # Stale-stage drift: artifact evidence outpaces manifest stage — apply the reconciliation.
+    expected_status = STAGE_DEFAULT_STATUS.get(highest_evidenced_stage, "in_progress")
+    active_ticket["stage"] = highest_evidenced_stage
+    active_ticket["status"] = expected_status
+    if isinstance(workflow, dict):
+        workflow["stage"] = highest_evidenced_stage
+        workflow["status"] = expected_status
+        workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return {
+        "stale": True,
+        "manifest_stage": manifest_stage,
+        "evidenced_stage": highest_evidenced_stage,
+        "applied_stage": highest_evidenced_stage,
+        "applied_status": expected_status,
+        "recovery_action": (
+            f"Stale-stage drift auto-corrected: manifest stage was \"{manifest_stage}\" but "
+            f"a current \"{highest_evidenced_stage}\" artifact existed. "
+            f"Stage updated to \"{highest_evidenced_stage}\" (status: \"{expected_status}\")."
+        ),
+    }
 
 
 def _repair_ticket_graph_contradictions(repo_root: Path) -> list[str]:
@@ -622,6 +795,8 @@ def main() -> int:
     repo_root = Path(args.repo_root).expanduser().resolve()
     replaced_surfaces: list[str] = []
     repair_result: dict[str, Any] = {}
+    stale_stage_reconciliation: dict[str, Any] | None = None
+    android_surface_result: dict[str, Any] = {"performed": False}
     migration_stage: dict[str, Any] = {
         "stage": LEGACY_MIGRATION_STAGE,
         "state": "skipped" if args.skip_deterministic_refresh else "current",
@@ -754,6 +929,15 @@ def main() -> int:
         # Auto-fix deterministic ticket graph contradictions (WFLOW019) inside the staged
         # candidate before any verification or publication occurs.
         _repair_ticket_graph_contradictions(candidate_root)
+
+        # Regenerate missing Scafforge-owned Android export surfaces (ANDROID-SURFACE-001).
+        # Scoped strictly to repo-managed surfaces; does not touch signing secrets or keystores.
+        android_surface_result = regenerate_android_surfaces(candidate_root)
+
+        # Reconcile stale-stage drift: if any current artifact outpaces the manifest stage,
+        # align stage/status now so verification and restart-surface generation see correct state.
+        stale_stage_reconciliation = _reconcile_stale_stage_for_active_ticket(candidate_root)
+
         regenerate_restart_surfaces(
             candidate_root,
             reason=args.change_summary,
@@ -1073,6 +1257,8 @@ def main() -> int:
             "remediation_ticket_ids": (
                 remediation_follow_up.get("created_tickets", []) if isinstance(remediation_follow_up, dict) else []
             ),
+            "stale_stage_reconciliation": stale_stage_reconciliation,
+            "android_surface_result": android_surface_result,
             "stale_surface_map": stale_surface_map,
         },
         "repair_follow_on_state": repair_follow_on_state,

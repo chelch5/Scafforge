@@ -111,35 +111,52 @@ def bootstrap_scaffold(
     project_slug: str,
     agent_prefix: str,
     stack_label: str,
+    deliverable_kind: str | None = None,
+    placeholder_policy: str | None = None,
+    visual_finish_target: str | None = None,
+    audio_finish_target: str | None = None,
+    content_source_plan: str | None = None,
+    licensing_or_provenance_constraints: str | None = None,
+    finish_acceptance_signals: str | None = None,
 ) -> None:
-    run(
-        [
-            sys.executable,
-            str(BOOTSTRAP),
-            "--dest",
-            str(dest),
-            "--project-name",
-            project_name,
-            "--project-slug",
-            project_slug,
-            "--agent-prefix",
-            agent_prefix,
-            "--model-provider",
-            "openrouter",
-            "--planner-model",
-            "openrouter/openai/gpt-5-mini",
-            "--implementer-model",
-            "openrouter/openai/gpt-5-mini",
-            "--utility-model",
-            "openrouter/openai/gpt-5-mini",
-            "--stack-label",
-            stack_label,
-            "--scope",
-            "full",
-            "--force",
-        ],
-        ROOT,
+    command = [
+        sys.executable,
+        str(BOOTSTRAP),
+        "--dest",
+        str(dest),
+        "--project-name",
+        project_name,
+        "--project-slug",
+        project_slug,
+        "--agent-prefix",
+        agent_prefix,
+        "--model-provider",
+        "openrouter",
+        "--planner-model",
+        "openrouter/openai/gpt-5-mini",
+        "--implementer-model",
+        "openrouter/openai/gpt-5-mini",
+        "--utility-model",
+        "openrouter/openai/gpt-5-mini",
+        "--stack-label",
+        stack_label,
+        "--scope",
+        "full",
+        "--force",
+    ]
+    optional_args = (
+        ("--deliverable-kind", deliverable_kind),
+        ("--placeholder-policy", placeholder_policy),
+        ("--visual-finish-target", visual_finish_target),
+        ("--audio-finish-target", audio_finish_target),
+        ("--content-source-plan", content_source_plan),
+        ("--licensing-or-provenance-constraints", licensing_or_provenance_constraints),
+        ("--finish-acceptance-signals", finish_acceptance_signals),
     )
+    for flag, value in optional_args:
+        if value:
+            command.extend([flag, value])
+    run(command, ROOT)
 
 
 def require_host_prerequisite(name: str, *, context: str) -> str:
@@ -503,6 +520,24 @@ def seed_godot_target(dest: Path) -> None:
     write_text(dest / "check.gd", "extends SceneTree\n\nfunc _init():\n    quit()\n")
 
 
+def seed_godot_android_contract(dest: Path) -> None:
+    brief_path = dest / "docs" / "spec" / "CANONICAL-BRIEF.md"
+    brief = brief_path.read_text(encoding="utf-8")
+    brief = re.sub(r"- Stack label: `[^`]+`", "- Stack label: `godot-android-2d`", brief, count=1)
+    if "Platform target is Android." not in brief:
+        brief += "\n- Platform target is Android."
+    if "Engine is Godot." not in brief:
+        brief += "\n- Engine is Godot."
+    brief_path.write_text(brief.rstrip() + "\n", encoding="utf-8")
+
+    provenance_path = dest / ".opencode" / "meta" / "bootstrap-provenance.json"
+    provenance = read_json(provenance_path)
+    if not isinstance(provenance, dict):
+        raise RuntimeError("Godot Android contract seed expected bootstrap provenance.")
+    provenance["stack_label"] = "godot-android-2d"
+    provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+
+
 def seed_cmake_target(dest: Path) -> None:
     replace_stack_skill_placeholder(
         dest,
@@ -678,7 +713,7 @@ def multi_stack_targets() -> list[ProofTarget]:
         ProofTarget(
             "proof-godot",
             "Proof Godot",
-            "godot",
+            "godot-android-2d",
             "godot",
             ("godot", "headless"),
             seed_godot_target,
@@ -788,6 +823,90 @@ def greenfield_integration(workspace: Path) -> None:
     ):
         raise RuntimeError(
             "Greenfield integration should prove the generated repo is immediately continuable once placeholder drift is removed."
+        )
+
+    packaged_android_dest = workspace / "greenfield-packaged-android"
+    bootstrap_scaffold(
+        packaged_android_dest,
+        project_name="Packaged Android Probe",
+        project_slug="packaged-android-probe",
+        agent_prefix="packaged-android-probe",
+        stack_label="godot-android-2d",
+        deliverable_kind="release_apk",
+        finish_acceptance_signals="Signed release artifact is recorded alongside runnable-proof evidence.",
+    )
+    seed_godot_target(packaged_android_dest)
+    make_stack_skill_non_placeholder(packaged_android_dest)
+    packaged_manifest = read_json(packaged_android_dest / "tickets" / "manifest.json")
+    if not isinstance(packaged_manifest, dict):
+        raise RuntimeError("Packaged Android greenfield integration expected a manifest.")
+    packaged_tickets = {
+        ticket["id"]: ticket
+        for ticket in packaged_manifest.get("tickets", [])
+        if isinstance(ticket, dict) and isinstance(ticket.get("id"), str)
+    }
+    required_packaged_ids = {"ANDROID-001", "SIGNING-001", "RELEASE-001"}
+    if not required_packaged_ids.issubset(packaged_tickets):
+        raise RuntimeError(
+            "Packaged Android greenfield integration should seed ANDROID-001, SIGNING-001, and RELEASE-001 during bootstrap."
+        )
+    release_acceptance = " ".join(
+        item
+        for item in packaged_tickets["RELEASE-001"].get("acceptance", [])
+        if isinstance(item, str)
+    ).lower()
+    if "signed release" not in release_acceptance and "signed" not in release_acceptance:
+        raise RuntimeError(
+            "Packaged Android greenfield integration should encode signed deliverable-proof ownership on RELEASE-001."
+        )
+    packaged_verify = run_json(
+        [sys.executable, str(VERIFY_GENERATED), str(packaged_android_dest), "--format", "json"],
+        ROOT,
+    )
+    if (
+        packaged_verify.get("immediately_continuable") is not True
+        or packaged_verify.get("finding_count") != 0
+    ):
+        raise RuntimeError(
+            "Packaged Android greenfield integration should pass continuation verification once the stack skill placeholder is removed."
+        )
+
+    finish_dest = workspace / "greenfield-finish-contract"
+    bootstrap_scaffold(
+        finish_dest,
+        project_name="Finish Contract Probe",
+        project_slug="finish-contract-probe",
+        agent_prefix="finish-contract-probe",
+        stack_label="framework-agnostic",
+        placeholder_policy="no_placeholders",
+        visual_finish_target="ship-ready visual direction with no placeholder UI or placeholder artwork",
+        audio_finish_target="no audio bar applies",
+        content_source_plan="authored visual content only",
+        finish_acceptance_signals="Finish review confirms that all user-facing visuals are ship-ready and no placeholder assets remain.",
+    )
+    make_stack_skill_non_placeholder(finish_dest)
+    finish_manifest = read_json(finish_dest / "tickets" / "manifest.json")
+    if not isinstance(finish_manifest, dict):
+        raise RuntimeError("Finish-contract greenfield integration expected a manifest.")
+    finish_ticket_ids = {
+        str(ticket.get("id", "")).strip()
+        for ticket in finish_manifest.get("tickets", [])
+        if isinstance(ticket, dict)
+    }
+    if not {"VISUAL-001", "FINISH-VALIDATE-001"}.issubset(finish_ticket_ids):
+        raise RuntimeError(
+            "Finish-contract greenfield integration should seed explicit finish ownership when placeholder_policy=no_placeholders."
+        )
+    finish_verify = run_json(
+        [sys.executable, str(VERIFY_GENERATED), str(finish_dest), "--format", "json"],
+        ROOT,
+    )
+    if (
+        finish_verify.get("immediately_continuable") is not True
+        or finish_verify.get("finding_count") != 0
+    ):
+        raise RuntimeError(
+            "Finish-contract greenfield integration should pass continuation verification after seeding explicit finish ownership."
         )
 
 
@@ -929,6 +1048,45 @@ def repair_integration(workspace: Path) -> None:
         if not converged["execution_record"]["blocking_reasons"]:
             raise RuntimeError(
                 "Repair integration should preserve managed-blocked reasons when workflow findings still remain after recorded follow-on completion."
+            )
+
+    android_dest = workspace / "repair-android-surfaces"
+    bootstrap_full(android_dest)
+    seed_godot_android_contract(android_dest)
+    seed_godot_target(android_dest)
+    make_stack_skill_non_placeholder(android_dest)
+    seed_ready_bootstrap(android_dest)
+    source_snapshots = {
+        relative: (android_dest / relative).read_text(encoding="utf-8")
+        for relative in ("project.godot", "scripts/main.gd", "scenes/main.tscn")
+    }
+    (android_dest / "export_presets.cfg").unlink(missing_ok=True)
+    shutil.rmtree(android_dest / "android", ignore_errors=True)
+    android_repair = run_json(
+        [sys.executable, str(PUBLIC_REPAIR), str(android_dest)],
+        ROOT,
+        allow_returncodes={0, 3},
+    )
+    android_surface_result = android_repair.get("execution_record", {}).get("android_surface_result")
+    if not isinstance(android_surface_result, dict) or android_surface_result.get("performed") is not True:
+        raise RuntimeError(
+            "Repair integration should regenerate missing Scafforge-owned Android export surfaces without requiring manual source edits."
+        )
+    missing_repair_surfaces = [
+        relative
+        for relative in ("export_presets.cfg", "android/scafforge-managed.json")
+        if not (android_dest / relative).exists()
+    ]
+    if missing_repair_surfaces:
+        raise RuntimeError(
+            "Repair integration should restore all managed Android export surfaces. "
+            f"Missing: {', '.join(missing_repair_surfaces)}"
+        )
+    for relative, original in source_snapshots.items():
+        current = (android_dest / relative).read_text(encoding="utf-8")
+        if current != original:
+            raise RuntimeError(
+                "Repair integration should not mutate repo-owned Godot source files while regenerating managed Android export surfaces."
             )
 
 
@@ -1295,6 +1453,18 @@ def multi_stack_proof_integration(workspace: Path) -> None:
             else []
         )
 
+        if target.slug == "proof-godot":
+            missing_android_surfaces = [
+                relative
+                for relative in ("export_presets.cfg", "android/scafforge-managed.json")
+                if not (dest / relative).exists()
+            ]
+            if missing_android_surfaces:
+                raise RuntimeError(
+                    "Godot Android proof targets should scaffold all repo-managed Android surfaces. "
+                    f"Missing: {', '.join(missing_android_surfaces)}"
+                )
+
         if bootstrap_status == "ready":
             if target.slug == "proof-node-api":
                 with tempfile.TemporaryDirectory(prefix="scafforge-node-missing-") as tool_dir:
@@ -1368,6 +1538,99 @@ def multi_stack_proof_integration(workspace: Path) -> None:
                 raise RuntimeError(
                     f"Proof target `{target.slug}` should fail bootstrap only when it can explain the missing prerequisite or blocker."
                 )
+
+
+def contract_edge_case_integration(workspace: Path) -> None:
+    remediation_dest = workspace / "remediation-review-contract"
+    bootstrap_full(remediation_dest)
+
+    manifest_path = remediation_dest / "tickets" / "manifest.json"
+    registry_path = remediation_dest / ".opencode" / "state" / "artifacts" / "registry.json"
+    manifest = read_json(manifest_path)
+    registry = read_json(registry_path)
+    if not isinstance(manifest, dict) or not isinstance(registry, dict):
+        raise RuntimeError("Contract edge-case integration expected scaffolded manifest and artifact registry.")
+
+    manifest.setdefault("tickets", []).append(
+        {
+            "id": "EXEC-001-FIX",
+            "title": "Fix failing import surface",
+            "wave": 2,
+            "lane": "implementation",
+            "parallel_safe": False,
+            "overlap_risk": "medium",
+            "stage": "review",
+            "status": "review",
+            "depends_on": [],
+            "summary": "Remediate a previously validated execution finding.",
+            "acceptance": ["Original failing command now passes."],
+            "decision_blockers": [],
+            "artifacts": [],
+            "resolution_state": "open",
+            "verification_state": "suspect",
+            "finding_source": "EXEC001",
+            "follow_up_ticket_ids": [],
+        }
+    )
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    registry_path.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
+
+    _register_ticket_artifact(
+        remediation_dest,
+        ticket_id="EXEC-001-FIX",
+        kind="review",
+        stage="review",
+        relative_path=".opencode/state/artifacts/history/review/EXEC-001-FIX-review.md",
+        summary="APPROVED",
+        content="# Review\n\n- Verdict: PASS\n- Notes: import surface looks fixed.\n",
+    )
+    remediation_audit = run_json(
+        [
+            sys.executable,
+            str(AUDIT),
+            str(remediation_dest),
+            "--format",
+            "json",
+            "--no-diagnosis-pack",
+        ],
+        ROOT,
+    )
+    remediation_codes = extract_audit_codes(remediation_audit)
+    if "EXEC-REMED-001" not in remediation_codes:
+        raise RuntimeError(
+            "Integration audit should flag remediation review artifacts that lack command/output/result evidence."
+        )
+
+    broken_venv_dest = workspace / "broken-venv-contract"
+    bootstrap_full(broken_venv_dest)
+    seed_python_cli_target(broken_venv_dest)
+    broken_python = broken_venv_dest / ".venv" / "bin" / "python"
+    broken_python.write_text("#!/usr/bin/env sh\nexit 127\n", encoding="utf-8")
+    broken_python.chmod(broken_python.stat().st_mode | 0o111)
+    broken_venv_audit = run_json(
+        [
+            sys.executable,
+            str(AUDIT),
+            str(broken_venv_dest),
+            "--format",
+            "json",
+            "--no-diagnosis-pack",
+        ],
+        ROOT,
+    )
+    broken_venv_codes = extract_audit_codes(broken_venv_audit)
+    if "EXEC-ENV-001" not in broken_venv_codes:
+        raise RuntimeError(
+            "Integration audit should classify a broken repo-local Python virtual environment as EXEC-ENV-001."
+        )
+    unexpected_exec_codes = sorted(
+        code for code in broken_venv_codes if code.startswith("EXEC") and code != "EXEC-ENV-001"
+    )
+    if unexpected_exec_codes:
+        raise RuntimeError(
+            "Broken-venv integration should stop at environment classification before emitting other EXEC findings; "
+            f"observed {', '.join(unexpected_exec_codes)}"
+        )
 
 
 def _register_ticket_artifact(
@@ -1531,6 +1794,7 @@ def main() -> int:
         repair_integration(workspace)
         pivot_integration(workspace)
         multi_stack_proof_integration(workspace)
+        contract_edge_case_integration(workspace)
         backward_transition_integration(workspace)
         fixture_builder_integration(fixtures, workspace)
         synthetic_edge_case_integration(workspace)

@@ -56,7 +56,7 @@ The batched decision packet is a required generation artifact. Record it in `doc
 
 Write to `docs/spec/CANONICAL-BRIEF.md` using the schema in `references/brief-schema.md`.
 
-Required sections (all 12 must be present):
+Required sections (all 12 core sections must be present; section 13 is required for consumer-facing repos):
 
 1. **Project Summary** — one paragraph, what and why
 2. **Goals** — flat bullet list of desired outcomes
@@ -70,11 +70,17 @@ Required sections (all 12 must be present):
 10. **Backlog Readiness** — whether ticketing can proceed, which areas are blocked
 11. **Acceptance Signals** — what must be true for the result to be usable
 12. **Assumptions** — non-blocking assumptions that don't silently decide major behavior
+13. **Product Finish Contract** — required for consumer-facing repos; records deliverable kind, placeholder policy, visual and audio finish bars, content source plan, licensing constraints, and finish acceptance signals
+
+For consumer-facing repos (mobile apps, games, distributed software products), treating the finish contract as optional is a blocking gap, not a non-blocking open question. If the intake material does not resolve whether placeholder or procedural output is acceptable final output, that must become an explicit blocking decision before generation continues.
+
+For internal tools and services, section 13 may be intentionally minimal or explicitly state that no consumer-facing finish bar applies.
 
 ### 6. Validate
 
 Verify the brief:
-- All 12 sections are present and non-empty
+- All 12 core sections are present and non-empty
+- Section 13 is present and non-empty for consumer-facing repos; for internal tools, it may state "not applicable" but must not be silently absent
 - Facts and assumptions are separated
 - The batched blocking-decision packet is written down in the canonical brief or an explicitly referenced companion file
 - Blocking decisions are all resolved before greenfield generation continues
@@ -88,7 +94,8 @@ Return to `../scaffold-kickoff/SKILL.md` step 2 to resolve ambiguities, then pro
 ## Output contract
 
 Before leaving this skill, confirm all of these are true:
-- `docs/spec/CANONICAL-BRIEF.md` exists and contains all 12 required sections
+- `docs/spec/CANONICAL-BRIEF.md` exists and contains all 12 core sections plus section 13 when the repo is consumer-facing
+- section 13 (Product Finish Contract) is non-empty for consumer-facing repos; for internal tools it explicitly states it does not apply
 - the batched decision packet is written into the canonical brief or a directly referenced companion file
 - blocking decisions are explicitly separated from non-blocking open questions
 - backlog readiness states whether ticket generation may proceed now or which areas remain blocked

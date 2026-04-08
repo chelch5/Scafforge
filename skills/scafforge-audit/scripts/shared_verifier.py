@@ -10,7 +10,15 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from audit_repo_process import audit_repo
 from shared_verifier_types import Finding
-from target_completion import declares_godot_android_target, load_manifest, missing_android_completion_ticket_ids, stack_label
+from target_completion import (
+    ANDROID_RELEASE_TICKET_ID,
+    declares_godot_android_target,
+    load_manifest,
+    missing_android_completion_ticket_ids,
+    requires_packaged_android_product,
+    stack_label,
+    ticket_by_id,
+)
 
 GREENFIELD_BOOTSTRAP_NEXT_ACTION = (
     "Run `environment_bootstrap`, register its proof artifact, rerun `ticket_lookup`, "
@@ -85,6 +93,32 @@ def _placeholder_skill_hits(root: Path) -> list[str]:
 
 def _contains_all(text: str, required_snippets: tuple[str, ...]) -> bool:
     return all(snippet in text for snippet in required_snippets)
+
+
+def _finish_contract_requires_owned_work(root: Path) -> bool:
+    brief = _read_text(root / "docs" / "spec" / "CANONICAL-BRIEF.md").lower()
+    return "product finish contract" in brief and "placeholder_policy" in brief and "no_placeholders" in brief
+
+
+def _finish_ownership_ticket_ids(manifest: dict[object, object]) -> list[str]:
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) else None
+    if not isinstance(tickets, list):
+        return []
+    owned: list[str] = []
+    for ticket in tickets:
+        if not isinstance(ticket, dict):
+            continue
+        lane = str(ticket.get("lane", "")).lower()
+        title = str(ticket.get("title", "")).lower()
+        summary = str(ticket.get("summary", "")).lower()
+        if any(keyword in lane for keyword in ("finish", "visual", "audio")) or any(
+            keyword in title or keyword in summary
+            for keyword in ("finish", "visual", "audio", "asset", "content")
+        ):
+            ticket_id = str(ticket.get("id", "")).strip()
+            if ticket_id:
+                owned.append(ticket_id)
+    return owned
 
 
 def verify_greenfield_bootstrap_lane(root: Path) -> list[Finding]:
@@ -466,21 +500,55 @@ def verify_greenfield_continuation(root: Path) -> list[Finding]:
         )
 
     if declares_godot_android_target(root):
-        missing_target_tickets = missing_android_completion_ticket_ids(load_manifest(root))
+        manifest = load_manifest(root)
+        missing_target_tickets = missing_android_completion_ticket_ids(manifest, root)
         if missing_target_tickets:
+            expected = "`ANDROID-001` and `RELEASE-001`"
+            if requires_packaged_android_product(root):
+                expected = "`ANDROID-001`, `SIGNING-001`, and `RELEASE-001`"
             findings.append(
                 _finding(
                     code="VERIFY012",
                     problem="The generated repo declares a Godot Android target but does not seed the canonical Android completion lane.",
-                    root_cause="Greenfield continuation is incomplete when an Android-targeted Godot repo can reach handoff without explicit backlog ownership for repo-local export surfaces and debug APK proof.",
+                    root_cause="Greenfield continuation is incomplete when an Android-targeted Godot repo can reach handoff without explicit backlog ownership for repo-local export surfaces, signing prerequisites when required, and Android proof tickets.",
                     files=[_normalize(manifest_path, root), _normalize(root / "docs" / "spec" / "CANONICAL-BRIEF.md", root)],
-                    safer_pattern="Seed `ANDROID-001` and `RELEASE-001` for Godot Android repos during bootstrap backlog generation, and fail greenfield verification when those target-completion tickets are missing.",
+                    safer_pattern=f"Seed {expected} for Godot Android repos during bootstrap backlog generation, and fail greenfield verification when those target-completion tickets are missing.",
                     evidence=[
                         f"declared stack label = {stack_label(root) or 'unknown'}",
                         f"missing target-completion tickets: {', '.join(missing_target_tickets)}",
                     ],
                     remediation_action="Add the canonical Android export and release-readiness tickets, then rerun the continuation verifier.",
                     remediation_target=_normalize(manifest_path, root),
+                )
+            )
+        elif requires_packaged_android_product(root):
+            release_ticket = ticket_by_id(manifest, ANDROID_RELEASE_TICKET_ID)
+            release_acceptance = " ".join(
+                item for item in (release_ticket.get("acceptance", []) if isinstance(release_ticket, dict) else []) if isinstance(item, str)
+            ).lower()
+            if "signed release" not in release_acceptance and "signed" not in release_acceptance:
+                findings.append(
+                    _finding(
+                        code="VERIFY013",
+                        problem="The generated repo requires packaged Android delivery but does not encode deliverable-proof ownership on RELEASE-001.",
+                        root_cause="Packaged Android repos need runnable-proof ownership and deliverable-proof ownership. A debug-only release ticket leaves the signing and packaged-artifact bar implicit.",
+                        files=[_normalize(manifest_path, root)],
+                        safer_pattern="When the brief requires packaged Android delivery, keep SIGNING-001 in the backlog and make RELEASE-001 acceptance explicitly require a signed release APK or AAB.",
+                        evidence=[f"RELEASE-001 acceptance = {release_acceptance or 'missing'}"],
+                    )
+                )
+
+    if _finish_contract_requires_owned_work(root):
+        finish_ticket_ids = _finish_ownership_ticket_ids(load_manifest(root))
+        if not finish_ticket_ids:
+            findings.append(
+                _finding(
+                    code="VERIFY014",
+                    problem="The generated repo records a non-placeholder Product Finish Contract but does not seed any finish-ownership tickets.",
+                    root_cause="Consumer-facing repos that forbid placeholder output need explicit backlog ownership for finish work. Without those tickets, the finish bar exists in canonical truth but not in executable workflow state.",
+                    files=[_normalize(manifest_path, root), _normalize(root / "docs" / "spec" / "CANONICAL-BRIEF.md", root)],
+                    safer_pattern="Seed explicit finish-direction, visual, audio, or content ownership tickets whenever the Product Finish Contract records `placeholder_policy: no_placeholders`.",
+                    evidence=["Product Finish Contract requires non-placeholder output, but no finish-ownership ticket was found in tickets/manifest.json."],
                 )
             )
 
@@ -512,6 +580,21 @@ def verify_greenfield_continuation(root: Path) -> list[Finding]:
                 evidence=[f"{finding.code}: {finding.problem}" for finding in critical_reference_findings[:6]],
                 remediation_action="Repair the broken scene, config, or structural file references reported by the reference-integrity audit, then rerun the continuation verifier.",
                 remediation_target=(critical_reference_findings[0].files[0] if critical_reference_findings and critical_reference_findings[0].files else None),
+            )
+        )
+
+    finish_contract_findings = [finding for finding in audit_findings if finding.code in {"FINISH001", "FINISH002"}]
+    if finish_contract_findings:
+        findings.append(
+            _finding(
+                code="VERIFY015",
+                problem="The generated repo fails the Product Finish Contract audit required for greenfield continuation.",
+                root_cause="Consumer-facing repos cannot claim truthful continuation when the canonical finish contract is missing, incomplete, or contradicted by the current backlog and restart state.",
+                files=sorted({path for finding in finish_contract_findings for path in finding.files}),
+                safer_pattern="Require the Product Finish Contract audit to pass before greenfield handoff, and seed explicit finish ownership whenever the contract forbids placeholder output.",
+                evidence=[f"{finding.code}: {finding.problem}" for finding in finish_contract_findings[:6]],
+                remediation_action="Fill the missing Product Finish Contract truth or add the required finish ownership tickets, then rerun the continuation verifier.",
+                remediation_target=(finish_contract_findings[0].files[0] if finish_contract_findings and finish_contract_findings[0].files else None),
             )
         )
 

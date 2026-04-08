@@ -47,6 +47,10 @@ Replace this section with the normalized project brief.
 - Replace with the recorded batched decision packet for this repo
 - Resolve every blocking item here before generation continues
 
+## Non-Blocking Open Questions
+
+- Replace with unresolved items
+
 ## Backlog Readiness
 
 - Replace with whether the first execution wave can be generated immediately after the blocking decision packet is resolved
@@ -59,6 +63,12 @@ Replace this section with the normalized project brief.
 
 - Replace with any required assumptions
 
-## Non-Blocking Open Questions
+## Product Finish Contract
 
-- Replace with unresolved items
+- deliverable_kind: __DELIVERABLE_KIND__
+- placeholder_policy: __PLACEHOLDER_POLICY__
+- visual_finish_target: __VISUAL_FINISH_TARGET__
+- audio_finish_target: __AUDIO_FINISH_TARGET__
+- content_source_plan: __CONTENT_SOURCE_PLAN__
+- licensing_or_provenance_constraints: __LICENSING_OR_PROVENANCE_CONSTRAINTS__
+- finish_acceptance_signals: __FINISH_ACCEPTANCE_SIGNALS__

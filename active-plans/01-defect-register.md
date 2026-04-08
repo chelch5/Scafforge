@@ -1,557 +1,218 @@
-# 01 — Defect Register
-
-**Created:** 2026-04-08  
-**Source audits:** GPTTalker (2026-04-08), Spinner (2026-04-08), Glitch livetesting (2026-04-08)  
+# Defect Register
 
----
+This register includes only defects that are both currently evidenced and package-actionable.
 
-## Verification Methodology
+## Summary Table
 
-For each defect, the claim of "VERIFIED ACTIVE" requires:
-1. The specific Scafforge package file was read
-2. The absence of the fix (or presence of the bug) was confirmed by direct inspection
-3. The file path and approximate line number cited
-
----
-
-## DEF-001: WFLOW-LOOP-001 — Split-Scope Sequential Dependency Deadlock
-
-**Source audits:** Glitch (primary), Spinner (WFLOW023 is a downstream consequence)  
-**Finding codes:** WFLOW-LOOP-001 (Glitch), WFLOW023 (Spinner)
-
-### Description
-
-When `ticket_create` creates a split-scope follow-up ticket, it appends the same
-`decision_blockers` text regardless of whether the split is a parallel decomposition or
-a sequential dependency:
-
-> "Split scope delegated to follow-up ticket X. Keep the parent open and non-foreground
-> until the child work lands."
-
-This language is correct for parallel splits (child handles concurrent or decomposed work).
-It is fatally incorrect for sequential splits (parent must fully implement its deliverables
-before the child can start). For sequential splits, `ticket_lookup.transition_guidance`
-reads the `decision_blockers` and tells the agent "foreground the child ticket, keep parent
-open" — causing the agent to activate the child before the parent has done any work. The
-child then documents that it cannot proceed (its prerequisite work doesn't exist), goes
-BLOCKED, and the parent's transition_guidance keeps pointing to the child indefinitely.
-Neither ticket can advance. The deadlock is permanent without human intervention.
-
-Evidence from Glitch: ANDROID-001 (parent — must create export_presets.cfg and android/)
-created RELEASE-001 (child — builds APK using those surfaces). RELEASE-001 was immediately
-activated; ANDROID-001 never implemented its deliverables; RELEASE-001 blocked permanently.
-
-### Current Scafforge Status: VERIFIED ACTIVE
-
-**Evidence citation:**
-
-`skills/repo-scaffold-factory/assets/project-template/.opencode/tools/ticket_create.ts`
-lines ~130-142 (split_scope block):
-```typescript
-if (sourceMode === "split_scope") {
-  const splitNote = `Split scope delegated to follow-up ticket ${ticket.id}. Keep the parent open and non-foreground until the child work lands.`
-  if (!sourceTicket.decision_blockers.includes(splitNote)) {
-    sourceTicket.decision_blockers.push(splitNote)
-  }
-}
-```
-No `split_kind` field exists. One template text serves all split types.
+| Code | Priority | Short name | Primary package seams |
+|---|---|---|---|
+| `WFLOW-LOOP-001` | P0 | Split-scope sequencing | generated workflow runtime, ticket creation, ticket routing |
+| `WFLOW-STAGE-001` | P1 | Stale-stage recovery | artifact registration, workflow recovery, repair reconciliation |
+| `ANDROID-SURFACE-001` | P1 | Android export surfaces | scaffold template, bootstrap, repair, target verifier |
+| `TARGET-PROOF-001` | P1 | Runnable vs deliverable proof | adapter contract, audit, follow-up ticketing, harnesses |
+| `PRODUCT-FINISH-001` | P1 | Finished-product contract | intake schema, backlog generation, audit, repair routing |
+| `REF-SCAN-001` | P2 | Dependency-tree false positives | reference-integrity scan |
+| `EXEC-ENV-001` | P2 | Broken repo env classification | Python detection, execution audit, repair verification |
+| `ARTIFACT-OWNERSHIP-001` | P2 | Coordinator artifact ownership | team-leader prompt, transcript enforcement |
+| `EXEC-REMED-001` | P2 | Remediation review evidence | reviewer prompt, audit enforcement |
+| `PROJ-VER-001` | P2 | Godot 4 project-version guard | Godot execution audit |
 
-`skills/repo-scaffold-factory/assets/project-template/.opencode/tools/ticket_lookup.ts`
-lines ~47-62 (split children routing block):
-```typescript
-if (splitChildren.length > 0 && ticket.status !== "done") {
-  const foregroundChild = splitChildren[0]
-  return {
-    ...base,
-    recommended_action: `Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly.`,
-    recommended_ticket_update: { ticket_id: foregroundChild.id, activate: true },
-  }
-}
-```
-No check: "can the child proceed?", "is the parent done with its deliverables?", "is this a sequential split?"
+## `WFLOW-LOOP-001` — Split-scope sequencing still auto-foregrounds dependent child tickets
 
-`skills/repo-scaffold-factory/assets/project-template/.opencode/lib/workflow.ts`
-lines ~1114-1116:
-```typescript
-export function openSplitScopeChildren(manifest: Manifest, ticketId: string): Ticket[] {
-  return splitScopeChildren(manifest, ticketId).filter((item) => item.status !== "done" && item.resolution_state !== "superseded")
-}
-```
-No `split_kind` field in the Ticket schema. The function returns ALL open children regardless of type.
+Priority: P0
 
-### Root Cause in Scafforge Package
+Verified current-state evidence:
 
-`ticket_create.ts` — uses identical decision_blockers template for all split types  
-`ticket_lookup.ts` — transition_guidance routes to child unconditionally when children exist  
-`workflow.ts` — Ticket schema has no `split_kind` field; no sequential validation logic
+- `ticket_lookup.ts` foregrounds the first open split-scope child whenever one exists and the parent ticket is not done.
+- `ticket_create.ts` auto-activates a new split-scope child when the source ticket is the active ticket.
+- `workflow.ts` exposes only `source_mode === "split_scope"`; there is no `split_kind` or equivalent field anywhere in the generated runtime.
+- `split_kind` does not appear anywhere under the generated runtime surfaces today.
+- The live Glitch evidence still matches the same failure pattern: an Android parent ticket remains open while the release child is pushed foreground before the parent-owned work is complete.
 
-### Impact
+Why it stays in the plan:
 
-Any repo that creates a split-scope ticket where the child depends on the parent's
-deliverables will enter a permanent deadlock. Manifests as: parent says "go to child",
-child says "blocked on parent", no forward path without operator intervention. Both
-Spinner and Glitch confirmed this pattern.
+- This is still the clearest current package defect that can deadlock normal lifecycle routing without any source-code problem in the subject repo.
 
-### Priority: P0 — System-breaking
+Required package outcome:
 
----
+- split-scope children must distinguish `parallel_independent` from `sequential_dependent`
+- sequential dependent children must not auto-activate while the parent is still open
+- `ticket_lookup` must keep the parent foreground until the child is legally runnable
 
-## DEF-002: SESSION006 — Stage/Artifact Divergence in Workflow State
+## `WFLOW-STAGE-001` — No deterministic stale-stage recovery path when artifacts are current but canonical stage/state is stale
 
-**Source audit:** Spinner (primary)  
-**Finding code:** SESSION006
+Priority: P1
 
-### Description
+Verified current-state evidence:
 
-`artifact_register.ts` updates `manifest.tickets[].artifacts` (adding the artifact record
-to the manifest) but does NOT update `manifest.tickets[].stage` or `workflow-state.json`'s
-stage-tracking fields. Only `ticket_update` advances the stage. If any session writes
-artifacts via `artifact_write + artifact_register` without a corresponding `ticket_update`
-stage advancement, or if `ticket_update` fails after artifacts are registered, manifests
-can diverge: `workflow-state.json` stage (e.g., "implementation") disagrees with the
-artifact record which shows review and QA artifacts.
+- `artifact_register.ts` only snapshots and registers artifacts; it never reconciles ticket stage, ticket status, or workflow selection.
+- `ticket_lookup.ts` routes strictly from manifest/workflow stage and status.
+- No current package helper deterministically reconciles "current artifact exists" with stale manifest stage/state after interrupted or out-of-order lifecycle work.
+- The repair runner does not contain an artifact-backed stale-stage recovery path for this case.
 
-When a subsequent session reads the stale state, `ticket_lookup.transition_guidance` uses
-`ticket.stage` from the manifest (which may also be stale if artifact_register doesn't
-update it). The guidance then produces contradictory instructions: "cannot move to review
-before implementation artifact exists" even though an implementation artifact IS in the
-manifest. The agent has no single legal next move.
+Why it stays in the plan:
 
-`ticket_lookup` has a contradiction rule ("when manifest and workflow-state disagree about
-ticket stage, trust manifest") but does not surface a recovery action when the manifest's
-own stage field disagrees with its own artifact set.
+- Without a deterministic recovery path, a repo can preserve correct artifact evidence and still resume into the wrong stage guidance, which is exactly the kind of package-level continuity failure this plan suite is meant to eliminate.
 
-### Current Scafforge Status: VERIFIED ACTIVE
+Required package outcome:
 
-**Evidence citation:**
+- the generated workflow layer must expose one canonical recovery path when artifact evidence and stage/state disagree
+- managed repair must be able to use that same reconciliation logic instead of leaving the repo in a stale lifecycle position
 
-`skills/repo-scaffold-factory/assets/project-template/.opencode/tools/artifact_register.ts`
-lines ~40-60: `saveManifest(manifest)` and `saveArtifactRegistry(registry)` are called, but
-there is NO call to `saveWorkflowBundle`, `loadWorkflowState`, or any stage-update path.
-The artifact is registered in manifest.ticket.artifacts but manifest.ticket.stage is not
-advanced. Stage advancement must be done separately via `ticket_update`.
+## `ANDROID-SURFACE-001` — Godot Android export surfaces are detected but not scaffolded and repaired as owned repo-managed surfaces
 
-`skills/repo-scaffold-factory/assets/project-template/.opencode/tools/ticket_lookup.ts`
-lines ~160-200: The `case "implementation"` block calls `validateImplementationArtifactEvidence(ticket)`.
-If an implementation artifact exists, it returns "move to review". But if `ticket.stage`
-is already "implementation" while review and QA artifacts are also in the manifest, the
-switch falls into the "implementation" case regardless — there is no cross-check for
-artifacts from later stages indicating the ticket has already progressed further.
+Priority: P1
 
-No diagnostic path exists in transition_guidance for "manifest.stage=X but manifest.artifacts
-include artifacts from stages Y and Z which are later than X."
+Verified current-state evidence:
 
-### Root Cause in Scafforge Package
+- There is no `export_presets.cfg` template anywhere under `skills/repo-scaffold-factory/assets/project-template/`.
+- `references/stack-adapter-contract.md` already defines `export_presets.cfg` and non-placeholder repo-local `android/` support surfaces as Godot Android repo prerequisites.
+- `environment_bootstrap.ts` already warns when those repo prerequisites are missing.
+- `run_managed_repair.py` has no Android-specific repo-surface generation path.
+- Spinner and Glitch both still lack `export_presets.cfg`; Glitch also lacks meaningful Android support surfaces.
 
-`ticket_lookup.ts` — transition_guidance switch uses `ticket.stage` without verifying
-it is consistent with the artifact record; no stale-stage detection  
-`artifact_register.ts` — registers artifact without triggering stage consistency check
+Why it stays in the plan:
 
-### Impact
+- The earlier draft overstated repair behavior. The correct current package fact is narrower and more actionable: audit already detects the missing repo-managed Android surfaces, but the package still does not scaffold or repair them.
 
-Agent sessions that resume after a partial-completion prior session can get directed to
-re-do already-completed work (re-write implementation) or get a deadlock with no legal
-move. Spinner SESSION006 manifested this exactly.
+Required package outcome:
 
-### Priority: P1 — Workflow-blocking
+- greenfield scaffold must emit the owned repo-managed Android surfaces when the brief declares a Godot Android target
+- managed repair must be able to regenerate those owned repo-managed surfaces later
+- audit must remain the detector, not be misdescribed as the fixer
 
----
+## `TARGET-PROOF-001` — Godot Android completion still collapses runnable proof and deliverable proof into one debug APK bar
 
-## DEF-003: EXEC-GODOT-005-SCAFFOLD — No export_presets.cfg in Godot Android Greenfield Scaffold
+Priority: P1
 
-**Source audits:** Spinner, Glitch  
-**Finding code:** EXEC-GODOT-005
+Verified current-state evidence:
 
-### Description
+- `references/stack-adapter-contract.md` still defines Godot Android release proof as `build/android/<project-slug>-debug.apk`.
+- `target_completion.py` only models the expected debug APK path for Godot Android completion.
+- `audit_execution_surfaces.py` blocks Android-targeted repos on export surfaces plus debug APK proof, with no separate deliverable-proof concept.
+- `apply_remediation_follow_up.py` still creates the Android release follow-up ticket as `Build Android debug APK`.
+- current smoke fixtures and Android-targeted verification only model Android lanes and debug proof; they do not model a distinct packaged deliverable proof path.
 
-Scafforge's `repo-scaffold-factory` does not emit `export_presets.cfg` during greenfield
-scaffold for Godot Android repos. The audit code `EXEC-GODOT-005` correctly fires when
-the file is absent AND the release lane has started, but its trigger condition
-(`release_lane_started_or_done = True`) means it only fires AFTER the damage is done —
-not at scaffold time when the file should have been created.
+Why it stays in the plan:
 
-Both Spinner and Glitch reached Android/release work without `export_presets.cfg` existing.
-Both documented its absence as a "host gap" and advanced tickets to completion. In Glitch,
-WFLOW-LOOP-001 (DEF-001) compounded the problem by preventing ANDROID-001 from even running.
+- The user explicitly rejected debug-only closure. The package must be able to represent "first runnable Android build" separately from "finished packaged Android product".
 
-The file is a plain-text INI file with a documented format. An AI agent CAN generate a
-minimal valid `export_presets.cfg` for Android debug export without the Godot editor.
-Scafforge should emit this file as a template during scaffold.
+Required package outcome:
 
-### Current Scafforge Status: VERIFIED ACTIVE
+- keep debug APK proof as runnable proof
+- add a separate deliverable proof for signed release output when the brief requires a packaged Android product
+- add explicit signing ownership and blocked release semantics rather than silently treating debug proof as final release proof
 
-**Evidence citation:**
+## `PRODUCT-FINISH-001` — Intake, backlog, audit, and repair have no explicit finished-product contract for art, audio, style, and placeholder policy
 
-`ls skills/repo-scaffold-factory/assets/project-template/` — no `export_presets.cfg` file present.
+Priority: P1
 
-`skills/repo-scaffold-factory/assets/project-template/.opencode/tools/environment_bootstrap.ts`
-line ~675: checks for `godot-export-templates` but does NOT check for or generate
-`export_presets.cfg`.
+Verified current-state evidence:
 
-`adapters/manifest.json` — no Godot-specific adapter section; no required scaffold outputs
-list for Godot Android.
+- `brief-schema.md` has no section for product finish, placeholder policy, art direction, audio expectations, or content-source ownership.
+- `ticket-pack-builder/SKILL.md` has no product-finish lane, no asset/audio ownership rules, and no finish-contract acceptance logic.
+- the core package skills and references contain no active finish contract for consumer-facing output beyond generic acceptance language.
+- Spinner proves why this gap matters: the repo is playable with procedural visuals and empty asset directories, but the package currently has no way to say whether that is an acceptable final product or only a temporary placeholder state.
 
-`skills/scafforge-audit/scripts/audit_execution_surfaces.py` lines ~831-868:
-EXEC-GODOT-005 fires only if `release_lane_started_or_done(manifest) or repo_claims_completion(manifest)`.
-There is no earlier gate at scaffold or environment-bootstrap time.
+Why it stays in the plan:
 
-### Root Cause in Scafforge Package
+- This is the package-level answer to the user's asset-quality objection. Scafforge does not need to promise aesthetic magic, but it does need to force the finish bar, placeholder policy, and content-source ownership into canonical truth instead of leaving them implicit.
 
-`skills/repo-scaffold-factory/assets/project-template/` — no `export_presets.cfg` template asset  
-`adapters/manifest.json` — no Godot/Android adapter section  
-`skills/scafforge-audit/scripts/audit_execution_surfaces.py` — EXEC-GODOT-005 fires too late  
-`skills/repo-scaffold-factory/assets/project-template/.opencode/tools/environment_bootstrap.ts` — no android_source.zip check
+Required package outcome:
 
-### Impact
+- consumer-facing repos must be able to declare a finished-product contract in canonical truth
+- backlog generation must create explicit ownership for finish work when placeholders are not acceptable as final output
+- audit and repair must compare repo claims against that contract instead of assuming runnable equals finished
 
-Every Godot Android repo generated by Scafforge lacks `export_presets.cfg`. Downstream
-tickets (ANDROID-001, RELEASE-001) hit the same wall, document it as a host gap, and
-advance to completion without ever actually building an APK. The release lane is permanently
-blocked until human intervention creates the file.
+## `REF-SCAN-001` — Reference-integrity scan still walks dependency and build trees
 
-### Priority: P1 — Workflow-blocking
+Priority: P2
 
----
+Verified current-state evidence:
 
-## DEF-004: WFLOW023 — ticket-pack-builder Generates Release Tickets Without Prerequisite Export Setup
+- `audit_execution_surfaces.py` currently walks every `*.py`, `*.ts`, `*.tsx`, `*.js`, and `*.jsx` file via repo-wide recursion for relative-import checks.
+- That scan path has no shared exclusion list for `node_modules`, `.venv`, `dist`, `build`, `target`, `vendor`, and similar third-party or build-output trees.
+- Node-specific audit logic currently checks whether `node_modules` exists, but that does not stop the generic reference scan from walking dependency code when present.
 
-**Source audits:** Spinner (primary), Glitch  
-**Finding code:** WFLOW023
+Why it stays in the plan:
 
-### Description
+- This is still the package's simplest current false-positive vector in reference-integrity reporting.
 
-`ticket-pack-builder` generates Godot Android release-lane tickets (ANDROID-001, RELEASE-001)
-with acceptance criteria that require APK delivery (`godot --export-debug` succeeds, APK
-exists at canonical path) without checking whether `export_presets.cfg` is present or
-whether any upstream ticket has committed to creating it. As a result, RELEASE-001 is
-generated with acceptance criteria that can never be satisfied: the ticket owns APK
-delivery, but the prerequisite export configuration is outside its scope and no ticket
-created to resolve it.
+Required package outcome:
 
-The correct behavior: if `export_presets.cfg` does not yet exist and no prior ticket
-has created it, ticket-pack-builder should generate a prerequisite ticket (e.g.,
-`ANDROID-EXPORT-SETUP`) before the APK build ticket, and set `depends_on: [ANDROID-EXPORT-SETUP]`
-on the APK ticket.
+- reference-integrity scanning must be limited to repo-owned source/config surfaces, not third-party or build-output trees
 
-### Current Scafforge Status: VERIFIED ACTIVE
+## `EXEC-ENV-001` — Broken repo-local Python environments can still fall through to system Python import failures
 
-**Evidence citation:**
+Priority: P2
 
-`skills/ticket-pack-builder/SKILL.md` — no Godot-specific export prerequisite check before
-generating Android lane tickets. The procedure generates tickets based on project brief
-stack label, not on existing file state. Generated release tickets inherit acceptance
-criteria templates that assume platform configuration is already done.
+Verified current-state evidence:
 
-`skills/ticket-pack-builder/scripts/apply_remediation_follow_up.py` — remediation follow-up
-logic does not check for missing export_presets.cfg when generating Android remediation tickets.
+- `_detect_python` in `audit_repo_process.py` prefers repo-local `.venv` executables if they exist, then falls back to `python3` or `python`.
+- `_detect_pytest_command` follows the same pattern for pytest.
+- `audit_python_execution()` runs import checks with whatever interpreter was selected.
+- A broken repo-local environment with a missing interpreter can therefore fall through to system Python and surface dependency import errors as code failures instead of repo-environment failures.
+- GPTTalker currently demonstrates that exact evidence shape: its `.venv/bin/python*` entries are missing, system Python exists, and import failure reflects missing project dependencies in the fallback interpreter.
 
-### Root Cause in Scafforge Package
+Why it stays in the plan:
 
-`skills/ticket-pack-builder/SKILL.md` — no Android export prerequisite gate logic  
-`skills/ticket-pack-builder/scripts/` — no pre-generation check for export_presets.cfg state
+- The package already improved generic Python prerequisite detection. This remaining gap is narrower and should be fixed narrowly: broken repo-local envs need first-class classification before import-based code findings run.
 
-### Impact
+Required package outcome:
 
-RELEASE-001 type tickets are generated with structural acceptance criteria they can never
-satisfy (because the export configuration prerequisite is unowned). This creates permanently
-blocked tickets even when all other prerequisites are met.
+- once a repo-local Python environment is present but broken, audit and repair verification must classify that state explicitly and stop treating fallback system-import failures as source defects
 
-### Priority: P1 — Workflow-blocking
+## `ARTIFACT-OWNERSHIP-001` — Coordinator artifact ownership is still under-specified in the visible team-leader contract
 
----
+Priority: P2
 
-## DEF-005: REF-003-FP — node_modules Not Excluded from Import Scanner
+Verified current-state evidence:
 
-**Source audits:** Spinner (primary), Glitch, GPTTalker  
-**Finding code:** REF-003 (false positive in all three repos)
+- the visible team-leader prompt says the coordinator does not implement code directly and says coordinator-authored artifacts are suspect
+- the same prompt does not explicitly forbid the team leader from calling `artifact_write` or `artifact_register` for planning, implementation, review, or QA bodies
+- specialist prompts already own stage artifact authoring on their lanes
 
-### Description
+Why it stays in the plan:
 
-The `audit_execution_surfaces.py` REF-003 checker scans for TypeScript imports that
-reference compiled `.js` files that don't exist in the repo. TypeScript packages in
-`node_modules/` routinely have source `.ts` files importing compiled-output paths
-(e.g., `./ZodError.js`, `./external.js`) that are generated at build time and are not
-vendored alongside the sources. The checker incorrectly flags these as broken imports.
+- The remaining gap is not planner capability. It is coordinator-side prohibition and enforcement. The visible agent contract should make the forbidden action explicit rather than relying on indirect wording.
 
-All three audited repos triggered REF-003 false positives in `node_modules/zod/src/`.
-This is noise that obscures real findings in every repo using npm/yarn.
+Required package outcome:
 
-### Current Scafforge Status: VERIFIED ACTIVE
+- the team-leader prompt must state that the coordinator must not author planning, implementation, review, or QA artifacts directly
+- transcript or audit enforcement must treat violations as workflow defects, not advisory smells
 
-**Evidence citation:**
+## `EXEC-REMED-001` — Remediation review still lacks mandatory command-output proof
 
-`skills/scafforge-audit/scripts/audit_execution_surfaces.py` — grep for `node_modules`:
-```
-$ grep -n "node_modules" skills/scafforge-audit/scripts/audit_execution_surfaces.py
-(no output)
-```
-No exclusion exists. The import scanner walks all files in the repo tree without excluding
-`node_modules/`, `vendor/`, or `.git/`.
+Priority: P2
 
-### Root Cause in Scafforge Package
+Verified current-state evidence:
 
-`skills/scafforge-audit/scripts/audit_execution_surfaces.py` — no `SCAN_EXCLUSIONS`
-pattern list in the import resolution checker
+- `__AGENT_PREFIX__-reviewer-code.md` requires compile/import evidence in general, but it does not require remediation review to rerun the original failing command or embed the exact command output.
+- `audit_repo_process.py` currently checks lifecycle structure and artifact presence, but there is no remediation-specific review-artifact parser that requires command-output evidence.
 
-### Impact
+Why it stays in the plan:
 
-Generates false-positive REF-003 findings in every repo that uses npm or yarn. Obscures
-real import errors. Erodes trust in audit results. Adds noise to disposition bundles.
+- Remediation review can still collapse into generic prose unless the package requires evidence that the original failure was rerun and captured.
 
-### Priority: P2 — Quality/reliability
+Required package outcome:
 
----
+- remediation review must carry the original failing command or acceptance command, its raw output, and the post-fix outcome in the artifact body
+- audit must reject remediation review artifacts that lack that evidence
 
-## DEF-006: SESSION005 — Team-Leader Template Advisory (Not Imperative) on Coordinator Artifact Authorship
+## `PROJ-VER-001` — Godot 4.x config-version and renderer compatibility are still not audited explicitly
 
-**Source audit:** Glitch  
-**Finding code:** SESSION005
+Priority: P2
 
-### Description
+Verified current-state evidence:
 
-The team-leader agent template says "treat coordinator-authored planning, implementation,
-review, or QA artifacts as suspect evidence that needs remediation" (advisory) but does NOT
-contain an imperative prohibition: "You MUST NOT call `artifact_write` for planning,
-implementation, review, or QA artifacts."
+- the current audit scripts contain no explicit check for `config_version`, `GLES2`, or `GL Compatibility`.
+- Glitch still contains `config_version=2` and `GLES2` references.
+- Spinner currently uses the expected Godot 4-era values, so this is a missing audit rule, not a blanket claim that every Godot repo is broken.
 
-Additionally, the delegation pattern used by the team leader asks specialist agents to
-"return the full artifact content" in their final message rather than "write the artifact
-yourself via artifact_write and call artifact_register with the path." This makes it
-easy for the team leader to receive the planned content as a string and write it using
-artifact_write itself — which is a role boundary violation.
+Why it stays in the plan:
 
-In Glitch, the team leader explicitly wrote the planning artifact itself after receiving
-it as content from the planner subagent. The audit log shows the coordinator writing
-`.opencode/state/plans/release-001-planning-plan.md` directly.
+- This is still a real package blind spot for Godot 4.x repos. The package can already detect missing scenes, scripts, and autoloads; it should also detect stale Godot-project version and renderer settings.
 
-### Current Scafforge Status: VERIFIED ACTIVE — partially
+Required package outcome:
 
-**Evidence citation:**
-
-`skills/repo-scaffold-factory/assets/project-template/.opencode/agents/__AGENT_PREFIX__-team-leader.md`
-line ~191:
-```
-- treat coordinator-authored planning, implementation, review, or QA artifacts as suspect
-  evidence that needs remediation, not as proof of progression
-```
-This is advisory language. It says "if it happens, treat it as suspect" — not "do not do this."
-
-The same file line ~194:
-```
-- require specialists that persist stage text to use artifact_write and then artifact_register
-  with the supplied artifact stage and kind
-```
-This describes the correct pattern but doesn't explicitly prohibit the team leader from
-also calling artifact_write.
-
-No imperative MUST NOT statement exists in the template.
-
-The `__AGENT_PREFIX__-planner.md` template does not include a rule requiring the planner
-to call `artifact_write` itself rather than returning content to the parent.
-
-### Root Cause in Scafforge Package
-
-`__AGENT_PREFIX__-team-leader.md` — advisory language where imperative prohibition is needed  
-`__AGENT_PREFIX__-planner.md` — delegation instruction pattern asks for content return instead of write-then-return-path
-
-### Impact
-
-Coordinator-authored artifacts bypass specialist ownership — the artifact content is
-generated without the specialist agent's full context, tooling, and grounding. In Glitch,
-the team leader wrote a RELEASE-001 plan that was based on planner output, but the planner
-may have had a different (and more grounded) view of the planning requirements. The
-artifact produced did not reflect full specialist analysis.
-
-More broadly: if coordinators routinely write artifacts, stage artifact ownership becomes
-meaningless as an evidence quality signal.
-
-### Priority: P2 — Quality/reliability
-
----
-
-## DEF-007: PROJ-VER-001 — No Godot 4.x config_version / Renderer Validation in Audit
-
-**Source audit:** Glitch  
-**Finding code:** PROJ-VER-001
-
-### Description
-
-`project.godot` in Glitch used `config_version=2` (Godot 2.x era format) and
-`GLES2` renderer (Godot 3.x; removed in Godot 4). Godot 4.6.2 successfully parsed
-this file due to lenient parsing, but the wrong renderer reference may cause silent
-fallback behavior. No Scafforge audit check currently validates that `config_version=5`
-and a Godot 4.x-valid renderer is specified.
-
-For Godot 4.x, the valid renderer values are:
-- `forward_plus`  
-- `mobile`
-- `gl_compatibility` (replaces GLES2/GLES3 from Godot 3.x)
-
-### Current Scafforge Status: VERIFIED ACTIVE
-
-**Evidence citation:**
-
-`skills/scafforge-audit/scripts/audit_execution_surfaces.py` lines ~789-835:
-The `audit_godot_execution` function checks EXEC-GODOT-001 (missing autoload scripts),
-EXEC-GODOT-002 (broken scene references), EXEC-GODOT-003 (missing extends scripts),
-EXEC-GODOT-004 (headless validation failure), and EXEC-GODOT-005 (Android export surfaces).
-There is NO check for `config_version` or renderer format in `project.godot`.
-
-### Root Cause in Scafforge Package
-
-`skills/scafforge-audit/scripts/audit_execution_surfaces.py` — missing validation logic
-for `config_version` and renderer in `audit_godot_execution`
-
-### Impact
-
-AI-generated Godot 4.x projects may have incorrect version format due to model training
-data mixing Godot 3.x and 4.x examples. Export and rendering behavior may silently differ
-from expected. Audit does not catch the mismatch.
-
-### Priority: P2 — Quality/reliability
-
----
-
-## DEF-008: EXEC-WARN-001 / Evidence Fabrication — No Mandatory Command Output in Remediation Review Artifacts
-
-**Source audit:** Glitch  
-**Finding code:** EXEC-WARN-001
-
-### Description
-
-REMED-002's review artifact explicitly stated "WARNING gone from headless output" but the
-actual `godot-headless.log` still showed the WARNING. The reviewer wrote a claim without
-actually running the validation command and checking its output. This is evidence fabrication.
-
-Scafforge's reviewer agent template does not require that review artifacts for remediation
-tickets include literal command output proving the original finding no longer reproduces.
-Prose claims are accepted as review evidence.
-
-The audit script `audit_execution_surfaces.py` does not currently check that remediation
-ticket (those with `finding_source`) review artifacts contain command output evidence rather
-than prose claims.
-
-### Current Scafforge Status: VERIFIED ACTIVE
-
-**Evidence citation:**
-
-`skills/repo-scaffold-factory/assets/project-template/.opencode/agents/__AGENT_PREFIX__-reviewer-code.md`
-— does not contain a rule requiring command output evidence specifically for remediation
-tickets. The reviewer discipline rules do not distinguish between normal review artifacts
-and remediation review artifacts.
-
-`skills/scafforge-audit/scripts/audit_repo_process.py` — no check that looks for
-remediation tickets with `finding_source` set and verifies their review artifact contains
-command evidence vs prose.
-
-### Root Cause in Scafforge Package
-
-`__AGENT_PREFIX__-reviewer-code.md` — no enhanced evidence requirement for remediation reviews  
-`audit_repo_process.py` — no remediation evidence gate check
-
-### Impact
-
-Findings can be marked resolved via fabricated evidence. This undermines the entire repair
-cycle: scafforge-audit marks findings as addressed, scafforge-repair routes follow-up based
-on those marks, and if evidence is fabricated then genuinely broken code goes undetected.
-In Glitch, the persisting GlitchPhysicsModifier WARNING was invisible to subsequent sessions
-because REMED-002 was "PASS."
-
-### Priority: P2 — Quality/reliability
-
----
-
-## DEF-009: EXEC001-TYPE — No Stack-Standards Guidance for Python TYPE_CHECKING Annotation Pattern
-
-**Source audit:** GPTTalker  
-**Finding code:** EXEC001
-
-### Description
-
-`src/hub/dependencies.py` in GPTTalker used unquoted return type annotations for two
-functions that import their types under `TYPE_CHECKING`:
-
-```python
-# BROKEN:
-async def get_relationship_service(...) -> RelationshipService:
-
-# CORRECT pattern used elsewhere in same file:
-async def get_cross_repo_service(...) -> "CrossRepoService":
-```
-
-When Python evaluates `get_relationship_service` at import time (FastAPI builds dependency
-graphs at import), `RelationshipService` is not in the module namespace because
-`TYPE_CHECKING` is `False` at runtime. This raises `NameError: name 'RelationshipService'
-is not defined` and prevents `from src.hub.main import app` from succeeding.
-
-This is a generated-repo source defect introduced by an implementer agent. The Scafforge
-`stack-standards` skill for Python+FastAPI projects does not contain an explicit rule
-about this pattern.
-
-### Current Scafforge Status: VERIFIED ACTIVE (advisory gap)
-
-**Evidence citation:**
-
-`skills/repo-scaffold-factory/assets/project-template/.opencode/skills/stack-standards/SKILL.md`
-— no specific guidance for TYPE_CHECKING import patterns in FastAPI dependency functions.
-The generated skill gives general Python guidance but does not call out this specific
-footgun.
-
-Note: This is a guidance gap (P3 advisory), not a workflow failure. The defect itself was
-in the generated repo's source code, not in the Scafforge managed workflow surface.
-
-### Root Cause in Scafforge Package
-
-`skills/repo-scaffold-factory/assets/project-template/.opencode/skills/stack-standards/SKILL.md`
-— missing TYPE_CHECKING annotation guidance for FastAPI repos
-
-### Impact
-
-FastAPI+Python repos generated by Scafforge may have this annotation pattern introduced
-by implementer agents who follow the file structure but miss the quoting requirement.
-The hub service fails to start.
-
-### Priority: P3 — Advisory
-
----
-
-## Not-Verified / Historical Defects
-
-### WFLOW010 — GPTTalker Restart Surface Format Drift
-
-**Source:** GPTTalker audit  
-**Status: UNVERIFIABLE as current package defect**
-
-The GPTTalker repair cycle (2026-04-07T22:18:12Z) generated a START-HERE.md that the
-WFLOW010 checker flagged because machine-parseable fields did not match the parser's
-expectations. The current Scafforge `regenerate_restart_surfaces.py` calls
-`handoff_publish.ts` via `run_generated_tool`, which generates the canonical
-key-value format expected by `audit_restart_surfaces.py`. The current format IS correct.
-
-The GPTTalker WFLOW010 was likely a one-time artifact of that specific repair cycle using
-an older version of the template or a repair-generated START-HERE.md that predated the
-current key-value format. Cannot be reproduced in a clean greenfield run with current package.
-
-**Not included in implementation plan.** If WFLOW010 recurs in a freshly scaffolded repo,
-revisit.
-
-### WFLOW008 — GPTTalker pending_process_verification Stranded
-
-**Status: UNVERIFIABLE as standalone package defect**
-
-The `workflow.ts` `getProcessVerificationState` function DOES compute `clearable_now: true`
-when `affectedDoneTickets.length === 0`, and `ticket_lookup` DOES surface the clear path
-("Use ticket_update to clear pending_process_verification now…"). The WFLOW008 in 
-GPTTalker was a symptom of WFLOW010 (stale START-HERE.md not showing the clearable_now
-guidance). Not a separate package defect.
-
-### WFLOW-LEASE-001 — Glitch Stale Write Lease
-
-**Status: UNVERIFIABLE / not addressable at package level**
-
-An agent session ended with an uncleaned write lease for ANDROID-001. Write lease lifetimes
-are determined by session scope. Lease TTLs would require significant infrastructure
-changes (timeout-based expiry). Documented as an operational hygiene note rather than a
-fixable package defect. The `ticket_lookup` already warns about stale leases; adding a
-lease age display to START-HERE.md would improve visibility.
+- Godot 4.x repos must be audited for obviously stale project-version and renderer settings before Scafforge treats them as clean

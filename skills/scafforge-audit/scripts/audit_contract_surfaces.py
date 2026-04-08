@@ -863,6 +863,183 @@ def audit_model_profile_drift(root: Path, findings: list[Finding], ctx: Contract
     )
 
 
+def _is_consumer_facing_repo(root: Path, ctx: ContractSurfaceAuditContext) -> bool:
+    """Heuristically determine whether this is a consumer-facing repo that requires a finish contract."""
+    provenance_path = root / ".opencode" / "meta" / "bootstrap-provenance.json"
+    provenance = ctx.read_json(provenance_path)
+    if isinstance(provenance, dict):
+        stack = str(provenance.get("stack_label", "")).lower()
+        target = str(provenance.get("target_platform", "")).lower()
+        if any(kw in stack or kw in target for kw in ("godot", "android", "ios", "mobile", "game", "unity", "unreal")):
+            return True
+    if (root / "project.godot").exists():
+        return True
+    brief_path = root / "docs" / "spec" / "CANONICAL-BRIEF.md"
+    if brief_path.exists():
+        brief_text = ctx.read_text(brief_path).lower()
+        consumer_keywords = ("mobile app", "android app", "ios app", "game", "toddler", "consumer-facing", "store-ready", "playable", "packaged product")
+        if any(kw in brief_text for kw in consumer_keywords):
+            return True
+    return False
+
+
+def _brief_has_finish_contract(brief_text: str) -> bool:
+    """Check whether the canonical brief contains a Product Finish Contract section."""
+    return bool(re.search(r"##\s+13\.", brief_text) or "product finish contract" in brief_text.lower())
+
+
+def _finish_contract_section(brief_text: str) -> str | None:
+    match = re.search(r"(^##\s+13\.[^\n]*\n)(.*?)(?=^##\s+\d+\.|\Z)", brief_text, re.MULTILINE | re.DOTALL)
+    if match:
+        return match.group(2)
+    if "product finish contract" not in brief_text.lower():
+        return None
+    return brief_text
+
+
+def _missing_finish_contract_fields(brief_text: str) -> list[str]:
+    section = _finish_contract_section(brief_text)
+    if not section:
+        return []
+    required_fields = (
+        "deliverable_kind",
+        "placeholder_policy",
+        "visual_finish_target",
+        "audio_finish_target",
+        "content_source_plan",
+        "licensing_or_provenance_constraints",
+        "finish_acceptance_signals",
+    )
+    lowered = section.lower()
+    return [field for field in required_fields if field.lower() not in lowered]
+
+
+def _finish_contract_allows_placeholders(brief_text: str) -> bool:
+    """Return True when the finish contract explicitly records placeholder_ok policy."""
+    placeholder_ok_patterns = (
+        r"placeholder_policy[^:\n]*:.*placeholder_ok",
+        r"placeholder\s+or\s+procedural\s+output\s+is\s+acceptable",
+        r"procedural[- ]only\s+acceptable",
+    )
+    for pattern in placeholder_ok_patterns:
+        if re.search(pattern, brief_text, re.IGNORECASE):
+            return True
+    return False
+
+
+def _open_finish_lane_tickets(root: Path, ctx: ContractSurfaceAuditContext) -> list[str]:
+    """Return manifest ticket IDs that are in finish-related lanes and still open."""
+    manifest_path = root / "tickets" / "manifest.json"
+    manifest = ctx.read_json(manifest_path)
+    if not isinstance(manifest, dict):
+        return []
+    finish_lanes = frozenset({"finish", "finish-content", "finish-direction", "polish", "visual-content", "audio-content"})
+    finish_keywords = ("finish", "polish", "visual content", "audio content", "asset production", "content production")
+    open_finish: list[str] = []
+    for ticket in manifest.get("tickets", []):
+        if not isinstance(ticket, dict):
+            continue
+        resolution = str(ticket.get("resolution_state", "")).lower()
+        if resolution in ("done", "superseded", "closed"):
+            continue
+        lane = str(ticket.get("lane", "")).lower()
+        title = str(ticket.get("title", "")).lower()
+        summary = str(ticket.get("summary", "")).lower()
+        in_finish_lane = any(fl in lane for fl in finish_lanes)
+        has_finish_keyword = any(kw in title or kw in summary for kw in finish_keywords)
+        if in_finish_lane or has_finish_keyword:
+            open_finish.append(str(ticket.get("id", "")))
+    return open_finish
+
+
+def _repo_claims_completion(root: Path, ctx: ContractSurfaceAuditContext) -> bool:
+    """Return True when the repo's restart narrative or workflow state claims a finished/ready state."""
+    start_here_path = root / "START-HERE.md"
+    workflow_path = root / ".opencode" / "state" / "workflow-state.json"
+    if start_here_path.exists():
+        text = ctx.read_text(start_here_path).lower()
+        if any(phrase in text for phrase in ("ready for continued development", "product is finished", "release-ready", "all tickets done")):
+            return True
+    workflow = ctx.read_json(workflow_path)
+    if isinstance(workflow, dict):
+        active = workflow.get("active_ticket")
+        if active is None or active == "":
+            return True
+    return False
+
+
+def audit_product_finish_contract(root: Path, findings: list[Finding], ctx: ContractSurfaceAuditContext) -> None:
+    """Audit finish-contract coverage and claim-vs-contract consistency for consumer-facing repos."""
+    brief_path = root / "docs" / "spec" / "CANONICAL-BRIEF.md"
+    if not brief_path.exists():
+        return
+    if not _is_consumer_facing_repo(root, ctx):
+        return
+
+    brief_text = ctx.read_text(brief_path)
+    brief_rel = ctx.normalize_path(brief_path, root)
+
+    if not _brief_has_finish_contract(brief_text):
+        ctx.add_finding(
+            findings,
+            Finding(
+                code="FINISH001",
+                severity="warning",
+                problem="Consumer-facing repo is missing a Product Finish Contract in the canonical brief.",
+                root_cause="Without an explicit finish bar, audit and closeout cannot distinguish a functional prototype from an intentionally finished product, and backlog generation cannot create owned finish work.",
+                files=[brief_rel],
+                safer_pattern="Add a Product Finish Contract section (section 13) to the canonical brief with deliverable_kind, placeholder_policy, visual/audio finish targets, content_source_plan, and finish_acceptance_signals.",
+                evidence=[f"{brief_rel} has no section 13 or Product Finish Contract heading."],
+                provenance="script",
+            ),
+        )
+        return
+
+    missing_fields = _missing_finish_contract_fields(brief_text)
+    if missing_fields:
+        ctx.add_finding(
+            findings,
+            Finding(
+                code="FINISH001",
+                severity="warning",
+                problem="Consumer-facing repo has an incomplete Product Finish Contract in the canonical brief.",
+                root_cause="The finish section exists, but it omits required truth fields that backlog generation, audit, and closeout need to assign ownership and evaluate whether the product is actually finished.",
+                files=[brief_rel],
+                safer_pattern="Populate the Product Finish Contract with deliverable_kind, placeholder_policy, visual/audio finish targets, content_source_plan, licensing_or_provenance_constraints, and finish_acceptance_signals before treating the repo as consumer-ready.",
+                evidence=[f"{brief_rel} is missing finish-contract fields: {', '.join(missing_fields)}"],
+                provenance="script",
+            ),
+        )
+        return
+
+    if _finish_contract_allows_placeholders(brief_text):
+        return
+
+    open_finish = _open_finish_lane_tickets(root, ctx)
+    if not open_finish:
+        return
+
+    if not _repo_claims_completion(root, ctx):
+        return
+
+    ctx.add_finding(
+        findings,
+        Finding(
+            code="FINISH002",
+            severity="error",
+            problem="Repo claims ready or finished state, but the finish contract forbids placeholder output and finish-owning tickets are still open.",
+            root_cause="The restart narrative or workflow state signals completion while the canonical finish contract still requires non-placeholder visuals, audio, or content proof.",
+            files=[brief_rel],
+            safer_pattern="Either close or supersede the open finish tickets with real content proof, or update the restart narrative to stop claiming finished-product ready state until the finish bar is met.",
+            evidence=[
+                f"{brief_rel} records no_placeholders policy in the finish contract.",
+                f"Open finish-lane tickets: {', '.join(open_finish)}",
+            ],
+            provenance="script",
+        ),
+    )
+
+
 def run_contract_surface_audits(root: Path, findings: list[Finding], ctx: ContractSurfaceAuditContext) -> None:
     audit_status_model(root, findings, ctx)
     audit_status_semantics_docs(root, findings, ctx)
@@ -889,3 +1066,4 @@ def run_contract_surface_audits(root: Path, findings: list[Finding], ctx: Contra
     audit_eager_skill_loading(root, findings, ctx)
     audit_placeholder_local_skills(root, findings, ctx)
     audit_model_profile_drift(root, findings, ctx)
+    audit_product_finish_contract(root, findings, ctx)

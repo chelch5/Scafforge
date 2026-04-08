@@ -36,6 +36,8 @@ Scan the workspace for project inputs:
 
 Produce a canonical brief at `docs/spec/CANONICAL-BRIEF.md` with the required schema.
 
+For consumer-facing repos (mobile apps, games, distributed software products), the finish contract (section 13 of the brief schema) is a required intake artifact, not optional polish. If the source material does not resolve whether placeholder or procedural output is acceptable as final output, add that to the blocking decision packet before generation continues.
+
 ### Step 2: Resolve ambiguities
 
 Before proceeding, present the user with a batched decision packet for blocking ambiguities:

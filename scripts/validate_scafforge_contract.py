@@ -1379,6 +1379,7 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
         workflow_lib,
         'export type TicketSourceMode = "process_verification" | "post_completion_issue" | "net_new_scope" | "split_scope"',
     )
+    require_contains(findings, workflow_lib, 'export type SplitKind = "parallel_independent" | "sequential_dependent"')
     require_contains(findings, workflow_lib, "repoVenvExecutableCandidates")
     require_contains(findings, workflow_lib, "repoVenvExecutable")
     require_contains(findings, workflow_lib, "findExistingRepoVenvExecutable")
@@ -1565,6 +1566,11 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_create.ts",
+        'split_kind:',
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_create.ts",
         "split-scope child ticket",
     )
     require_contains(
@@ -1636,6 +1642,11 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
         findings,
         TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts",
         'sourceMode === "split_scope"',
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts",
+        'split_scope ticket creation requires an explicit split_kind.',
     )
     require_contains(
         findings,

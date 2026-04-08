@@ -8,6 +8,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from android_scaffold import (
+    normalize_android_package_name,
+    renders_godot_android_assets,
+)
+
 
 TEXT_SUFFIXES = {
     ".md",
@@ -41,6 +46,17 @@ PROCESS_CONTRACT_VERSION = 7
 TICKET_CONTRACT_VERSION = 3
 DEFAULT_PARALLEL_MODE = "sequential"
 PLACEHOLDER_PATTERN = re.compile(r"__[A-Z0-9_]+__")
+DEFAULT_DELIVERABLE_KIND = "prototype unless the normalized brief records a stricter final product bar"
+DEFAULT_PLACEHOLDER_POLICY = "placeholder_ok unless the normalized brief records a stricter finish policy"
+DEFAULT_VISUAL_FINISH_TARGET = (
+    "record the project-specific visual finish bar here, or state that no consumer-facing visual bar applies"
+)
+DEFAULT_AUDIO_FINISH_TARGET = "record the project-specific audio finish bar here, or state that no audio bar applies"
+DEFAULT_CONTENT_SOURCE_PLAN = "record whether content is authored, licensed, procedural, mixed, or intentionally absent"
+DEFAULT_LICENSING_OR_PROVENANCE_CONSTRAINTS = "record any asset or content provenance constraints here"
+DEFAULT_FINISH_ACCEPTANCE_SIGNALS = (
+    "record the explicit finish-proof signals that must be met before the repo is treated as finished"
+)
 
 
 def slugify(value: str) -> str:
@@ -134,19 +150,20 @@ def ensure_idempotent_target(dest_root: Path) -> None:
             f"Refusing to scaffold into {dest_root}: an existing .opencode/ layer was found. "
             "Use the retrofit or repair flow instead of double-scaffolding an existing repo."
         )
-
-
-def should_copy(root_name: str, scope: str) -> bool:
+def should_copy(root_name: str, scope: str, stack_label: str) -> bool:
     if scope == "opencode":
         return root_name in OPENCODE_SCOPE_FILES
+    if root_name in {"export_presets.cfg", "android"}:
+        return renders_godot_android_assets(stack_label)
     return root_name in FULL_SCOPE_FILES
 
 
 def copy_template(template_root: Path, dest_root: Path, replacements: dict[str, str], scope: str, force: bool) -> list[Path]:
     created: list[Path] = []
+    stack_label = replacements.get("__STACK_LABEL__", "")
 
     for source in template_root.iterdir():
-        if not should_copy(source.name, scope):
+        if not should_copy(source.name, scope, stack_label):
             continue
         target = dest_root / source.name
         if source.is_dir():
@@ -180,6 +197,312 @@ def write_file(source: Path, target: Path, replacements: dict[str, str], force: 
         target.write_text(render_text(text, replacements), encoding="utf-8")
     else:
         shutil.copy2(source, target)
+
+
+def next_ticket_wave(tickets: list[dict[str, object]]) -> int:
+    waves = [int(ticket.get("wave", 0)) for ticket in tickets if isinstance(ticket, dict)]
+    return max(waves, default=1) + 1
+
+
+def requires_packaged_android_delivery(deliverable_kind: str) -> bool:
+    lowered = deliverable_kind.lower()
+    indicators = (
+        "release_apk",
+        "release_aab",
+        "packaged_apk",
+        "packaged_aab",
+        "packaged mobile product",
+        "packaged android",
+        "signed apk",
+        "signed aab",
+        "store-ready",
+        "release-ready",
+        "play store",
+        "google play",
+    )
+    return any(indicator in lowered for indicator in indicators)
+
+
+def requires_finish_ownership(placeholder_policy: str) -> bool:
+    return "no_placeholders" in placeholder_policy.lower()
+
+
+def target_is_intentionally_absent(target: str, *, absent_marker: str) -> bool:
+    lowered = target.lower()
+    return absent_marker in lowered or "intentionally absent" in lowered
+
+
+def ensure_godot_android_completion_tickets(
+    dest_root: Path,
+    project_slug: str,
+    stack_label: str,
+    *,
+    deliverable_kind: str,
+) -> None:
+    if not renders_godot_android_assets(stack_label):
+        return
+
+    manifest_path = dest_root / "tickets" / "manifest.json"
+    if not manifest_path.exists():
+        return
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    tickets = manifest.get("tickets")
+    if not isinstance(tickets, list):
+        return
+
+    existing_ids = {str(ticket.get("id", "")).strip() for ticket in tickets if isinstance(ticket, dict)}
+    packaged_delivery = requires_packaged_android_delivery(deliverable_kind)
+    android_tickets: list[dict[str, object]] = []
+    if "ANDROID-001" not in existing_ids:
+        android_tickets.append(
+            {
+                "id": "ANDROID-001",
+                "title": "Create Android export surfaces",
+                "wave": 2,
+                "lane": "android-export",
+                "parallel_safe": False,
+                "overlap_risk": "high",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": ["SETUP-001"],
+                "source_ticket_id": None,
+                "follow_up_ticket_ids": ["SIGNING-001"] if packaged_delivery else ["RELEASE-001"],
+                "summary": "Create and validate the repo-local Android export surfaces for this Godot Android target, including export_presets.cfg, android/ support files, and the canonical debug export command.",
+                "acceptance": [
+                    "export_presets.cfg exists at repo root and defines an Android preset",
+                    "Repo-local android support surfaces exist and are not placeholder content",
+                    f"The canonical Godot Android debug export target is build/android/{project_slug}-debug.apk",
+                ],
+                "decision_blockers": [],
+                "artifacts": [],
+            }
+        )
+    if packaged_delivery and "SIGNING-001" not in existing_ids:
+        android_tickets.append(
+            {
+                "id": "SIGNING-001",
+                "title": "Own Android signing prerequisites",
+                "wave": 3,
+                "lane": "signing-prerequisites",
+                "parallel_safe": False,
+                "overlap_risk": "high",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": [],
+                "source_ticket_id": "ANDROID-001",
+                "follow_up_ticket_ids": ["RELEASE-001"],
+                "source_mode": "split_scope",
+                "split_kind": "sequential_dependent",
+                "summary": "Own the Android signing inputs for packaged delivery, including keystore reference, alias ownership, password handling, and the release-artifact proof path. Scafforge must not fabricate secrets or host signing material.",
+                "acceptance": [
+                    "The release keystore path or CI secret reference is declared in canonical project truth",
+                    "Keystore alias and password ownership is documented for the release pipeline",
+                    "The packaged Android delivery flow can produce a signed release APK or AAB once the owned signing inputs are present",
+                ],
+                "decision_blockers": [
+                    "Signing keys and secrets must be supplied by the project team or CI. Scafforge cannot generate or assume them.",
+                ],
+                "artifacts": [],
+            }
+        )
+    if "RELEASE-001" not in existing_ids:
+        release_acceptance = [
+            f"A debug APK is produced at build/android/{project_slug}-debug.apk or the exact blocker is recorded with command evidence",
+            "The APK build uses the Android export surfaces owned by ANDROID-001",
+            "Release-readiness evidence names the exact export command and outcome",
+        ]
+        if packaged_delivery:
+            release_acceptance.extend(
+                [
+                    "A signed release APK or AAB is produced once signing prerequisites are satisfied via SIGNING-001",
+                    f"The deliverable-proof artifact path is recorded as build/android/{project_slug}-release.apk",
+                ]
+            )
+        android_tickets.append(
+            {
+                "id": "RELEASE-001",
+                "title": "Build Android runnable proof and deliverable APK/AAB" if packaged_delivery else "Build Android debug APK",
+                "wave": 4 if packaged_delivery else 3,
+                "lane": "release-readiness",
+                "parallel_safe": False,
+                "overlap_risk": "high",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": [],
+                "source_ticket_id": "SIGNING-001" if packaged_delivery else "ANDROID-001",
+                "follow_up_ticket_ids": [],
+                "source_mode": "split_scope",
+                "split_kind": "sequential_dependent",
+                "summary": (
+                    f"Produce and validate the canonical Android debug APK at build/android/{project_slug}-debug.apk using the repo-managed Godot Android export surfaces."
+                    + (
+                        " When signing prerequisites are satisfied, additionally produce and validate the signed release deliverable artifact."
+                        if packaged_delivery
+                        else ""
+                    )
+                ),
+                "acceptance": release_acceptance,
+                "decision_blockers": [],
+                "artifacts": [],
+            }
+        )
+
+    if not android_tickets:
+        return
+
+    tickets.extend(android_tickets)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def ensure_finish_ownership_tickets(
+    dest_root: Path,
+    *,
+    placeholder_policy: str,
+    visual_finish_target: str,
+    audio_finish_target: str,
+    content_source_plan: str,
+    finish_acceptance_signals: str,
+) -> None:
+    if not requires_finish_ownership(placeholder_policy):
+        return
+
+    manifest_path = dest_root / "tickets" / "manifest.json"
+    if not manifest_path.exists():
+        return
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    tickets = manifest.get("tickets")
+    if not isinstance(tickets, list):
+        return
+
+    existing_ids = {str(ticket.get("id", "")).strip() for ticket in tickets if isinstance(ticket, dict)}
+    added_finish_ids: list[str] = []
+    wave = next_ticket_wave(tickets)
+
+    if "VISUAL-001" not in existing_ids and not target_is_intentionally_absent(
+        visual_finish_target,
+        absent_marker="no consumer-facing visual bar applies",
+    ):
+        tickets.append(
+            {
+                "id": "VISUAL-001",
+                "title": "Own ship-ready visual finish",
+                "wave": wave,
+                "lane": "finish-visual",
+                "parallel_safe": False,
+                "overlap_risk": "medium",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": ["SETUP-001"],
+                "summary": f"Replace prototype-grade visuals with the declared ship bar: {visual_finish_target}.",
+                "acceptance": [
+                    f"The visual finish target is met: {visual_finish_target}",
+                    "No placeholder or throwaway visual assets remain in the user-facing product surfaces",
+                ],
+                "decision_blockers": [],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+        existing_ids.add("VISUAL-001")
+        added_finish_ids.append("VISUAL-001")
+        wave += 1
+
+    if "AUDIO-001" not in existing_ids and not target_is_intentionally_absent(
+        audio_finish_target,
+        absent_marker="no audio bar applies",
+    ):
+        tickets.append(
+            {
+                "id": "AUDIO-001",
+                "title": "Own ship-ready audio finish",
+                "wave": wave,
+                "lane": "finish-audio",
+                "parallel_safe": False,
+                "overlap_risk": "medium",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": ["SETUP-001"],
+                "summary": f"Deliver the declared user-facing audio bar: {audio_finish_target}.",
+                "acceptance": [
+                    f"The audio finish target is met: {audio_finish_target}",
+                    "No placeholder, missing, or temporary user-facing audio remains where the finish contract requires audio delivery",
+                ],
+                "decision_blockers": [],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+        existing_ids.add("AUDIO-001")
+        added_finish_ids.append("AUDIO-001")
+        wave += 1
+
+    if not added_finish_ids and "CONTENT-001" not in existing_ids:
+        tickets.append(
+            {
+                "id": "CONTENT-001",
+                "title": "Own authored content finish",
+                "wave": wave,
+                "lane": "finish-content",
+                "parallel_safe": False,
+                "overlap_risk": "medium",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": ["SETUP-001"],
+                "summary": f"Replace placeholder product content with the declared authored/licensed/procedural bar: {content_source_plan}.",
+                "acceptance": [
+                    f"The content source plan is owned and implemented: {content_source_plan}",
+                    "No placeholder user-facing content remains in the finished product surfaces",
+                ],
+                "decision_blockers": [],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+        existing_ids.add("CONTENT-001")
+        added_finish_ids.append("CONTENT-001")
+        wave += 1
+
+    finish_dependencies = [ticket_id for ticket_id in ("VISUAL-001", "AUDIO-001", "CONTENT-001") if ticket_id in existing_ids]
+    if finish_dependencies and "FINISH-VALIDATE-001" not in existing_ids:
+        tickets.append(
+            {
+                "id": "FINISH-VALIDATE-001",
+                "title": "Validate product finish contract",
+                "wave": wave,
+                "lane": "finish-validation",
+                "parallel_safe": False,
+                "overlap_risk": "medium",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": finish_dependencies,
+                "summary": "Prove that the declared Product Finish Contract is satisfied and that no placeholder output remains in user-facing surfaces.",
+                "acceptance": [
+                    f"Finish proof matches the declared acceptance signals: {finish_acceptance_signals}",
+                    "All finish-direction, visual, audio, or content ownership tickets required by the contract are completed before closeout",
+                ],
+                "decision_blockers": [],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
 def managed_repo_root() -> Path:
@@ -231,6 +554,7 @@ def write_bootstrap_provenance(
     *,
     project_name: str,
     project_slug: str,
+    package_name: str,
     agent_prefix: str,
     scope: str,
     model_tier: str,
@@ -239,6 +563,13 @@ def write_bootstrap_provenance(
     implementer_model: str,
     utility_model: str,
     stack_label: str,
+    deliverable_kind: str,
+    placeholder_policy: str,
+    visual_finish_target: str,
+    audio_finish_target: str,
+    content_source_plan: str,
+    licensing_or_provenance_constraints: str,
+    finish_acceptance_signals: str,
 ) -> None:
     template_commit_result = template_commit()
     steps = (
@@ -253,6 +584,7 @@ def write_bootstrap_provenance(
         "template_asset_root": "skills/repo-scaffold-factory/assets/project-template",
         "project_name": project_name,
         "project_slug": project_slug,
+        "package_name": package_name,
         "agent_prefix": agent_prefix,
         "generation_scope": scope,
         "runtime_models": {
@@ -263,6 +595,21 @@ def write_bootstrap_provenance(
             "utility": utility_model,
         },
         "stack_label": stack_label,
+        "deliverable_kind": deliverable_kind,
+        "deliverable_artifact_path": (
+            f"build/android/{project_slug}-release.apk"
+            if renders_godot_android_assets(stack_label) and requires_packaged_android_delivery(deliverable_kind)
+            else None
+        ),
+        "product_finish_contract": {
+            "deliverable_kind": deliverable_kind,
+            "placeholder_policy": placeholder_policy,
+            "visual_finish_target": visual_finish_target,
+            "audio_finish_target": audio_finish_target,
+            "content_source_plan": content_source_plan,
+            "licensing_or_provenance_constraints": licensing_or_provenance_constraints,
+            "finish_acceptance_signals": finish_acceptance_signals,
+        },
         "bootstrap_steps": steps,
         "tracking": {
             "invocation_log": ".opencode/state/invocation-log.jsonl",
@@ -380,6 +727,41 @@ def parse_args() -> argparse.Namespace:
         default="framework-agnostic",
         help="Label used in generated docs for the current stack mode",
     )
+    parser.add_argument(
+        "--deliverable-kind",
+        default=DEFAULT_DELIVERABLE_KIND,
+        help="Product finish contract deliverable_kind value to record in the canonical brief.",
+    )
+    parser.add_argument(
+        "--placeholder-policy",
+        default=DEFAULT_PLACEHOLDER_POLICY,
+        help="Product finish contract placeholder_policy value to record in the canonical brief.",
+    )
+    parser.add_argument(
+        "--visual-finish-target",
+        default=DEFAULT_VISUAL_FINISH_TARGET,
+        help="Product finish contract visual_finish_target value to record in the canonical brief.",
+    )
+    parser.add_argument(
+        "--audio-finish-target",
+        default=DEFAULT_AUDIO_FINISH_TARGET,
+        help="Product finish contract audio_finish_target value to record in the canonical brief.",
+    )
+    parser.add_argument(
+        "--content-source-plan",
+        default=DEFAULT_CONTENT_SOURCE_PLAN,
+        help="Product finish contract content_source_plan value to record in the canonical brief.",
+    )
+    parser.add_argument(
+        "--licensing-or-provenance-constraints",
+        default=DEFAULT_LICENSING_OR_PROVENANCE_CONSTRAINTS,
+        help="Product finish contract licensing_or_provenance_constraints value to record in the canonical brief.",
+    )
+    parser.add_argument(
+        "--finish-acceptance-signals",
+        default=DEFAULT_FINISH_ACCEPTANCE_SIGNALS,
+        help="Product finish contract finish_acceptance_signals value to record in the canonical brief.",
+    )
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
     return parser.parse_args()
 
@@ -393,6 +775,7 @@ def main() -> int:
         ensure_idempotent_target(dest_root)
 
     slug = args.project_slug or slugify(args.project_name)
+    package_name = normalize_android_package_name(slug)
     agent_prefix = args.agent_prefix or slug
     planner_model = args.planner_model
     implementer_model = args.implementer_model
@@ -402,6 +785,7 @@ def main() -> int:
     replacements = {
         "__PROJECT_NAME__": args.project_name,
         "__PROJECT_SLUG__": slug,
+        "__PACKAGE_NAME__": package_name,
         "__AGENT_PREFIX__": agent_prefix,
         "__MODEL_TIER__": args.model_tier,
         "__MODEL_PROVIDER__": args.model_provider,
@@ -418,16 +802,38 @@ def main() -> int:
         "__MODEL_PROMPT_DENSITY__": model_profile["prompt_density"],
         "__MODEL_OPERATING_PROFILE_RULES__": model_profile["rules"],
         "__STACK_LABEL__": args.stack_label,
+        "__DELIVERABLE_KIND__": args.deliverable_kind,
+        "__PLACEHOLDER_POLICY__": args.placeholder_policy,
+        "__VISUAL_FINISH_TARGET__": args.visual_finish_target,
+        "__AUDIO_FINISH_TARGET__": args.audio_finish_target,
+        "__CONTENT_SOURCE_PLAN__": args.content_source_plan,
+        "__LICENSING_OR_PROVENANCE_CONSTRAINTS__": args.licensing_or_provenance_constraints,
+        "__FINISH_ACCEPTANCE_SIGNALS__": args.finish_acceptance_signals,
     }
     validate_replacement_values(replacements)
 
     dest_root.mkdir(parents=True, exist_ok=True)
     created = copy_template(template_root, dest_root, replacements, args.scope, args.force)
+    ensure_godot_android_completion_tickets(
+        dest_root,
+        slug,
+        args.stack_label,
+        deliverable_kind=args.deliverable_kind,
+    )
+    ensure_finish_ownership_tickets(
+        dest_root,
+        placeholder_policy=args.placeholder_policy,
+        visual_finish_target=args.visual_finish_target,
+        audio_finish_target=args.audio_finish_target,
+        content_source_plan=args.content_source_plan,
+        finish_acceptance_signals=args.finish_acceptance_signals,
+    )
     ensure_state_directories(dest_root)
     write_bootstrap_provenance(
         dest_root,
         project_name=args.project_name,
         project_slug=slug,
+        package_name=package_name,
         agent_prefix=agent_prefix,
         scope=args.scope,
         model_tier=args.model_tier,
@@ -436,6 +842,13 @@ def main() -> int:
         implementer_model=implementer_model,
         utility_model=utility_model,
         stack_label=args.stack_label,
+        deliverable_kind=args.deliverable_kind,
+        placeholder_policy=args.placeholder_policy,
+        visual_finish_target=args.visual_finish_target,
+        audio_finish_target=args.audio_finish_target,
+        content_source_plan=args.content_source_plan,
+        licensing_or_provenance_constraints=args.licensing_or_provenance_constraints,
+        finish_acceptance_signals=args.finish_acceptance_signals,
     )
 
     print(f"Rendered {len(created)} files into {dest_root}")

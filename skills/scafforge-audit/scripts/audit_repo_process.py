@@ -1103,15 +1103,54 @@ def normalize_restart_surface_value(value: Any) -> Any:
     return text
 
 
-def _detect_python(root: Path) -> str | None:
-    """Return the Python executable to use for this repo (repo-local .venv > python3 > python)."""
-    for candidate in (
+def _venv_interpreter_candidates(root: Path) -> list[Path]:
+    """Return ordered list of expected interpreter paths inside the repo-local venv."""
+    return [
         root / ".venv" / "bin" / "python",
         root / ".venv" / "Scripts" / "python.exe",
         root / ".venv" / "Scripts" / "python",
-    ):
+    ]
+
+
+def _check_repo_python_env_health(root: Path) -> str | None:
+    """Return a descriptive error string when the repo-local `.venv` is broken, or None when healthy or absent.
+
+    A venv is considered broken when the `.venv` directory exists but no working Python
+    interpreter is found inside it. This is distinct from the venv simply not existing.
+    """
+    venv_dir = root / ".venv"
+    if not venv_dir.exists():
+        return None
+    for candidate in _venv_interpreter_candidates(root):
         if candidate.exists():
-            return str(candidate)
+            rc, output = _run([str(candidate), "--version"], root, timeout=5)
+            if rc == 0:
+                return None
+            return (
+                f".venv interpreter exists at {candidate.relative_to(root)} "
+                f"but fails to execute (exit {rc}): {output.strip()[:120]}"
+            )
+    return (
+        f".venv directory exists at {venv_dir.relative_to(root)} but no Python interpreter "
+        "was found at the expected paths (bin/python, Scripts/python.exe)."
+    )
+
+
+def _detect_python(root: Path) -> str | None:
+    """Return the Python executable to use for this repo (repo-local .venv > python3 > python).
+
+    When the repo has a `.venv` that is broken (exists but interpreter is non-functional),
+    return None instead of falling through to system Python. Callers should emit EXEC-ENV-001
+    before consulting detect_python so broken-venv state is a first-class finding.
+    """
+    for candidate in _venv_interpreter_candidates(root):
+        if candidate.exists():
+            rc, _ = _run([str(candidate), "--version"], root, timeout=5)
+            if rc == 0:
+                return str(candidate)
+            # venv interpreter is broken — do not fall through to system Python
+            return None
+    # No venv at all — fall through to system Python
     for candidate in ("python3", "python"):
         rc, _ = _run([candidate, "--version"], root, timeout=5)
         if rc == 0:
@@ -1121,11 +1160,7 @@ def _detect_python(root: Path) -> str | None:
 
 def _detect_pytest_command(root: Path) -> list[str] | None:
     """Return the pytest command to use for this repo."""
-    for venv_python in (
-        root / ".venv" / "bin" / "python",
-        root / ".venv" / "Scripts" / "python.exe",
-        root / ".venv" / "Scripts" / "python",
-    ):
+    for venv_python in _venv_interpreter_candidates(root):
         if not venv_python.exists():
             continue
         rc, _ = _run([str(venv_python), "-m", "pytest", "--version"], root, timeout=5)
@@ -1158,6 +1193,7 @@ def execution_surface_audit_context() -> ExecutionSurfaceAuditContext:
         detect_python=_detect_python,
         detect_pytest_command=_detect_pytest_command,
         run_command=lambda argv, cwd, timeout: _run(argv, cwd, timeout=timeout),
+        is_venv_broken=_check_repo_python_env_health,
     )
 
 

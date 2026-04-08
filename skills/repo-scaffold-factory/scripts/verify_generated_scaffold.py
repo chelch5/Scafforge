@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 import sys
 
+from android_scaffold import has_managed_android_support_surface, repo_declares_godot_android
+
 
 SHARED_VERIFIER_PATH = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts" / "shared_verifier.py"
 SHARED_TYPES_PATH = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts" / "shared_verifier_types.py"
@@ -198,12 +200,47 @@ def project_name_consistency_findings(repo_root: Path) -> list[object]:
     return []
 
 
+def _is_godot_android_target(repo_root: Path) -> bool:
+    return repo_declares_godot_android(repo_root)
+
+
+def godot_android_export_surface_findings(repo_root: Path) -> list[object]:
+    """Fail when a Godot Android repo is missing its repo-managed Android surfaces."""
+    if not _is_godot_android_target(repo_root):
+        return []
+    missing: list[str] = []
+    export_presets_path = repo_root / "export_presets.cfg"
+    if not export_presets_path.exists():
+        missing.append("export_presets.cfg")
+    if not has_managed_android_support_surface(repo_root):
+        missing.append("android/scafforge-managed.json")
+    if not missing:
+        return []
+    return [
+        scaffold_finding(
+            code="SCAFFOLD-005",
+            problem="A Godot Android scaffold is missing one or more repo-managed Android surfaces.",
+            root_cause=(
+                "Scafforge owns the repo-managed Android export preset and managed android support metadata. "
+                "The scaffold must emit both surfaces when the brief declares a Godot Android target."
+            ),
+            files=missing,
+            safer_pattern=(
+                "Render export_presets.cfg and android/scafforge-managed.json from the canonical Scafforge templates during scaffold generation "
+                "and fail verification when either repo-managed Android surface is absent."
+            ),
+            evidence=[f"Missing managed Android surfaces: {', '.join(missing)}"],
+        )
+    ]
+
+
 def scaffold_content_findings(repo_root: Path) -> list[object]:
     return [
         *placeholder_findings(repo_root),
         *json_validity_findings(repo_root),
         *agent_reference_findings(repo_root),
         *project_name_consistency_findings(repo_root),
+        *godot_android_export_surface_findings(repo_root),
     ]
 
 

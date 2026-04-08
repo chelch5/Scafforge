@@ -21,6 +21,7 @@ export type ArtifactVerdictInspection = {
 export type ArtifactTrustState = "current" | "superseded" | "invalidated"
 export type DefectOutcome = "no_action" | "follow_up" | "invalidates_done" | "rollback_required"
 export type TicketSourceMode = "process_verification" | "post_completion_issue" | "net_new_scope" | "split_scope"
+export type SplitKind = "parallel_independent" | "sequential_dependent"
 export type RepairFollowOnOutcome = "managed_blocked" | "source_follow_up" | "clean"
 
 export type Artifact = {
@@ -57,6 +58,7 @@ export type Ticket = {
   source_ticket_id?: string
   follow_up_ticket_ids: string[]
   source_mode?: TicketSourceMode
+  split_kind?: SplitKind
 }
 
 export type Manifest = {
@@ -219,6 +221,7 @@ export type NewTicketSpec = {
   finding_source?: string
   source_ticket_id?: string
   source_mode?: TicketSourceMode
+  split_kind?: SplitKind
 }
 
 const TICKET_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
@@ -592,6 +595,10 @@ function migrateTicket(raw: unknown): Ticket {
       || ticket.source_mode === "net_new_scope"
       || ticket.source_mode === "split_scope"
         ? ticket.source_mode
+        : undefined,
+    split_kind:
+      ticket.split_kind === "parallel_independent" || ticket.split_kind === "sequential_dependent"
+        ? ticket.split_kind
         : undefined,
   }
 }
@@ -1114,6 +1121,69 @@ export function splitScopeChildren(manifest: Manifest, ticketId: string): Ticket
 export function openSplitScopeChildren(manifest: Manifest, ticketId: string): Ticket[] {
   return splitScopeChildren(manifest, ticketId).filter((item) => item.status !== "done" && item.resolution_state !== "superseded")
 }
+export function openSequentialSplitChildren(manifest: Manifest, ticketId: string): Ticket[] {
+  return openSplitScopeChildren(manifest, ticketId).filter((item) => item.split_kind === "sequential_dependent")
+}
+export function openParallelSplitChildren(manifest: Manifest, ticketId: string): Ticket[] {
+  return openSplitScopeChildren(manifest, ticketId).filter((item) => item.split_kind === "parallel_independent")
+}
+
+// Ordered list of lifecycle stages used for stale-stage comparison.
+const ORDERED_LIFECYCLE_STAGES = ["planning", "plan_review", "implementation", "review", "qa", "smoke-test", "closeout"] as const
+
+export type StaleStageReconciliation = {
+  stale: boolean
+  manifest_stage: string
+  evidenced_stage: string | null
+  recovery_action: string | null
+}
+
+/**
+ * Determines whether the ticket's manifest stage is behind what current artifact evidence
+ * would justify.  Returns a recovery action when artifact evidence and stage/state disagree.
+ *
+ * This helper is intentionally read-only — it never mutates manifest or workflow state.
+ * The team leader must confirm and execute the recovery action explicitly.
+ */
+export function reconcileStaleStageIfNeeded(ticket: Ticket): StaleStageReconciliation {
+  const manifestStage = ticket.stage
+  const manifestIdx = ORDERED_LIFECYCLE_STAGES.indexOf(manifestStage as typeof ORDERED_LIFECYCLE_STAGES[number])
+
+  // Walk stages in reverse order: find the highest stage with a current artifact
+  let highestEvidencedStage: string | null = null
+  for (let i = ORDERED_LIFECYCLE_STAGES.length - 1; i >= 0; i--) {
+    const candidateStage = ORDERED_LIFECYCLE_STAGES[i]
+    const artifact = latestArtifact(ticket, { stage: candidateStage, trust_state: "current" })
+    if (artifact) {
+      highestEvidencedStage = candidateStage
+      break
+    }
+  }
+
+  if (!highestEvidencedStage) {
+    return { stale: false, manifest_stage: manifestStage, evidenced_stage: null, recovery_action: null }
+  }
+
+  const evidencedIdx = ORDERED_LIFECYCLE_STAGES.indexOf(highestEvidencedStage as typeof ORDERED_LIFECYCLE_STAGES[number])
+
+  if (evidencedIdx <= manifestIdx) {
+    // Artifact evidence does not outpace the manifest stage — no drift.
+    return { stale: false, manifest_stage: manifestStage, evidenced_stage: highestEvidencedStage, recovery_action: null }
+  }
+
+  // Artifact evidence is ahead of the manifest stage — stale-stage condition detected.
+  const expectedStatus = STAGE_DEFAULT_STATUS[highestEvidencedStage] ?? "in_progress"
+  const recovery = (
+    `Stale-stage drift detected: manifest stage is "${manifestStage}" but a current "${highestEvidencedStage}" artifact exists. ` +
+    `Run ticket_update with { stage: "${highestEvidencedStage}", status: "${expectedStatus}" } to align the manifest with the artifact evidence before resuming lifecycle routing.`
+  )
+  return {
+    stale: true,
+    manifest_stage: manifestStage,
+    evidenced_stage: highestEvidencedStage,
+    recovery_action: recovery,
+  }
+}
 
 export async function validateHandoffNextAction(manifest: Manifest, workflow: WorkflowState, nextAction: string, root = rootPath()): Promise<string | null> {
   const trimmed = nextAction.trim()
@@ -1344,6 +1414,7 @@ export function createTicketRecord(spec: NewTicketSpec): Ticket {
     source_ticket_id: spec.source_ticket_id?.trim() || undefined,
     follow_up_ticket_ids: [],
     source_mode: spec.source_mode,
+    split_kind: spec.split_kind,
   }
 }
 
