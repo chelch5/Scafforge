@@ -1561,7 +1561,18 @@ export function ticketNeedsTrustRestoration(ticket: Ticket, workflow: WorkflowSt
   return getTicketWorkflowState(workflow, ticket.id).needs_reverification === true
 }
 export function hasPendingRepairFollowOn(workflow: WorkflowState): boolean {
-  return workflow.repair_follow_on.outcome === "managed_blocked"
+  if (workflow.repair_follow_on.outcome !== "managed_blocked") return false
+  // Auto-resolve: if all required stages are completed, treat as resolved
+  const rfo = workflow.repair_follow_on
+  if (
+    Array.isArray(rfo.required_stages) &&
+    Array.isArray(rfo.completed_stages) &&
+    rfo.required_stages.length > 0 &&
+    rfo.required_stages.every((s: string) => rfo.completed_stages.includes(s))
+  ) {
+    return false
+  }
+  return true
 }
 /**
  * Returns true when the repair cycle has explicitly authorised `ticketId` for
