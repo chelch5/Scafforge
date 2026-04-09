@@ -140,19 +140,35 @@ def regenerate_android_surfaces(repo_root: Path) -> dict[str, Any]:
     project_godot = repo_root / "project.godot"
     if project_godot.exists():
         godot_text = project_godot.read_text(encoding="utf-8")
-        correct_setting = "textures/vram_compression/import_etc2_astc=true"
-        needs_etc2_fix = correct_setting not in godot_text
-        # Also fix the wrong path (vram_compression/import_etc2_astc without textures/ prefix)
-        wrong_setting = "vram_compression/import_etc2_astc=true"
-        if needs_etc2_fix:
-            # Remove any incorrect entries first
-            if wrong_setting in godot_text and "textures/" + wrong_setting not in godot_text:
-                godot_text = godot_text.replace(wrong_setting, correct_setting)
-            elif "[rendering]" in godot_text:
-                godot_text = godot_text.replace("[rendering]", "[rendering]\n" + correct_setting)
+        lines = godot_text.split("\n")
+        correct_line = "textures/vram_compression/import_etc2_astc=true"
+        # Check if correct setting exists under [rendering] section
+        in_rendering = False
+        has_correct = False
+        wrong_lines: list[int] = []
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                in_rendering = stripped == "[rendering]"
+            elif "import_etc2_astc" in stripped:
+                if in_rendering and stripped == correct_line:
+                    has_correct = True
+                else:
+                    wrong_lines.append(i)
+        if not has_correct:
+            # Remove any wrongly-placed entries
+            for idx in reversed(wrong_lines):
+                lines.pop(idx)
+            # Remove empty [textures] section if it was only holding the ETC2 setting
+            cleaned = "\n".join(lines)
+            import re
+            cleaned = re.sub(r'\n\[textures\]\s*\n(?=\n|\[|$)', '\n', cleaned)
+            # Add correct entry under [rendering]
+            if "[rendering]" in cleaned:
+                cleaned = cleaned.replace("[rendering]", "[rendering]\n" + correct_line, 1)
             else:
-                godot_text += "\n[rendering]\n" + correct_setting + "\n"
-            project_godot.write_text(godot_text, encoding="utf-8")
+                cleaned += "\n[rendering]\n" + correct_line + "\n"
+            project_godot.write_text(cleaned, encoding="utf-8")
             regenerated.append("project.godot (ETC2/ASTC)")
 
     if not regenerated:
