@@ -1016,6 +1016,41 @@ def audit_godot_project_version(root: Path, findings: list[Finding], ctx: Execut
     )
 
 
+def audit_godot_android_export_readiness(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
+    """Check that Godot projects targeting Android have correct export configuration."""
+    project_file = root / "project.godot"
+    export_presets_file = root / "export_presets.cfg"
+    if not project_file.exists():
+        return
+    project_text = ctx.read_text(project_file)
+    issues: list[str] = []
+
+    # Check for ETC2/ASTC texture compression (required for Android export on Linux hosts)
+    if export_presets_file.exists():
+        presets_text = ctx.read_text(export_presets_file)
+        if 'platform="Android"' in presets_text:
+            if "import_etc2_astc" not in project_text:
+                issues.append("project.godot missing textures/vram_compression/import_etc2_astc=true (required for Android export on non-mobile hosts)")
+            # Check preset name matches expected format
+            if 'name="Android Debug"' not in presets_text and 'name="Android"' in presets_text:
+                issues.append("export_presets.cfg uses preset name 'Android' instead of 'Android Debug' — headless export command must match exactly")
+
+    if not issues:
+        return
+    _add_execution_finding(
+        findings,
+        ctx,
+        code="GODOT-ANDROID-001",
+        severity="error",
+        problem="Godot Android export configuration is incomplete.",
+        root_cause="Android APK export requires ETC2/ASTC texture compression enabled in project.godot and correctly named export presets. Without these, headless export fails with empty 'configuration errors'.",
+        files=[project_file, export_presets_file],
+        safer_pattern="Ensure project.godot includes [rendering] textures/vram_compression/import_etc2_astc=true and export_presets.cfg uses 'Android Debug' as the preset name.",
+        evidence=issues,
+        root=root,
+    )
+
+
 def audit_java_android_execution(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
     indicators = [path for path in (root / "build.gradle", root / "build.gradle.kts", root / "pom.xml") if path.exists()]
     if not indicators:
@@ -1170,6 +1205,7 @@ def run_execution_surface_audits(root: Path, findings: list[Finding], ctx: Execu
     audit_go_execution(root, findings, ctx)
     audit_godot_execution(root, findings, ctx)
     audit_godot_project_version(root, findings, ctx)
+    audit_godot_android_export_readiness(root, findings, ctx)
     audit_java_android_execution(root, findings, ctx)
     audit_cpp_execution(root, findings, ctx)
     audit_dotnet_execution(root, findings, ctx)

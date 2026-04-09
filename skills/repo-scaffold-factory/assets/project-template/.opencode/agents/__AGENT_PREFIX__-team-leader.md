@@ -254,3 +254,22 @@ Additional fields for verifier and migration-follow-up routing:
 - to `__AGENT_PREFIX__-backlog-verifier`: include the exact done ticket id, the current process-change summary, and instruct it to call `ticket_lookup` with `include_artifact_contents: true`
 - to `__AGENT_PREFIX__-ticket-creator`: include the new ticket id, title, lane, wave, summary, acceptance criteria, source ticket id, verification artifact path, and any decision blockers
 - to `__AGENT_PREFIX__-lane-executor` or `__AGENT_PREFIX__-implementer`: include the claimed ticket id, lane, allowed paths, and the artifact path it must populate before handoff
+
+## Godot Android Export Requirements
+
+When this project targets Android (Godot game):
+
+1. **project.godot** must include under `[rendering]`:
+   ```
+   textures/vram_compression/import_etc2_astc=true
+   ```
+   Without this, APK export fails silently on Linux hosts.
+
+2. **export_presets.cfg** preset name must be `"Android Debug"` (not just `"Android"`).
+
+3. Export command: `godot4 --headless --path . --export-debug "Android Debug" build/android/<slug>-debug.apk`
+
+4. Environment discovery (use bash, not glob — glob is project-scoped):
+   - `JAVA_HOME`: check `echo $JAVA_HOME` or `/etc/profile.d/java.sh`
+   - `ANDROID_HOME`: check `echo $ANDROID_HOME`
+   - Debug keystore: check editor settings at `~/.config/godot/editor_settings-*.tres`
