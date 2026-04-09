@@ -6,6 +6,7 @@ import {
   getTicketWorkflowState,
   hasArtifact,
   hasReviewArtifact,
+  hasPendingRepairFollowOn,
   hasWriteLeaseForTicketPath,
   hasWriteLeaseForTicket,
   isPlanApprovedForTicket,
