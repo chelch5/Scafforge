@@ -113,6 +113,36 @@ export const StageGateEnforcer: Plugin = async () => {
       const workflow = await loadWorkflowState().catch(() => undefined)
       if (!workflow) return
 
+      // RC-001: Block lifecycle-advancing tools when managed_blocked is active.
+      // ticket_lookup, ticket_release, lease_cleanup, context_snapshot, and
+      // read-only tools are always allowed so the agent can inspect state.
+      const MANAGED_BLOCKED_ALLOWED_TOOLS = new Set([
+        "ticket_lookup", "ticket_release", "lease_cleanup",
+        "context_snapshot", "skill_ping", "environment_bootstrap",
+        "handoff_publish", "repair_follow_on_refresh",
+      ])
+      if (
+        hasPendingRepairFollowOn(workflow) &&
+        !MANAGED_BLOCKED_ALLOWED_TOOLS.has(input.tool) &&
+        input.tool !== "bash" && input.tool !== "read" &&
+        input.tool !== "glob" && input.tool !== "grep" &&
+        input.tool !== "list" && input.tool !== "write" &&
+        input.tool !== "edit"
+      ) {
+        const nextStage = workflow.repair_follow_on.required_stages.find(
+          (stage: string) => !new Set(workflow.repair_follow_on.completed_stages).has(stage)
+        ) || "unknown"
+        const reason = workflow.repair_follow_on.blocking_reasons[0] || "repair follow-on incomplete"
+        throwWorkflowBlocker(
+          "BLOCKER",
+          "managed_blocked_active",
+          `Repair follow-on is managed_blocked. Next required stage: ${nextStage}. Reason: ${reason}. ` +
+          `Do not continue normal lifecycle — report this blocker to the operator.`,
+          "ticket_lookup",
+          {}
+        )
+      }
+
       const activeApprovedPlan = isPlanApprovedForTicket(workflow, workflow.active_ticket)
 
       if (input.tool === "bash") {

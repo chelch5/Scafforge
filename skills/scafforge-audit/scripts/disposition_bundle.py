@@ -37,6 +37,8 @@ def disposition_class_for_finding(finding: Finding) -> str:
         return "process_state_only"
     if code.startswith(("ENV", "BOOT", "CYCLE", "SESSION", "SKILL", "MODEL")):
         return "manual_prerequisite_blocker"
+    if code.startswith("CONFIG"):
+        return "managed_blocker"
     if code.startswith("WFLOW"):
         return "managed_blocker"
     return "managed_blocker" if severity in {"error", "warning"} else "advisory"

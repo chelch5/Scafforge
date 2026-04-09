@@ -17,6 +17,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from audit_contract_surfaces import ContractSurfaceAuditContext, run_contract_surface_audits
+from audit_config_surfaces import ConfigSurfaceAuditContext, run_config_surface_audits
 from audit_execution_surfaces import ExecutionSurfaceAuditContext, run_execution_surface_audits
 from audit_lifecycle_contracts import LifecycleContractAuditContext, run_lifecycle_contract_audits
 from audit_repair_cycles import RepairCycleAuditContext, run_repair_cycle_audits
@@ -1323,7 +1324,9 @@ def audit_repo(root: Path, logs: list[Path] | None = None) -> list[Finding]:
     ticket_graph_ctx = ticket_graph_audit_context()
     lifecycle_ctx = lifecycle_contract_audit_context()
     repair_cycle_ctx = repair_cycle_audit_context()
+    config_ctx = ConfigSurfaceAuditContext(repo_root=root, findings=findings)
     run_contract_surface_audits(root, findings, contract_ctx)
+    run_config_surface_audits(root, findings, config_ctx)
     run_execution_surface_audits(root, findings, execution_ctx)
     run_restart_surface_audits(root, findings, restart_ctx)
     run_ticket_graph_audits(root, findings, ticket_graph_ctx)

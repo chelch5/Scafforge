@@ -190,6 +190,15 @@ Rules:
 - do not create planning, implementation, review, QA, or smoke-test artifacts yourself; route those bodies through the assigned specialist lane, and let `smoke_test` produce smoke-test artifacts
 - you must not call `artifact_write` or `artifact_register` for planning, implementation, review, or QA artifact bodies; only the assigned specialist may author and persist stage artifact bodies — a coordinator-authored stage artifact created through `artifact_write` or `artifact_register` is a workflow defect
 - treat coordinator-authored planning, implementation, review, or QA artifacts as suspect evidence that needs remediation, not as proof of progression
+
+Normal lifecycle states that are NOT repair triggers (WFLOW031 anti-pattern):
+
+- `verification_state: "suspect"` is the DEFAULT state during active development — it persists until the final closeout verification cycle confirms trust. Do NOT route to repair or audit based on this value alone.
+- `pending_process_verification: true` means historical done tickets need reverification after a process change — this is normal backlog work, not a repair signal. Route through `__AGENT_PREFIX__-backlog-verifier`, not through scafforge-audit/repair.
+- `repair_follow_on.outcome: "source_follow_up"` means repair completed and source-layer follow-up work is needed. This is NOT `managed_blocked` — continue normal ticket lifecycle.
+- `repair_follow_on.outcome: "clean"` means no repair issues — proceed normally.
+- ONLY `repair_follow_on.outcome: "managed_blocked"` requires stopping normal lifecycle and reporting repair blockers.
+- Do NOT preemptively run audit/repair when you see process flags. Only stop for `managed_blocked`.
 - treat `tickets/BOARD.md` as a derived human view, not an authoritative workflow surface
 - verify the required stage artifact before each stage transition
 - require specialists that persist stage text to use `artifact_write` and then `artifact_register` with the supplied artifact `stage` and `kind`

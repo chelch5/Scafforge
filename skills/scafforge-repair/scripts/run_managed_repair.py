@@ -1142,10 +1142,13 @@ def main() -> int:
         recorded_execution_stage_list = recorded_execution_stage_names(tracking_state)
         invalidated_recorded_stage_list = invalidated_recorded_stage_names(tracking_state)
         completed_stage_name_set = set(persisted_completed_stage_names)
-        if not args.skip_deterministic_refresh:
-            completed_stage_name_set.add("deterministic-refresh")
+        # RC-002: deterministic-refresh is a repair-internal operation, not a
+        # follow-on stage.  Track it as a flag in the execution record but do
+        # NOT inject it into completed_stage_name_set (which is validated
+        # against FOLLOW_ON_STAGE_CATALOG).
+        deterministic_refresh_ran = not args.skip_deterministic_refresh
 
-        executed_stages = [{"stage": "deterministic-refresh", "status": "completed"}] if not args.skip_deterministic_refresh else []
+        executed_stages = [{"stage": "deterministic-refresh", "status": "completed", "internal_only": True}] if deterministic_refresh_ran else []
         for stage in requested_stage_names:
             executed_stages.append({"stage": stage, "status": "asserted_completed", "completion_mode": "legacy_manual_assertion"})
 
