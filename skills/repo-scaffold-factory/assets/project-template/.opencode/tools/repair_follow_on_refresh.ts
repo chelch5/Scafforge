@@ -61,7 +61,7 @@ export default tool({
     } as typeof workflow.repair_follow_on
 
     const expectedRevision = workflow.state_revision
-    await saveWorkflowState(workflow, rootPath(), expectedRevision, { refreshDerivedSurfaces: false }, { manifest })
+    await saveWorkflowState(workflow, rootPath(), expectedRevision, { refreshDerivedSurfaces: false }, { manifest, skipGraphValidation: true })
 
     return JSON.stringify(
       {

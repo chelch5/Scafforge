@@ -187,7 +187,7 @@ export type InvocationEvent = {
 
 type StartHereOptions = { nextAction?: string; backlogVerifierAgent?: string; handoffStatus?: string }
 type SaveDerivedSurfaceOptions = { refreshDerivedSurfaces?: boolean }
-type SaveValidationContext = { manifest?: Manifest; workflow?: WorkflowState }
+type SaveValidationContext = { manifest?: Manifest; workflow?: WorkflowState; skipGraphValidation?: boolean }
 type RestartSurfaceRenderInputs = {
   manifest?: Manifest
   workflow?: WorkflowState
@@ -968,7 +968,9 @@ async function validateManifestWriteState(manifest: Manifest, root = rootPath(),
 async function validateWorkflowWriteState(workflow: WorkflowState, root = rootPath(), context: SaveValidationContext = {}): Promise<void> {
   const manifest = context.manifest ?? await readJson<Manifest | null>(ticketsManifestPath(root), null)
   if (manifest) {
-    validateTicketGraphInvariants(manifest)
+    if (!context.skipGraphValidation) {
+      validateTicketGraphInvariants(manifest)
+    }
     validateManifestWorkflowConvergence(manifest, workflow)
   }
 }

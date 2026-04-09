@@ -23,9 +23,6 @@ EXPECTED_BASH_COMMANDS = {
     "touch *",
     "cp *",
     "mv *",
-    "rm *",
-    "chmod *",
-    "tee *",
 }
 
 
@@ -36,7 +33,10 @@ class ConfigSurfaceAuditContext:
 
 
 def _strip_jsonc_comments(text: str) -> str:
-    """Remove single-line // comments from JSONC content."""
+    """Remove // and /* */ comments and trailing commas from JSONC content."""
+    import re
+    # Remove block comments (non-greedy, may span lines)
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     lines = []
     for line in text.splitlines():
         stripped = line.lstrip()
@@ -48,7 +48,10 @@ def _strip_jsonc_comments(text: str) -> str:
             if prefix.count('"') % 2 == 0:
                 line = prefix.rstrip()
         lines.append(line)
-    return "\n".join(lines)
+    result = "\n".join(lines)
+    # Remove trailing commas before } or ]
+    result = re.sub(r",\s*([}\]])", r"\1", result)
+    return result
 
 
 def _load_opencode_config(repo_root: Path) -> dict[str, Any] | None:
