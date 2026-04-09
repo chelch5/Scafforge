@@ -131,15 +131,27 @@ def regenerate_android_surfaces(repo_root: Path) -> dict[str, Any]:
         if existing_text:
             placeholder_repairs += 1
 
-    # Ensure project.godot has ETC2/ASTC compression enabled (required for Android export)
+    # Ensure project.godot has ETC2/ASTC compression enabled (required for Android export).
+    # Godot 4.x checks GLOBAL_GET("rendering/textures/vram_compression/import_etc2_astc"),
+    # so the correct project.godot entry is:
+    #   [rendering]
+    #   textures/vram_compression/import_etc2_astc=true
+    # A common mistake is putting it under [textures] or omitting the textures/ prefix.
     project_godot = repo_root / "project.godot"
     if project_godot.exists():
         godot_text = project_godot.read_text(encoding="utf-8")
-        if "import_etc2_astc" not in godot_text:
-            if "[textures]" in godot_text:
-                godot_text = godot_text.replace("[textures]", "[textures]\nvram_compression/import_etc2_astc=true")
+        correct_setting = "textures/vram_compression/import_etc2_astc=true"
+        needs_etc2_fix = correct_setting not in godot_text
+        # Also fix the wrong path (vram_compression/import_etc2_astc without textures/ prefix)
+        wrong_setting = "vram_compression/import_etc2_astc=true"
+        if needs_etc2_fix:
+            # Remove any incorrect entries first
+            if wrong_setting in godot_text and "textures/" + wrong_setting not in godot_text:
+                godot_text = godot_text.replace(wrong_setting, correct_setting)
+            elif "[rendering]" in godot_text:
+                godot_text = godot_text.replace("[rendering]", "[rendering]\n" + correct_setting)
             else:
-                godot_text += "\n[textures]\nvram_compression/import_etc2_astc=true\n"
+                godot_text += "\n[rendering]\n" + correct_setting + "\n"
             project_godot.write_text(godot_text, encoding="utf-8")
             regenerated.append("project.godot (ETC2/ASTC)")
 

@@ -1029,8 +1029,8 @@ def audit_godot_android_export_readiness(root: Path, findings: list[Finding], ct
     if export_presets_file.exists():
         presets_text = ctx.read_text(export_presets_file)
         if 'platform="Android"' in presets_text:
-            if "import_etc2_astc" not in project_text:
-                issues.append("project.godot missing textures/vram_compression/import_etc2_astc=true (required for Android export on non-mobile hosts)")
+            if "textures/vram_compression/import_etc2_astc" not in project_text:
+                issues.append("project.godot missing textures/vram_compression/import_etc2_astc=true under [rendering] (required for Android export on non-mobile hosts)")
             # Check preset name matches expected format
             if 'name="Android Debug"' not in presets_text and 'name="Android"' in presets_text:
                 issues.append("export_presets.cfg uses preset name 'Android' instead of 'Android Debug' — headless export command must match exactly")
