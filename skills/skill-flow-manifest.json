@@ -2,7 +2,7 @@
   "version": 1,
   "product": "Scafforge",
   "output_profiles": ["opencode"],
-  "optional_extensions": [],
+  "optional_extensions": ["asset-pipeline"],
   "flow_graph_sanity": {
     "single_public_entrypoint": "scaffold-kickoff",
     "all_run_types_end_with": "handoff-brief",
@@ -31,6 +31,21 @@
         "repo-scaffold-factory",
         "repo-scaffold-factory:verify-bootstrap-lane",
         "project-skill-bootstrap:full-greenfield-pass",
+        "opencode-team-bootstrap",
+        "agent-prompt-engineering",
+        "ticket-pack-builder:bootstrap",
+        "repo-scaffold-factory:verify-generated-scaffold",
+        "handoff-brief"
+      ]
+    },
+    "greenfield-game": {
+      "entrypoint": "scaffold-kickoff",
+      "sequence": [
+        "spec-pack-normalizer",
+        "repo-scaffold-factory",
+        "repo-scaffold-factory:verify-bootstrap-lane",
+        "project-skill-bootstrap:full-greenfield-pass",
+        "asset-pipeline:configure",
         "opencode-team-bootstrap",
         "agent-prompt-engineering",
         "ticket-pack-builder:bootstrap",
@@ -210,6 +225,19 @@
       ],
       "upstreams": ["scaffold-kickoff"],
       "downstreams": ["project-skill-bootstrap", "opencode-team-bootstrap", "agent-prompt-engineering", "ticket-pack-builder", "scafforge-repair", "handoff-brief"]
+    },
+    "asset-pipeline": {
+      "owner": "asset-orchestration",
+      "modes": ["configure", "configure_if_needed"],
+      "inputs": ["canonical brief", "project type", "art style", "platform constraints"],
+      "outputs": ["pipeline.json", "asset directory structure", "PROVENANCE.md", "asset briefs", "blender-mcp subagent config"],
+      "required_outputs": [
+        "assets/pipeline.json",
+        "assets/PROVENANCE.md",
+        "asset directory structure"
+      ],
+      "upstreams": ["repo-scaffold-factory", "project-skill-bootstrap"],
+      "downstreams": ["ticket-pack-builder", "handoff-brief"]
     },
     "handoff-brief": {
       "owner": "restart-publication",

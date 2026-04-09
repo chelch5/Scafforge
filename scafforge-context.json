@@ -14,10 +14,11 @@
     "scafforge-audit": { "role": "diagnosis-disposition", "output": "diagnosis pack + disposition bundle" },
     "scafforge-repair": { "role": "runtime-mutation", "output": "managed surface refresh + provenance" },
     "scafforge-pivot": { "role": "pivot-state", "output": "pivot classification + stale-surface map" },
-    "handoff-brief": { "role": "restart-publication", "output": "START-HERE.md + handoff" }
+    "handoff-brief": { "role": "restart-publication", "output": "START-HERE.md + handoff" },
+    "asset-pipeline": { "role": "asset-orchestration", "output": "pipeline config + provenance + asset briefs", "optional": true }
   },
 
-  "run_types": ["greenfield", "retrofit", "managed-repair", "pivot", "diagnosis-review"],
+  "run_types": ["greenfield", "greenfield-game", "retrofit", "managed-repair", "pivot", "diagnosis-review"],
 
   "critical_paths": {
     "stage-gate-enforcer": "skills/repo-scaffold-factory/assets/project-template/.opencode/plugins/stage-gate-enforcer.ts",
@@ -69,7 +70,18 @@
     "copytree_crash": ".venv symlinks crash copytree — FIXED",
     "model_prefix_doubling": "provider/provider/model in rendered output — FIXED",
     "provenance_roundtrip": "stack_label and finish_contract lost on repair — FIXED",
-    "ticket_idempotency": "REMED-RELEASE-GATE duplicate crash — FIXED"
+    "graph_validation_deadlock": "validateTicketGraphInvariants blocks all saves — skipGraphValidation FIXED",
+    "verdict_extraction": "heading-style artifact verdicts not parsed — FIXED",
+    "godot_etc2_astc": "ETC2/ASTC setting path incorrect for Android export — FIXED",
+    "godot_keystore": "empty keystore in export_presets.cfg — FIXED"
+  },
+
+  "asset_pipeline": {
+    "skill": "skills/asset-pipeline/",
+    "routes": ["codex-derived", "free-open", "blender-mcp", "godot-builtin"],
+    "blender_agent": "/home/pc/projects/blender-agent",
+    "blender_binary": "/home/pc/blender-4.5.0/blender",
+    "provenance_validator": "skills/asset-pipeline/scripts/validate_provenance.py"
   },
 
   "environment": {
