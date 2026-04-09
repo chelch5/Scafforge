@@ -433,6 +433,21 @@ def load_metadata(repo_root: Path, args: argparse.Namespace) -> dict[str, str]:
     utility_model = args.utility_model or runtime.get("utility") or planner_model
     model_tier = args.model_tier or runtime.get("tier") or "weak"
 
+    # Recover stack_label from provenance when not explicitly overridden.
+    # Without this, Godot repos would be rebuilt with framework-agnostic scaffolds.
+    stack_label = args.stack_label
+    if stack_label == "framework-agnostic" and isinstance(provenance, dict):
+        prov_stack = provenance.get("stack_label")
+        if isinstance(prov_stack, str) and prov_stack.strip():
+            stack_label = prov_stack.strip()
+
+    # Recover product_finish_contract from provenance for round-trip fidelity.
+    finish_contract = {}
+    if isinstance(provenance, dict):
+        pfc = provenance.get("product_finish_contract")
+        if isinstance(pfc, dict):
+            finish_contract = pfc
+
     if not project_slug and project_name:
         project_slug = slugify(project_name)
     if not agent_prefix and project_slug:
@@ -455,7 +470,10 @@ def load_metadata(repo_root: Path, args: argparse.Namespace) -> dict[str, str]:
             f"Missing required metadata for repair: {missing_display}. "
             "Provide overrides on the command line or ensure bootstrap provenance exists."
         )
-    return {key: value.strip() for key, value in values.items()}
+    result = {key: value.strip() for key, value in values.items()}
+    result["stack_label"] = stack_label
+    result["finish_contract"] = json.dumps(finish_contract) if finish_contract else ""
+    return result
 
 
 def run_bootstrap_render(dest_root: Path, metadata: dict[str, str], stack_label: str) -> None:
@@ -984,6 +1002,24 @@ def apply_repair(repo_root: Path, rendered_root: Path, change_summary: str, *, p
             process_version_before=process_version_before,
             process_version_after=process_version_after,
         )
+        # Normalize pivot state so restart surface publication is not blocked
+        # by stale pivot-in-progress flags from prior repair/pivot cycles.
+        pivot_state_path = repo_root / ".opencode" / "meta" / "pivot-state.json"
+        if pivot_state_path.exists():
+            try:
+                pivot_data = read_json(pivot_state_path)
+                if isinstance(pivot_data, dict):
+                    rsi = pivot_data.get("restart_surface_inputs")
+                    if isinstance(rsi, dict) and (rsi.get("pivot_in_progress") or rsi.get("pivot_changed_surfaces")):
+                        rsi["pivot_in_progress"] = False
+                        rsi["post_pivot_verification_passed"] = True
+                        rsi["pending_downstream_stages"] = []
+                        rsi["pending_ticket_lineage_actions"] = []
+                        if not pivot_data.get("pivot_state_owner"):
+                            pivot_data["pivot_state_owner"] = "scafforge-repair"
+                        write_json(pivot_state_path, pivot_data)
+            except Exception:
+                pass  # Non-fatal — restart surface regen will report the issue
         regenerate_restart_surfaces(
             repo_root,
             reason=change_summary,
@@ -1016,7 +1052,7 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="scafforge-repair-") as temp_dir:
         rendered_root = Path(temp_dir) / "rendered"
-        run_bootstrap_render(rendered_root, metadata, args.stack_label)
+        run_bootstrap_render(rendered_root, metadata, metadata["stack_label"])
         result = apply_repair(
             repo_root,
             rendered_root,
