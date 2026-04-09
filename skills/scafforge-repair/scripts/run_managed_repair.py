@@ -539,10 +539,10 @@ def derive_required_follow_on_stages(
                 "reason": "Prompt behavior changed or remains stale after repair, so the same-session hardening pass is required before handoff.",
             }
         )
-    if any(code.startswith("EXEC") for code in finding_codes) or "WFLOW025" in finding_codes:
+    if any(code.startswith("EXEC") for code in finding_codes) or "WFLOW025" in finding_codes or "WFLOW029" in finding_codes:
         ticket_follow_up_reason = (
             "Repair left remediation, reverification, or target-completion follow-up that must be routed into the repo ticket system."
-            if "WFLOW025" in finding_codes
+            if "WFLOW025" in finding_codes or "WFLOW029" in finding_codes
             else "Repair left remediation or reverification follow-up that must be routed into the repo ticket system."
         )
         required.append(

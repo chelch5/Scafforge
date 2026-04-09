@@ -204,6 +204,30 @@ def next_ticket_wave(tickets: list[dict[str, object]]) -> int:
     return max(waves, default=1) + 1
 
 
+_BOOTSTRAP_RELEASE_INFRA_LANES: frozenset[str] = frozenset(
+    {"android-export", "signing-prerequisites", "release-readiness"}
+)
+
+
+def _bootstrap_terminal_feature_ids(tickets: list[dict[str, object]]) -> list[str]:
+    """Return IDs of all max-wave non-infrastructure tickets present at bootstrap time.
+
+    At bootstrap time no remediation tickets exist yet, so we only need to exclude
+    the three Android infrastructure lanes.  Returns [] when no eligible candidates
+    exist (pure pipeline-proof repos with no feature tickets).
+    """
+    candidates = [
+        t for t in tickets
+        if isinstance(t, dict)
+        and t.get("lane") not in _BOOTSTRAP_RELEASE_INFRA_LANES
+        and int(t.get("wave", 0)) > 0
+    ]
+    if not candidates:
+        return []
+    max_wave = max(int(t.get("wave", 0)) for t in candidates)
+    return [str(t["id"]) for t in candidates if int(t.get("wave", 0)) == max_wave]
+
+
 def requires_packaged_android_delivery(deliverable_kind: str) -> bool:
     lowered = deliverable_kind.lower()
     indicators = (
@@ -323,6 +347,10 @@ def ensure_godot_android_completion_tickets(
                     f"The deliverable-proof artifact path is recorded as build/android/{project_slug}-release.apk",
                 ]
             )
+        release_feature_gate = _bootstrap_terminal_feature_ids(tickets)
+        release_depends_on: list[str] = (
+            ["SIGNING-001"] + release_feature_gate if packaged_delivery else release_feature_gate
+        )
         android_tickets.append(
             {
                 "id": "RELEASE-001",
@@ -335,7 +363,7 @@ def ensure_godot_android_completion_tickets(
                 "status": "todo",
                 "resolution_state": "open",
                 "verification_state": "suspect",
-                "depends_on": [],
+                "depends_on": release_depends_on,
                 "source_ticket_id": "SIGNING-001" if packaged_delivery else "ANDROID-001",
                 "follow_up_ticket_ids": [],
                 "source_mode": "split_scope",

@@ -80,6 +80,33 @@ def next_wave(manifest: dict[str, Any]) -> int:
     return (max(waves) + 1) if waves else 0
 
 
+_REMEDIATION_RELEASE_EXCLUDED_LANES: frozenset[str] = frozenset(
+    {"android-export", "signing-prerequisites", "release-readiness", "remediation", "reverification"}
+)
+
+
+def _terminal_feature_ids_from_manifest(tickets: list[Any], release_ticket_id: str) -> list[str]:
+    """Return IDs of all max-wave non-infrastructure tickets in an existing manifest.
+
+    Excludes infrastructure, remediation, reverification lanes and any ticket whose
+    source_ticket_id points to the release ticket (avoids selecting RELEASE-001 descendants).
+    Returns [] when no eligible candidates exist.
+    """
+    candidates = [
+        t for t in tickets
+        if isinstance(t, dict)
+        and t.get("lane") not in _REMEDIATION_RELEASE_EXCLUDED_LANES
+        and str(t.get("id", "")).strip() != release_ticket_id
+        and str(t.get("source_ticket_id", "")).strip() != release_ticket_id
+        and int(t.get("wave", 0)) > 0
+    ]
+    if not candidates:
+        return []
+    max_wave = max(int(t.get("wave", 0)) for t in candidates)
+    return [str(t["id"]) for t in candidates if int(t.get("wave", 0)) == max_wave]
+
+
+
 def active_open_ticket(manifest: dict[str, Any]) -> dict[str, Any] | None:
     active_ticket_id = manifest.get("active_ticket")
     for ticket in manifest.get("tickets", []):
@@ -246,11 +273,12 @@ def build_android_signing_ticket(*, wave: int, source_ticket_id: str | None) -> 
     }
 
 
-def build_android_release_ticket(*, wave: int, source_ticket_id: str | None, repo_root: Path) -> dict[str, Any]:
+def build_android_release_ticket(*, wave: int, source_ticket_id: str | None, repo_root: Path, feature_gate_ids: list[str] | None = None) -> dict[str, Any]:
     apk_relpath = expected_android_debug_apk_relpath(repo_root)
     export_command = f"godot --headless --path . --export-debug Android {apk_relpath}"
     needs_deliverable = requires_packaged_android_product(repo_root)
-    depends_on: list[str] = [ANDROID_SIGNING_TICKET_ID] if needs_deliverable else []
+    gate_ids: list[str] = list(feature_gate_ids) if feature_gate_ids else []
+    depends_on: list[str] = ([ANDROID_SIGNING_TICKET_ID] + gate_ids) if needs_deliverable else gate_ids
     deliverable_acceptance = [
         "A signed release APK or AAB is produced once signing prerequisites are satisfied via SIGNING-001.",
         f"The signed artifact path is declared in canonical project truth.",
@@ -363,14 +391,103 @@ def ensure_android_target_completion_tickets(
             next_wave(current_manifest if isinstance(current_manifest, dict) else manifest),
             int(android_record.get("wave", 0)) + (2 if needs_deliverable and signing_exists else 1),
         )
+        feature_gate_ids = _terminal_feature_ids_from_manifest(current_tickets, ANDROID_RELEASE_TICKET_ID)
         release_ticket = build_android_release_ticket(
             wave=release_wave,
             source_ticket_id=ANDROID_EXPORT_TICKET_ID,
             repo_root=repo_root,
+            feature_gate_ids=feature_gate_ids,
         )
         create_ticket_via_runtime(repo_root, release_ticket, activate=False)
         created_or_updated.append(ANDROID_RELEASE_TICKET_ID)
+    elif release_exists:
+        patched = patch_release_feature_gate(repo_root=repo_root, manifest_path=manifest_path)
+        created_or_updated.extend(patched)
     return created_or_updated
+
+
+def patch_release_feature_gate(*, repo_root: Path, manifest_path: Path) -> list[str]:
+    """Ensure an existing RELEASE-001 has at least one product feature ticket in depends_on.
+
+    For early-stage tickets (planning / plan_review): patches depends_on directly in manifest.json.
+    For later-stage tickets: creates a REMED ticket documenting the lifecycle state mismatch and
+    the stale QA evidence that must be reviewed before RELEASE-001 can legitimately close.
+
+    Returns a list of ticket IDs that were created or updated.
+    """
+    current_manifest = read_json(manifest_path)
+    current_tickets: list[Any] = current_manifest.get("tickets", []) if isinstance(current_manifest, dict) else []
+
+    release_record = next(
+        (t for t in current_tickets if isinstance(t, dict) and str(t.get("id", "")).strip() == ANDROID_RELEASE_TICKET_ID),
+        None,
+    )
+    if not isinstance(release_record, dict):
+        return []
+
+    terminal_ids = _terminal_feature_ids_from_manifest(current_tickets, ANDROID_RELEASE_TICKET_ID)
+    if not terminal_ids:
+        return []
+
+    existing_deps = {str(d).strip() for d in release_record.get("depends_on", [])}
+    qualified_feature_ids = set(terminal_ids)
+    if existing_deps & qualified_feature_ids:
+        return []  # already has a qualifying feature gate
+
+    release_stage = str(release_record.get("stage", "planning")).strip()
+    early_stages = {"planning", "plan_review"}
+
+    if release_stage in early_stages:
+        # Safe to patch directly: ticket has not yet produced execution evidence
+        new_deps = sorted(existing_deps | qualified_feature_ids)
+        for ticket in current_tickets:
+            if isinstance(ticket, dict) and str(ticket.get("id", "")).strip() == ANDROID_RELEASE_TICKET_ID:
+                ticket["depends_on"] = new_deps
+                break
+        manifest_path.write_text(
+            json.dumps(current_manifest, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return [ANDROID_RELEASE_TICKET_ID]
+
+    # Ticket has already advanced past planning — patching depends_on alone is not safe
+    # because execution artifacts were produced before the feature gate existed.
+    # Create a REMED ticket so the operator can review the lifecycle state mismatch.
+    wave = next_wave(current_manifest if isinstance(current_manifest, dict) else {})
+    remed_id = "REMED-RELEASE-GATE"
+    remed_ticket: dict[str, Any] = {
+        "id": remed_id,
+        "title": "Review and reset RELEASE-001: executed before feature gate was enforced",
+        "wave": wave,
+        "lane": "remediation",
+        "parallel_safe": False,
+        "overlap_risk": "high",
+        "stage": "planning",
+        "status": "todo",
+        "depends_on": [],
+        "summary": (
+            f"RELEASE-001 is at stage '{release_stage}' but has no product feature ticket in its depends_on. "
+            "Its execution and QA artifacts were produced before the feature gate was in place and may be stale. "
+            f"The operator must decide whether to reset RELEASE-001 to planning/todo (adding {sorted(qualified_feature_ids)} to depends_on) "
+            "or supersede it with a new release ticket after the terminal feature tickets are done."
+        ),
+        "acceptance": [
+            f"RELEASE-001.depends_on includes at least one terminal product feature ticket from: {sorted(qualified_feature_ids)}.",
+            "All execution and QA artifacts produced before the feature gate was in place are invalidated or re-confirmed.",
+            "RELEASE-001 lifecycle stage accurately reflects whether terminal product feature tickets are done.",
+        ],
+        "decision_blockers": [],
+        "artifacts": [],
+        "resolution_state": "open",
+        "verification_state": "suspect",
+        "finding_source": "WFLOW029",
+        "source_ticket_id": ANDROID_RELEASE_TICKET_ID,
+        "follow_up_ticket_ids": [],
+        "source_mode": "split_scope",
+        "split_kind": "sequential_dependent",
+    }
+    create_ticket_via_runtime(repo_root, remed_ticket, activate=False)
+    return [remed_id]
 
 
 def parse_args() -> argparse.Namespace:

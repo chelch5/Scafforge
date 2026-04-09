@@ -4703,6 +4703,20 @@ def main() -> int:
             raise RuntimeError(
                 "RELEASE-001 should preserve sequential split-scope lineage to ANDROID-001 when repair creates the Android target-completion ticket pair"
             )
+        _release_infra_lanes = {"android-export", "signing-prerequisites", "release-readiness", "remediation", "reverification"}
+        _feature_ticket_ids = {
+            str(t.get("id", "")).strip()
+            for t in public_repair_android_manifest["tickets"]
+            if isinstance(t, dict)
+            and t.get("lane") not in _release_infra_lanes
+            and int(t.get("wave", 0)) > 0
+        }
+        if _feature_ticket_ids and not (set(release_ticket.get("depends_on", [])) & _feature_ticket_ids):
+            raise RuntimeError(
+                f"RELEASE-001 must depend on at least one product feature ticket. "
+                f"Current depends_on={release_ticket.get('depends_on', [])}, "
+                f"eligible feature tickets={sorted(_feature_ticket_ids)}"
+            )
 
         repeat_dest = workspace / "repeat-cycle"
         shutil.copytree(full_dest, repeat_dest)

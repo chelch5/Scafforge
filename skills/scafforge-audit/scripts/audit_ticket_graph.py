@@ -393,6 +393,66 @@ def audit_completed_parent_split_scope_children(root: Path, findings: list[Findi
     )
 
 
+def audit_release_feature_gate(root: Path, findings: list[Finding], ctx: TicketGraphAuditContext) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    if not manifest_path.exists() or not declares_godot_android_target(root):
+        return
+
+    manifest = load_manifest(root)
+    tickets = manifest.get("tickets", []) if isinstance(manifest, dict) else []
+    ticket_by_id = {str(t.get("id", "")).strip(): t for t in tickets if isinstance(t, dict)}
+
+    release = ticket_by_id.get("RELEASE-001")
+    if not release:
+        return  # WFLOW025 covers the missing RELEASE-001 case
+
+    _EXCLUDED_LANES: frozenset[str] = frozenset(
+        {"android-export", "signing-prerequisites", "release-readiness", "remediation", "reverification"}
+    )
+    feature_ids = {
+        str(t.get("id", "")).strip()
+        for t in tickets
+        if isinstance(t, dict)
+        and t.get("lane") not in _EXCLUDED_LANES
+        and int(t.get("wave", 0)) > 0
+    }
+
+    if not feature_ids:
+        return  # no eligible product feature tickets exist — pure pipeline-proof repo, no gate possible
+
+    release_deps = {str(d).strip() for d in release.get("depends_on", [])}
+    if release_deps & feature_ids:
+        return  # has at least one qualifying feature gate
+
+    ctx.add_finding(
+        findings,
+        Finding(
+            code="WFLOW029",
+            severity="error",
+            problem="RELEASE-001 has no depends_on edge to any product feature ticket.",
+            root_cause=(
+                "RELEASE-001 was generated or created without a dependency on the terminal product feature ticket(s)."
+                " Wave ordering is advisory only; the workflow engine only enforces depends_on edges."
+                " Without a feature gate, agents can claim RELEASE-001 and attempt to build the APK"
+                " before any game features are implemented."
+            ),
+            files=[ctx.normalize_path(manifest_path, root)],
+            safer_pattern=(
+                "RELEASE-001 must declare depends_on edges to all terminal product tickets"
+                " (highest-wave non-infrastructure, non-remediation tickets)."
+                " source_ticket_id records split-scope lineage only and must not appear in depends_on."
+            ),
+            evidence=[
+                f"{ctx.normalize_path(manifest_path, root)}: RELEASE-001.depends_on={release.get('depends_on', [])} "
+                f"contains no qualified product feature ticket.",
+                f"Qualified feature ticket candidates (highest wave among non-excluded lanes): "
+                f"{sorted(feature_ids)}.",
+            ],
+            provenance="script",
+        ),
+    )
+
+
 def run_ticket_graph_audits(root: Path, findings: list[Finding], ctx: TicketGraphAuditContext) -> None:
     audit_closed_ticket_follow_up_deadlock(root, findings, ctx)
     audit_stale_ticket_graph(root, findings, ctx)
@@ -400,3 +460,4 @@ def run_ticket_graph_audits(root: Path, findings: list[Finding], ctx: TicketGrap
     audit_open_ticket_split_routing(root, findings, ctx)
     audit_android_target_completion_backlog(root, findings, ctx)
     audit_completed_parent_split_scope_children(root, findings, ctx)
+    audit_release_feature_gate(root, findings, ctx)

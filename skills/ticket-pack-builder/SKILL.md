@@ -130,7 +130,12 @@ For Godot Android repos, always create:
 - `unzip -l` confirms Android manifest plus compiled classes or resources content
 - when the finish contract requires packaged delivery: a signed release APK or AAB exists and `SIGNING-001` is closed
 
-`RELEASE-001` must depend on `SIGNING-001` when the brief requires packaged delivery. In debug-only mode, `SIGNING-001` is not required and `RELEASE-001` may depend on `ANDROID-001` directly.
+`RELEASE-001` must declare `depends_on` edges to two kinds of prerequisites:
+
+1. **Infrastructure gate**: `SIGNING-001` when the brief requires packaged delivery. In debug-only mode, omit `SIGNING-001`.
+2. **Feature gate (required)**: all terminal product tickets — the highest-wave tickets that are not in infrastructure lanes (`android-export`, `signing-prerequisites`, `release-readiness`) and not in process lanes (`remediation`, `reverification`). When the backlog has no such tickets, note the gap as a decision blocker on `RELEASE-001`.
+
+`source_ticket_id` records split-scope lineage for provenance only. It is **not** a `depends_on` target. The workflow engine forbids a split-scope child from blocking on its `source_ticket_id` (deadlock rule). `RELEASE-001`'s `source_ticket_id` is `ANDROID-001` or `SIGNING-001`; neither must appear in `depends_on`.
 
 Do not let a generic `POLISH-001`, UX, or validation ticket stand in for Android export or release proof ownership.
 
