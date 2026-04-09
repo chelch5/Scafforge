@@ -1,0 +1,83 @@
+{
+  "scafforge_version": "autofixing-branch",
+  "description": "Meta-scaffold package: generates and maintains OpenCode-oriented repo operating frameworks for weak-model reliability",
+  "package_identity": "generator-not-generated",
+  
+  "skills": {
+    "scaffold-kickoff": { "role": "conductor", "is_entrypoint": true },
+    "spec-pack-normalizer": { "role": "intake", "output": "canonical brief" },
+    "repo-scaffold-factory": { "role": "scaffold", "output": "repo skeleton + .opencode layer" },
+    "project-skill-bootstrap": { "role": "local-skills", "output": "repo-local skill pack" },
+    "opencode-team-bootstrap": { "role": "agent-team-design", "output": "project-specific agents" },
+    "agent-prompt-engineering": { "role": "contract-alignment", "output": "hardened agent prompts" },
+    "ticket-pack-builder": { "role": "queue", "output": "tickets + manifest + board" },
+    "scafforge-audit": { "role": "diagnosis-disposition", "output": "diagnosis pack + disposition bundle" },
+    "scafforge-repair": { "role": "runtime-mutation", "output": "managed surface refresh + provenance" },
+    "scafforge-pivot": { "role": "pivot-state", "output": "pivot classification + stale-surface map" },
+    "handoff-brief": { "role": "restart-publication", "output": "START-HERE.md + handoff" }
+  },
+
+  "run_types": ["greenfield", "retrofit", "managed-repair", "pivot", "diagnosis-review"],
+
+  "critical_paths": {
+    "stage-gate-enforcer": "skills/repo-scaffold-factory/assets/project-template/.opencode/plugins/stage-gate-enforcer.ts",
+    "workflow_lib": "skills/repo-scaffold-factory/assets/project-template/.opencode/lib/workflow.ts",
+    "template_root": "skills/repo-scaffold-factory/assets/project-template/",
+    "repair_orchestrator": "skills/scafforge-repair/scripts/run_managed_repair.py",
+    "repair_engine": "skills/scafforge-repair/scripts/apply_repo_process_repair.py",
+    "audit_orchestrator": "skills/scafforge-audit/scripts/audit_repo_process.py",
+    "bootstrap_script": "skills/repo-scaffold-factory/scripts/bootstrap_repo_scaffold.py",
+    "config_audit": "skills/scafforge-audit/scripts/audit_config_surfaces.py",
+    "remediation_follow_up": "skills/ticket-pack-builder/scripts/apply_remediation_follow_up.py",
+    "execution_harness": "scripts/run_agent.sh"
+  },
+
+  "template_placeholders": [
+    "__PROJECT_NAME__", "__PROJECT_SLUG__", "__AGENT_PREFIX__",
+    "__FULL_PLANNER_MODEL__", "__FULL_IMPLEMENTER_MODEL__", "__FULL_UTILITY_MODEL__",
+    "__MODEL_PROVIDER__", "__MODEL_TIER__", "__STACK_LABEL__", "__DELIVERABLE_KIND__"
+  ],
+
+  "generated_repo_structure": {
+    "managed_surfaces": [
+      "opencode.jsonc", ".opencode/plugins/stage-gate-enforcer.ts",
+      ".opencode/lib/workflow.ts", ".opencode/tools/*.ts",
+      ".opencode/agents/*.md", "AGENTS.md"
+    ],
+    "state_files": [
+      ".opencode/state/workflow-state.json",
+      ".opencode/meta/bootstrap-provenance.json",
+      "tickets/manifest.json"
+    ]
+  },
+
+  "ticket_lifecycle": ["planning", "plan_review", "implementation", "review", "qa", "done"],
+
+  "invariants": [
+    "Package surfaces and generated-repo surfaces never collapse together",
+    "All managed surfaces derive from templates",
+    "Repair recovers context from provenance, not defaults",
+    "Stage-gate plugin must never crash (kills all tool calls)",
+    "Repair is idempotent (safe to re-run)"
+  ],
+
+  "known_fixed_issues": {
+    "RC-001": "managed_blocked not enforced — FIXED",
+    "RC-002": "deterministic-refresh injected as stage — FIXED",
+    "RC-005": "WFLOW031 predictive repair trap — FIXED",
+    "import_bug": "hasPendingRepairFollowOn missing import — FIXED",
+    "copytree_crash": ".venv symlinks crash copytree — FIXED",
+    "model_prefix_doubling": "provider/provider/model in rendered output — FIXED",
+    "provenance_roundtrip": "stack_label and finish_contract lost on repair — FIXED",
+    "ticket_idempotency": "REMED-RELEASE-GATE duplicate crash — FIXED"
+  },
+
+  "environment": {
+    "downstream_model": "minimax-coding-plan/MiniMax-M2.7",
+    "codex_model": "gpt-5.4",
+    "opencode_version": "1.3.17",
+    "codex_version": "0.118.0",
+    "global_codex_dir": "/home/pc/.codex",
+    "skills_sync_target": "/home/pc/.codex/skills/"
+  }
+}
