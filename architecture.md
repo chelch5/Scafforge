@@ -196,6 +196,37 @@ This is used by repair to reconstruct the correct template rendering context.
 
 All modes use `< /dev/null` to prevent stdin EBADF errors.
 
+## Smoke Test Tool (Decomposition Planned)
+
+The smoke_test tool (`tools/smoke_test.ts`) is currently a monolithic 810-line module that conflates 8 responsibilities: command detection, execution, failure classification, artifact generation, and orchestration. Key issues:
+
+- **Fail-fast masking**: Stops after first failed command, hiding subsequent failures
+- **No resume checkpoints**: Crashes lose all partial results
+- **Coupled layers**: Rendering, I/O, and diagnosis logic interleaved
+
+Planned decomposition into 5 layers:
+
+| Layer | Responsibility | Status |
+|-------|---------------|--------|
+| CommandDetector | Detect build/test commands per stack | Already mostly isolated |
+| CommandExecutor | Run ALL commands, collect results | Needs fail-fast removal |
+| FailureClassifier | Post-execution diagnosis | Needs extraction |
+| ArtifactGenerator | Markdown rendering + persistence | Needs extraction |
+| SmokeTestOrchestrator | Control flow | New, simplified |
+
+## Asset Pipeline
+
+Extends Scafforge with game/creative asset support via 4 acquisition routes:
+
+| Route | Source | Example |
+|-------|--------|---------|
+| A (codex-derived) | AI-generated via Codex prompts | Procedural sprites |
+| B (free-open) | CC0/CC-BY from Kenney, OpenGameArt | Sourced sprite sheets |
+| C (blender-mcp) | 3D models via blender-agent MCP | Low-poly GLB models |
+| D (godot-builtin) | Godot native features only | Shaders, particles, CSG |
+
+All routes require provenance tracking in `assets/PROVENANCE.md`.
+
 ## Testing
 
 - `tests/` contains validation harnesses
@@ -210,3 +241,5 @@ All modes use `< /dev/null` to prevent stdin EBADF errors.
 3. **Provenance round-trip**: Repair must recover scaffold context from provenance, not defaults
 4. **Idempotent repair**: Running repair twice must not crash or corrupt state
 5. **Stage-gate never crashes**: Plugin errors kill all downstream tool calls
+6. **Smoke all, not fail-fast**: Smoke tests should run all commands before classifying
+7. **Asset provenance**: Every external asset must have a PROVENANCE.md entry
