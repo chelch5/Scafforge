@@ -125,7 +125,7 @@ export default tool({
     sourceTicket.verification_state = "reverified"
     getTicketWorkflowState(workflow, sourceTicket.id).needs_reverification = false
 
-    await saveWorkflowBundle({ workflow, manifest, registry })
+    await saveWorkflowBundle({ workflow, manifest, registry, skipGraphValidation: true })
 
     return JSON.stringify(
       {

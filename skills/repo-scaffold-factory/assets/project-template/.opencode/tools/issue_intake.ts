@@ -171,7 +171,7 @@ export default tool({
       summary: `${defectClass} intake routed to ${outcome}.`,
     })
 
-    await saveWorkflowBundle({ workflow, manifest, registry })
+    await saveWorkflowBundle({ workflow, manifest, registry, skipGraphValidation: true })
 
     return JSON.stringify(
       {

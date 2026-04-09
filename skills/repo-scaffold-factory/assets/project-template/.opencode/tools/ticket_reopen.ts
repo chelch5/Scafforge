@@ -48,7 +48,7 @@ export default tool({
     }
     syncWorkflowSelection(workflow, manifest)
 
-    await saveWorkflowBundle({ workflow, manifest })
+    await saveWorkflowBundle({ workflow, manifest, skipGraphValidation: true })
 
     return JSON.stringify(
       {

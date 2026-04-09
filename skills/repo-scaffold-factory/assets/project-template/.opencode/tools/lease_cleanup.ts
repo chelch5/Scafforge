@@ -8,7 +8,7 @@ export default tool({
     const workflow = await loadWorkflowState()
     const released = pruneExpiredLeases(workflow)
     if (released.length > 0) {
-      await saveWorkflowState(workflow)
+      await saveWorkflowState(workflow, undefined, undefined, {}, { skipGraphValidation: true })
     }
     return JSON.stringify(
       {

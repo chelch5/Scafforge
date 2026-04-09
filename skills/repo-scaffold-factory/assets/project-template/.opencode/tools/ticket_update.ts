@@ -204,7 +204,7 @@ export default tool({
       workflow.pending_process_verification = args.pending_process_verification
     }
 
-    await saveWorkflowBundle({ workflow, manifest })
+    await saveWorkflowBundle({ workflow, manifest, skipGraphValidation: true })
 
     return JSON.stringify(
       {

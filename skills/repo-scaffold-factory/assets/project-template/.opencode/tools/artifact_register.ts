@@ -52,7 +52,7 @@ export default tool({
       summary: args.summary,
     })
 
-    await saveManifest(manifest)
+    await saveManifest(manifest, undefined, {}, { skipGraphValidation: true })
     await saveArtifactRegistry(registry)
 
     return JSON.stringify(

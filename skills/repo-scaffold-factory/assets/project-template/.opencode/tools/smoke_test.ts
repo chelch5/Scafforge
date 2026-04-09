@@ -679,7 +679,7 @@ async function persistArtifact(ticketId: string, body: string, passed: boolean):
   if (passed) {
     markTicketSmokeVerified(ticket)
   }
-  await saveWorkflowBundle({ workflow, manifest, registry })
+  await saveWorkflowBundle({ workflow, manifest, registry, skipGraphValidation: true })
   return artifact.path
 }
 

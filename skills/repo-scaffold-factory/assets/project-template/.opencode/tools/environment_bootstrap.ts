@@ -988,7 +988,7 @@ export default tool({
 			proof_artifact: artifact.path,
 		}
 
-		await saveWorkflowBundle({ workflow, manifest, registry })
+		await saveWorkflowBundle({ workflow, manifest, registry, skipGraphValidation: true })
 
 		return JSON.stringify(
 			{

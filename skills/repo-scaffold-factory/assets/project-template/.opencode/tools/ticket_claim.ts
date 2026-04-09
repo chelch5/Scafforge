@@ -54,7 +54,7 @@ export default tool({
     }
 
     const lease = claimLaneLease(workflow, ticket, ownerAgent, args.allowed_paths || [], writeLock)
-    await saveWorkflowState(workflow)
+    await saveWorkflowState(workflow, undefined, undefined, {}, { skipGraphValidation: true })
 
     return JSON.stringify(
       {

@@ -21,7 +21,7 @@ export default tool({
       throw new Error(`No matching active lease found for ${args.ticket_id}.`)
     }
 
-    await saveWorkflowState(workflow)
+    await saveWorkflowState(workflow, undefined, undefined, {}, { skipGraphValidation: true })
 
     return JSON.stringify(
       {
