@@ -455,6 +455,15 @@ def patch_release_feature_gate(*, repo_root: Path, manifest_path: Path) -> list[
     # Create a REMED ticket so the operator can review the lifecycle state mismatch.
     wave = next_wave(current_manifest if isinstance(current_manifest, dict) else {})
     remed_id = "REMED-RELEASE-GATE"
+
+    # Skip if this remediation ticket already exists (idempotent on re-run).
+    remed_exists = any(
+        isinstance(t, dict) and str(t.get("id", "")).strip() == remed_id
+        for t in current_tickets
+    )
+    if remed_exists:
+        return [remed_id]
+
     remed_ticket: dict[str, Any] = {
         "id": remed_id,
         "title": "Review and reset RELEASE-001: executed before feature gate was enforced",
