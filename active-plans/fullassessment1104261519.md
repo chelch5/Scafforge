@@ -346,17 +346,22 @@ Current remaining repo work:
 Current state:
 
 - tickets: 4 / 21 done
-- active ticket: `MODEL-003`
+- active ticket: `REMED-003`
 - workflow: `implementation / in_progress`
+- `pending_process_verification=true`
 
 Assessment:
 
-- real blocker remains Blender MCP / blender-agent behavior
-- current VersionC evidence suggests the bridge does not yet support the needed persistence / multi-step modeling behavior reliably
+- the live opencode lane now proves a more immediate workflow-tool blocker than the earlier bash-denial report
+- `REMED-003` is stale, but the repo-local `ticket_reconcile` first rejected the current review `source_path` and then blocked `split_scope` supersede because `REMED-001` is already `done` / `reverified`
+- the Scafforge package now fixes that `split_scope` supersede constraint for `supersede_target=true` and has green smoke/contract validation again
+- codex is still usage-blocked, so the downstream repo has not yet consumed the package repair
+- Blender MCP / bridge persistence is still a real VersionC concern, but it is not the active lane's first blocker right now
 
 Unaccounted Scafforge issue:
 
-- Scafforge currently treats the Blender route as more operationally ready than the actual toolchain supports
+- stale `split_scope` remediation children could not be legally superseded from a completed authoritative source ticket until the new package fix
+- the downstream repo still needs codex-driven audit/repair propagation so its generated workflow tools pick up the repaired reconciliation behavior
 
 ## womanvshorseVD
 

@@ -288,20 +288,23 @@ It was direct downstream execution and direct downstream workflow-surface editin
 ### Current repo status
 
 - tickets: **4 / 21 done**
-- active ticket: `MODEL-003`
+- active ticket: `REMED-003`
 - workflow: `implementation / in_progress`
-- `pending_process_verification=false`
+- `pending_process_verification=true`
 
 ### Current blocker state
 
-The real blocker remains the same:
+The immediate live blocker has changed:
 
-- Blender MCP / bridge persistence behavior is not reliable for the intended multi-step modeling flow
-- the lane also reported bash-denial/runtime oddities that do **not** currently look like a simple missing Scafforge allowlist problem
+- the repo-local `ticket_reconcile` tool rejects the stale `REMED-003` closeout even though `REMED-001` already contains the required review evidence for `EXEC-REMED-001`
+- first failure mode in the live lane: the older generated repo tool does not accept the current review `source_path` and only accepts the history-path artifact location
+- second failure mode in the live lane: `split_scope` reconciliation wrongly requires the replacement source ticket to be open/reopened, which blocks superseding a stale child from a completed authoritative source ticket
+- that second defect is now fixed in Scafforge package code and covered by smoke; downstream propagation is waiting on headless codex audit/repair because codex credits are still unavailable in this window
+- Blender MCP persistence remains a real VersionC concern, but it is no longer the first thing blocking the active remediation lane
 
 ### Honest assessment
 
-This repo is far from complete and is still blocked on real tool/runtime issues.
+This repo is still far from complete, but the current foreground blocker is now a Scafforge workflow-tool propagation issue, not just a generic Blender/runtime complaint.
 
 ---
 

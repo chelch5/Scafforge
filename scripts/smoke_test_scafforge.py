@@ -6176,6 +6176,119 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_reconcile should write the canonical reconciliation artifact"
             )
+        historical_supersede_reconcile_dest = (
+            workspace / "executed-ticket-reconcile-historical-supersede"
+        )
+        shutil.copytree(full_dest, historical_supersede_reconcile_dest)
+        historical_manifest_path = (
+            historical_supersede_reconcile_dest / "tickets" / "manifest.json"
+        )
+        historical_workflow_path = (
+            historical_supersede_reconcile_dest
+            / ".opencode"
+            / "state"
+            / "workflow-state.json"
+        )
+        historical_registry_path = (
+            historical_supersede_reconcile_dest
+            / ".opencode"
+            / "state"
+            / "artifacts"
+            / "registry.json"
+        )
+        historical_manifest = json.loads(historical_manifest_path.read_text(encoding="utf-8"))
+        historical_workflow = json.loads(historical_workflow_path.read_text(encoding="utf-8"))
+        historical_source = historical_manifest["tickets"][0]
+        historical_source["stage"] = "closeout"
+        historical_source["status"] = "done"
+        historical_source["resolution_state"] = "done"
+        historical_source["verification_state"] = "reverified"
+        historical_target = {
+            "id": "EXEC-RECON-HIST",
+            "title": "Stale split child",
+            "wave": historical_source["wave"] + 1,
+            "lane": "execution",
+            "parallel_safe": False,
+            "overlap_risk": "low",
+            "stage": "planning",
+            "status": "todo",
+            "depends_on": [],
+            "summary": "Synthetic stale split child for historical supersede reconciliation coverage.",
+            "acceptance": ["Historical split child can be superseded with current evidence."],
+            "decision_blockers": [],
+            "artifacts": [],
+            "resolution_state": "open",
+            "verification_state": "suspect",
+            "source_ticket_id": historical_source["id"],
+            "follow_up_ticket_ids": [],
+            "source_mode": "split_scope",
+            "split_kind": "parallel_independent",
+        }
+        historical_manifest["tickets"].append(historical_target)
+        historical_source["follow_up_ticket_ids"] = ["EXEC-RECON-HIST"]
+        historical_evidence_rel = ".opencode/state/reviews/setup-001-review-backlog-verification.md"
+        register_current_ticket_artifact(
+            historical_supersede_reconcile_dest,
+            ticket_id=historical_source["id"],
+            kind="backlog-verification",
+            stage="review",
+            relative_path=historical_evidence_rel,
+            summary="Synthetic historical supersede reconciliation evidence.",
+            content="# Historical Evidence\n\nCurrent evidence is registered.\n",
+        )
+        historical_workflow["ticket_state"]["EXEC-RECON-HIST"] = {
+            "approved_plan": False,
+            "reopen_count": 0,
+            "needs_reverification": False,
+        }
+        historical_manifest_path.write_text(
+            json.dumps(historical_manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        historical_workflow_path.write_text(
+            json.dumps(historical_workflow, indent=2) + "\n", encoding="utf-8"
+        )
+        historical_reconciliation_result = run_generated_tool(
+            historical_supersede_reconcile_dest,
+            ".opencode/tools/ticket_reconcile.ts",
+            {
+                "source_ticket_id": historical_source["id"],
+                "target_ticket_id": "EXEC-RECON-HIST",
+                "replacement_source_ticket_id": historical_source["id"],
+                "replacement_source_mode": "split_scope",
+                "evidence_artifact_path": historical_evidence_rel,
+                "reason": "Synthetic stale split child should be superseded from a completed historical source ticket.",
+                "supersede_target": True,
+            },
+        )
+        if historical_reconciliation_result["target_ticket_id"] != "EXEC-RECON-HIST":
+            raise RuntimeError(
+                "ticket_reconcile should report the superseded stale historical split child"
+            )
+        historical_reconciled_manifest = json.loads(
+            historical_manifest_path.read_text(encoding="utf-8")
+        )
+        historical_reconciled_target = next(
+            ticket
+            for ticket in historical_reconciled_manifest["tickets"]
+            if ticket["id"] == "EXEC-RECON-HIST"
+        )
+        historical_reconciled_source = next(
+            ticket
+            for ticket in historical_reconciled_manifest["tickets"]
+            if ticket["id"] == historical_source["id"]
+        )
+        if (
+            historical_reconciled_target["resolution_state"] != "superseded"
+            or historical_reconciled_target["status"] != "done"
+            or historical_reconciled_target["verification_state"] != "reverified"
+        ):
+            raise RuntimeError(
+                "ticket_reconcile should allow superseding stale split_scope children from a completed historical source when supersede_target is true"
+            )
+        if "EXEC-RECON-HIST" in historical_reconciled_source.get("follow_up_ticket_ids", []):
+            raise RuntimeError(
+                "ticket_reconcile should remove superseded stale children from the historical source follow_up_ticket_ids list"
+            )
 
         default_dependency_reconcile_dest = (
             workspace / "executed-ticket-reconcile-default-dependency"

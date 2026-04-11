@@ -129,7 +129,14 @@ export default tool({
       throw new Error(`No current registered evidence artifact exists at ${evidenceArtifactPath} for this reconciliation.`)
     }
 
-    if (replacementSourceMode === "split_scope" && (!["open", "reopened"].includes(replacementSourceTicket.resolution_state) || replacementSourceTicket.status === "done")) {
+    if (
+      replacementSourceMode === "split_scope"
+      && !supersedeTarget
+      && (
+        !["open", "reopened"].includes(replacementSourceTicket.resolution_state)
+        || replacementSourceTicket.status === "done"
+      )
+    ) {
       throw new Error(`split_scope reconciliation requires an open or reopened replacement source ticket. ${replacementSourceTicket.id} is not currently eligible.`)
     }
     if (replacementSourceMode === "post_completion_issue" && !ticketEligibleForTrustRestoration(replacementSourceTicket) && replacementSourceTicket.resolution_state !== "superseded") {
