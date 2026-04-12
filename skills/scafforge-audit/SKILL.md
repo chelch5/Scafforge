@@ -62,19 +62,25 @@ For transcript-backed audits, the invoker must do all three steps in order:
 2. run the script for deterministic candidate findings and repo evidence extraction
 3. reconcile the script output against the chronology and current repo truth before presenting final findings
 
-Run:
+When operating from the Scafforge package root, run:
+
+```sh
+python3 skills/scafforge-audit/scripts/audit_repo_process.py <repo-root> --format both --emit-diagnosis-pack
+```
+
+If your current working directory is the skill directory itself, the equivalent relative command is:
 
 ```sh
 python3 scripts/audit_repo_process.py <repo-root> --format both --emit-diagnosis-pack
 ```
 
-For standalone non-OpenCode usage, prefer:
+For standalone non-OpenCode usage, still prefer:
 
 ```sh
 python3 skills/scafforge-audit/scripts/run_audit.py <repo-root> --format both
 ```
 
-The script is at `scripts/audit_repo_process.py` relative to this skill.
+The canonical repo-root runner in Scafforge executes from the package root, so do not assume the skill directory is the shell cwd when copying commands from this document.
 Pass `--supporting-log <path>` for each supplied session log or transcript export.
 If the audited repo is outside the current host's writable roots, pass `--diagnosis-output-dir <writable-path>` so the diagnosis pack is still emitted in a host-writable location.
 Use `--diagnosis-kind initial_diagnosis` for the first subject-repo diagnosis, `--diagnosis-kind post_package_revalidation` for the single fresh audit after Scafforge package changes land, and reserve `post_repair_verification` for the public repair runner.

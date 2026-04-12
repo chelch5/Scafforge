@@ -229,7 +229,18 @@ Because `glitch` lives under `Scafforge/livetesting/glitch`, its repo changes al
 
 ### Meaningful work done
 
-This repo reached a closed state earlier, with APK proof already noted in-session.
+This repo reached a closed state earlier, with APK proof already noted in-session, but that state is no longer trustworthy.
+
+Fresh fallback audit truth:
+
+- canonical Scafforge audit rerun created diagnosis pack `diagnosis/20260411-193418`
+- result state is `validated failures found`
+- `RELEASE-001` is still marked done/trusted in repo state, but the audit now flags:
+  - `WFLOW019` — stale / contradictory ticket lineage
+  - `EXEC-REMED-001` — prior `EXEC-GODOT-004` closure lacks runnable command evidence
+- this audit does **not** freshly prove "insufficient gameplay scope"
+- it also does **not** freshly reproduce the older parse/load failure
+- the current proven problem is that the earlier runtime/load-class issue was closed without trustworthy runnable evidence
 
 ### Important note
 
@@ -242,17 +253,15 @@ Most visible churn is generated `.opencode/`, ticket, artifact, diagnosis, and b
 ### Current repo status
 
 - tickets: **17 / 22 done**
-- active ticket: `REMED-002`
-- workflow: `smoke-test / smoke_test`
-- `pending_process_verification=true`
+- active ticket: `ASSET-005`
+- workflow is now foregrounded on live work again after remediation closeout
+- `pending_process_verification=false`
 
 Open tickets:
 
-- `REMED-002` - `smoke-test / smoke_test`
-- `REMED-003` - `planning / todo`
-- `ASSET-005` - `planning / todo`
-- `UI-003` - `planning / todo`
-- `RELEASE-001` - `planning / todo`
+- `ASSET-005`
+- `UI-003`
+- `RELEASE-001`
 
 Closed again during this session:
 
@@ -278,8 +287,13 @@ The direct purpose was to mirror the now-validated Scafforge package fixes into 
 
 ### Honest assessment
 
-This was **not** just downstream analysis or audit review.
-It was direct downstream execution and direct downstream workflow-surface editing.
+This repo is now moving again through the intended lane. In the latest headless opencode run:
+
+- `REMED-002` closed successfully
+- backlog verification for `CORE-003`, `CORE-005`, `CORE-006`, `UI-001`, and `UI-002` all returned PASS
+- `REMED-003` also closed successfully
+- `pending_process_verification` was cleared back to `false`
+- the lane foregrounded `ASSET-005` as the next live ticket
 
 ---
 

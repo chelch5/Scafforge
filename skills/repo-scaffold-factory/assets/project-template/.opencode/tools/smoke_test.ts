@@ -498,7 +498,6 @@ function classifyCommandFailure(args: {
   const output = `${args.stdout}\n${args.stderr}`
   if (args.missingExecutable) return "missing_executable"
   if (args.blockedByPermissions) return "permission_restriction"
-  if (args.exitCode === 0 && isGodotExportCommand(args.argv) && isSyntaxErrorOutput(output)) return undefined
   if (isSyntaxErrorOutput(output)) return "syntax_error"
   if (isConfigurationErrorOutput(output)) return "configuration_error"
   if (args.exitCode === 0) return undefined

@@ -61,7 +61,7 @@ Use the narrowest repair that resolves the validated drift.
 Public repair command:
 
 ```sh
-python3 scripts/run_managed_repair.py <repo-root>
+python3 skills/scafforge-repair/scripts/run_managed_repair.py <repo-root>
 ```
 
 Use this as the default repair entrypoint. It runs the deterministic managed-surface refresh, emits the machine-readable repair plan, stale-surface map, and execution record, reruns verification, and fails closed when required follow-on stages still have not been executed.
@@ -70,7 +70,7 @@ If the selected diagnosis basis still records `package_work_required_first: true
 Prefer explicit recorded completion when a downstream follow-on stage actually ran:
 
 ```sh
-python3 scripts/record_repair_stage_completion.py <repo-root> --stage <stage> --completed-by <skill> --summary "<what ran>"
+python3 skills/scafforge-repair/scripts/record_repair_stage_completion.py <repo-root> --stage <stage> --completed-by <skill> --summary "<what ran>"
 ```
 
 Use that command to record real follow-on execution with evidence paths. Recorded execution must include at least one repo-relative evidence path. Recorded execution must include a non-empty `completed_by`, a non-empty summary, and current evidence; zero-evidence or blank-provenance recorded completion is invalid and must be rejected.
@@ -105,12 +105,13 @@ If recorded execution uses the canonical repair completion artifact path for a s
 **After recording the last required follow-on stage**, the `repair_follow_on` nested object in `workflow-state.json` will still reflect the prior `managed_blocked` state because the recorder only writes the persistent ledger. Run the reconciler to update `workflow-state.json` and regenerate restart surfaces:
 
 ```sh
-python3 scripts/reconcile_repair_follow_on.py <repo-root>
+python3 skills/scafforge-repair/scripts/reconcile_repair_follow_on.py <repo-root>
 ```
 
 The reconciler is the only path that transitions `repair_follow_on.outcome` from `managed_blocked` to `source_follow_up` outside of a full `run_managed_repair.py` cycle. It acts only when every blocking reason is stage-completion-based and all named stages are present in the persistent ledger. If any blocking reason is verification-derived (skipped verification, new critical findings, contract failures), it exits with a non-zero status and explains what must be resolved first. It does not modify `verification_passed`, `current_state_clean`, or `causal_regression_verified` — those fields are audit-derived and are preserved verbatim from the last repair run. When in doubt, use `--dry-run` to preview what would change before writing.
 If you need a verification rerun after recording the required follow-on stages, run `run_managed_repair.py` with `--skip-deterministic-refresh` so the current cycle is verified without opening a fresh deterministic refresh cycle.
 Do **not** rerun the full public repair runner after successful follow-on completion unless you are intentionally starting a brand-new repair cycle from new diagnosis evidence; a full rerun will regenerate scaffold-managed surfaces again and can recreate placeholder-skill drift.
+Do **not** invoke `./scripts/run_agent.sh <repo> --repair` (or any equivalent nested repair wrapper) from inside an already-running repair pass. Once you are inside `scafforge-repair`, call the underlying repair scripts directly (`run_managed_repair.py`, `record_repair_stage_completion.py`, `reconcile_repair_follow_on.py`, and the required follow-on skill scripts) so the provider does not recurse back into the public runner.
 If a previously recorded canonical repair completion artifact is later edited so its `completed_stage` or `cycle_id` no longer matches the current repair cycle, Scafforge must invalidate that recorded execution automatically instead of continuing to trust it.
 If recorded execution evidence is later deleted, moved, or was never recorded at all, Scafforge must stop trusting that recorded completion automatically instead of silently continuing to reuse stale completion state.
 The public runner must also fail explicit repair-contract consistency checks. At minimum, do not allow it to report verification success when restart surfaces still drift, placeholder local skills survive refresh, or it somehow reports zero findings while still not being current-state clean.
@@ -120,7 +121,7 @@ The public runner must also fail explicit repair-contract consistency checks. At
 Deterministic engine command:
 
 ```sh
-python3 scripts/apply_repo_process_repair.py <repo-root>
+python3 skills/scafforge-repair/scripts/apply_repo_process_repair.py <repo-root>
 ```
 
 Use this when the repo needs one deliberate workflow-contract refresh rather than piecemeal edits.
@@ -130,6 +131,7 @@ It must replace managed surfaces non-destructively: compute a file-level diff su
 Intent-changing drift is out of scope for routine public repair and must route back through kickoff or pivot instead of being reported as a repair-emitted stale-surface category.
 Treat this command as the internal refresh engine, not as the whole user-facing repair contract. A repair run is still incomplete if required regeneration, ticket follow-up, or post-repair verification did not happen afterward.
 If repair runs after a pivot, preserve the pivot-owned stale-surface and restart-state truth instead of republishing generic ready-state restart surfaces. Managed repair can refresh workflow surfaces, but it must not erase active pivot blockers or pending pivot lineage work from `START-HERE.md`, `.opencode/state/latest-handoff.md`, or `.opencode/state/context-snapshot.md`.
+The canonical Scafforge host-side runner executes from the package root. Keep the `skills/scafforge-repair/scripts/...` prefix when copying commands into that context; only shorten the path to `scripts/...` if your shell cwd is the skill directory itself.
 
 ### 5. Continue into required project-specific regeneration
 

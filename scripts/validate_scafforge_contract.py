@@ -2401,7 +2401,7 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         repair_skill / "SKILL.md",
-        "python3 scripts/run_managed_repair.py <repo-root>",
+        "python3 skills/scafforge-repair/scripts/run_managed_repair.py <repo-root>",
     )
     require_contains(
         findings, repair_skill / "SKILL.md", "machine-readable stale-surface map"
@@ -2414,7 +2414,7 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         repair_skill / "SKILL.md",
-        "python3 scripts/record_repair_stage_completion.py <repo-root>",
+        "python3 skills/scafforge-repair/scripts/record_repair_stage_completion.py <repo-root>",
     )
     require_contains(
         findings,

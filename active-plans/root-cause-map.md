@@ -10,11 +10,11 @@ Status: Active — updated as fixes are implemented
 **Symptom:** Agents can potentially bypass managed_blocked state via stage-gate-enforcer gaps.
 **Local trigger:** stage-gate-enforcer.ts plugin validates leases and artifact evidence but does NOT check repair_follow_on.outcome.
 **Structural cause:** managed_blocked enforcement is scattered across 11+ files (Python repair scripts + TypeScript tools/plugins) with no single enforcement point.
-**Evidence:** ticket_update.ts HAS hasPendingRepairFollowOn check (lines 51-65), but stage-gate-enforcer.ts LACKS it. ticket_create may also lack it.
+**Evidence:** The original gap was real, but current package code now enforces managed_blocked in both `ticket_update.ts` and `stage-gate-enforcer.ts` (commit `906dc002`), with the missing import corrected in commit `686cc74a`.
 **Downstream effect:** Agent could advance ticket lifecycle during active repair block. Could cause stale state or divergent repair tracking.
 **Remediation:** Add managed_blocked check to stage-gate-enforcer.ts plugin's pre-execution hook. Verify ticket_create also checks.
 **Validation:** Write integration test that seeds managed_blocked state and verifies stage-gate blocks lifecycle tools.
-**Status:** OPEN
+**Status:** RESOLVED — implemented in commit `906dc002`, import fixed in `686cc74a`, and validation-log.md records the managed_blocked blocker firing correctly.
 
 ---
 
@@ -23,11 +23,11 @@ Status: Active — updated as fixes are implemented
 **Symptom:** completed_stages can contain "deterministic-refresh" which is not in FOLLOW_ON_STAGE_CATALOG.
 **Local trigger:** run_managed_repair.py line ~1146 injects "deterministic-refresh" into completed_stage_name_set.
 **Structural cause:** deterministic-refresh is a repair-internal operation (template variable refresh), not a follow-on stage. It was incorrectly treated as a stage.
-**Evidence:** follow_on_tracking.py FOLLOW_ON_STAGE_CATALOG has 5 entries: project-skill-bootstrap, opencode-team-bootstrap, agent-prompt-engineering, ticket-pack-builder, handoff-brief. "deterministic-refresh" is NOT among them. Yet it appears in glitch's completed_stages.
+**Evidence:** The original contamination was real. Current repair output now marks deterministic refresh as an internal-only operation rather than a catalog stage (commit `906dc002`), so downstream follow-on tracking no longer needs to treat it as a real completed stage.
 **Downstream effect:** completed_stages contains a name that can't be validated against catalog. reconcile_repair_follow_on uses completed_stages from the ledger (which won't include deterministic-refresh since it's not recordable), but the workflow-state copy retains it.
 **Remediation:** Remove deterministic-refresh from stage name injection. Track it as a repair-internal operation flag, not a stage.
 **Validation:** Verify completed_stages only contains catalog-valid names after repair runs.
-**Status:** OPEN
+**Status:** RESOLVED — repair output now keeps deterministic refresh out of the follow-on stage catalog and validation-log.md records the cleaned state.
 
 ---
 
@@ -62,11 +62,11 @@ Status: Active — updated as fixes are implemented
 **Symptom:** Agents preemptively route to repair/audit flow when they encounter state that LOOKS problematic but is actually normal workflow state (e.g., verification_state: "suspect", pending_process_verification: true).
 **Local trigger:** Team leader agent sees "suspect" verification state or pending flags and interprets them as requiring repair action, instead of continuing normal ticket lifecycle.
 **Structural cause:** Insufficient guidance in team-leader agent template about what constitutes a REAL repair need vs. normal lifecycle state. glitchresearch.md Issue 4 documents verification_state "suspect" persisting through entire lifecycle until closeout — agents misread this as a problem.
-**Evidence:** glitchresearch.md Issue 4 (Verification_State Semantics Gap), evenmoreblockers.md observations.
+**Evidence:** glitchresearch.md Issue 4 (Verification_State Semantics Gap), evenmoreblockers.md observations, and the follow-up package fix in commit `906dc002` that added explicit anti-pattern guidance to the team-leader template.
 **Downstream effect:** Agent enters repair analysis instead of advancing tickets, creating time waste and potential repair loops.
 **Remediation:** 1) Add explicit guidance to team-leader template about what states are NORMAL (suspect until closeout, pending_process_verification during backlog verification). 2) Add WFLOW031 finding code to audit scripts to detect when agents route to repair without managed_blocked outcome. 3) Clarify verification_state semantics in docs.
 **Validation:** Run agent against repo with "suspect" verification_state and confirm it continues normally.
-**Status:** OPEN
+**Status:** RESOLVED — anti-pattern guidance landed in commit `906dc002`; validation-log.md records agents self-unblocking instead of spiraling into predictive repair.
 
 ---
 

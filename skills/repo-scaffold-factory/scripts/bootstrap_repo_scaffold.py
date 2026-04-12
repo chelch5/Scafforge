@@ -59,6 +59,16 @@ DEFAULT_LICENSING_OR_PROVENANCE_CONSTRAINTS = "record any asset or content prove
 DEFAULT_FINISH_ACCEPTANCE_SIGNALS = (
     "record the explicit finish-proof signals that must be met before the repo is treated as finished"
 )
+INTERACTIVE_FINISH_PROOF_ACCEPTANCE = (
+    "Finish proof includes explicit user-observable interaction evidence (controls/input, visible gameplay state or feedback, "
+    "and the brief-specific progression or content surfaces), not just export/install success."
+)
+WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
+    {
+        "release-facing milestones must keep the toy-box flow coherent, maintain immediate touch feedback, and ensure any shipped visual or audio content matches the toddler-safe direction recorded in this brief.",
+        "release-facing milestones must confirm shipped content matches the recorded finish bar for the product.",
+    }
+)
 ASSET_PIPELINE_INIT_PATH = (
     Path(__file__).resolve().parents[2] / "asset-pipeline" / "scripts" / "init_asset_pipeline.py"
 )
@@ -272,6 +282,83 @@ def _bootstrap_terminal_feature_ids(tickets: list[dict[str, object]]) -> list[st
     return [str(t["id"]) for t in candidates if int(t.get("wave", 0)) == max_wave]
 
 
+def _normalize_finish_contract_value(value: str) -> str:
+    return " ".join(value.lower().split())
+
+
+def interactive_finish_proof_required(
+    *, stack_label: str, deliverable_kind: str, finish_acceptance_signals: str
+) -> bool:
+    lowered = _normalize_finish_contract_value(
+        f"{stack_label} {deliverable_kind} {finish_acceptance_signals}"
+    )
+    interactive_markers = (
+        "godot",
+        "android",
+        "ios",
+        "mobile",
+        "game",
+        "playable",
+        "interactive",
+        "touch",
+        "toddler",
+        "toy",
+    )
+    return renders_godot_android_assets(stack_label) or any(
+        marker in lowered for marker in interactive_markers
+    )
+
+
+def recommended_interactive_finish_signals(*, stack_label: str, deliverable_kind: str) -> str:
+    lowered = _normalize_finish_contract_value(f"{stack_label} {deliverable_kind}")
+    if "toddler" in lowered or "toy" in lowered:
+        return (
+            "Release-facing milestones must prove the shipped toy-box flow is reachable on current builds, each shipped play "
+            "surface responds to touch with immediate visible feedback, and the child-facing visual/audio direction stays "
+            "coherent beyond export success."
+        )
+    if any(marker in lowered for marker in ("game", "godot", "playable")):
+        return (
+            "Release-facing milestones must prove a playable shipped loop on current builds with working controls/input, "
+            "visible gameplay state or progression feedback, and the brief-specific user-facing surfaces beyond export success."
+        )
+    return (
+        "Release-facing milestones must prove the shipped interaction flow works on current builds with responsive input, "
+        "visible user-facing feedback, and the brief-specific content surfaces beyond export success."
+    )
+
+
+def normalize_finish_acceptance_signals(
+    *, stack_label: str, deliverable_kind: str, finish_acceptance_signals: str
+) -> str:
+    if not interactive_finish_proof_required(
+        stack_label=stack_label,
+        deliverable_kind=deliverable_kind,
+        finish_acceptance_signals=finish_acceptance_signals,
+    ):
+        return finish_acceptance_signals
+    normalized = _normalize_finish_contract_value(finish_acceptance_signals)
+    if finish_contract_value_is_placeholder(finish_acceptance_signals) or normalized in WEAK_GENERATED_FINISH_SIGNAL_VALUES:
+        return recommended_interactive_finish_signals(
+            stack_label=stack_label,
+            deliverable_kind=deliverable_kind,
+        )
+    return finish_acceptance_signals
+
+
+def build_finish_validation_acceptance(
+    *, finish_acceptance_signals: str, interactive_required: bool
+) -> list[str]:
+    acceptance = [
+        f"Finish proof artifact explicitly maps current evidence to the declared acceptance signals: {finish_acceptance_signals}",
+        "`godot4 --headless --path . --quit` succeeds so finish validation is based on a loadable product, not just exported artifacts",
+        "All finish-direction, visual, audio, or content ownership tickets required by the contract are completed before closeout",
+    ]
+    if interactive_required:
+        acceptance.insert(1, INTERACTIVE_FINISH_PROOF_ACCEPTANCE)
+    return acceptance
+
+
 def requires_packaged_android_delivery(deliverable_kind: str) -> bool:
     lowered = deliverable_kind.lower()
     indicators = (
@@ -321,6 +408,16 @@ def requires_finish_ownership(placeholder_policy: str) -> bool:
 def target_is_intentionally_absent(target: str, *, absent_marker: str) -> bool:
     lowered = target.lower()
     return absent_marker in lowered or "intentionally absent" in lowered
+
+
+def finish_contract_value_is_placeholder(value: str) -> bool:
+    lowered = " ".join(value.lower().split())
+    return (
+        not lowered
+        or lowered.startswith("record ")
+        or "__" in value
+        or "unless the normalized brief records" in lowered
+    )
 
 
 def ensure_godot_android_completion_tickets(
@@ -460,15 +557,14 @@ def ensure_godot_android_completion_tickets(
 def ensure_finish_ownership_tickets(
     dest_root: Path,
     *,
+    stack_label: str,
+    deliverable_kind: str,
     placeholder_policy: str,
     visual_finish_target: str,
     audio_finish_target: str,
     content_source_plan: str,
     finish_acceptance_signals: str,
 ) -> None:
-    if not requires_finish_ownership(placeholder_policy):
-        return
-
     manifest_path = dest_root / "tickets" / "manifest.json"
     if not manifest_path.exists():
         return
@@ -482,98 +578,112 @@ def ensure_finish_ownership_tickets(
     added_finish_ids: list[str] = []
     wave = next_ticket_wave(tickets)
 
-    if "VISUAL-001" not in existing_ids and not target_is_intentionally_absent(
-        visual_finish_target,
-        absent_marker="no consumer-facing visual bar applies",
-    ):
-        tickets.append(
-            {
-                "id": "VISUAL-001",
-                "title": "Own ship-ready visual finish",
-                "wave": wave,
-                "lane": "finish-visual",
-                "parallel_safe": False,
-                "overlap_risk": "medium",
-                "stage": "planning",
-                "status": "todo",
-                "resolution_state": "open",
-                "verification_state": "suspect",
-                "depends_on": ["SETUP-001"],
-                "summary": f"Replace prototype-grade visuals with the declared ship bar: {visual_finish_target}.",
-                "acceptance": [
-                    f"The visual finish target is met: {visual_finish_target}",
-                    "No placeholder or throwaway visual assets remain in the user-facing product surfaces",
-                ],
-                "decision_blockers": [],
-                "artifacts": [],
-                "follow_up_ticket_ids": [],
-            }
-        )
-        existing_ids.add("VISUAL-001")
-        added_finish_ids.append("VISUAL-001")
-        wave += 1
+    if requires_finish_ownership(placeholder_policy):
+        if "VISUAL-001" not in existing_ids and not target_is_intentionally_absent(
+            visual_finish_target,
+            absent_marker="no consumer-facing visual bar applies",
+        ):
+            tickets.append(
+                {
+                    "id": "VISUAL-001",
+                    "title": "Own ship-ready visual finish",
+                    "wave": wave,
+                    "lane": "finish-visual",
+                    "parallel_safe": False,
+                    "overlap_risk": "medium",
+                    "stage": "planning",
+                    "status": "todo",
+                    "resolution_state": "open",
+                    "verification_state": "suspect",
+                    "depends_on": ["SETUP-001"],
+                    "summary": f"Replace prototype-grade visuals with the declared ship bar: {visual_finish_target}.",
+                    "acceptance": [
+                        f"The visual finish target is met: {visual_finish_target}",
+                        "No placeholder or throwaway visual assets remain in the user-facing product surfaces",
+                    ],
+                    "decision_blockers": [],
+                    "artifacts": [],
+                    "follow_up_ticket_ids": [],
+                }
+            )
+            existing_ids.add("VISUAL-001")
+            added_finish_ids.append("VISUAL-001")
+            wave += 1
 
-    if "AUDIO-001" not in existing_ids and not target_is_intentionally_absent(
-        audio_finish_target,
-        absent_marker="no audio bar applies",
-    ):
-        tickets.append(
-            {
-                "id": "AUDIO-001",
-                "title": "Own ship-ready audio finish",
-                "wave": wave,
-                "lane": "finish-audio",
-                "parallel_safe": False,
-                "overlap_risk": "medium",
-                "stage": "planning",
-                "status": "todo",
-                "resolution_state": "open",
-                "verification_state": "suspect",
-                "depends_on": ["SETUP-001"],
-                "summary": f"Deliver the declared user-facing audio bar: {audio_finish_target}.",
-                "acceptance": [
-                    f"The audio finish target is met: {audio_finish_target}",
-                    "No placeholder, missing, or temporary user-facing audio remains where the finish contract requires audio delivery",
-                ],
-                "decision_blockers": [],
-                "artifacts": [],
-                "follow_up_ticket_ids": [],
-            }
-        )
-        existing_ids.add("AUDIO-001")
-        added_finish_ids.append("AUDIO-001")
-        wave += 1
+        if "AUDIO-001" not in existing_ids and not target_is_intentionally_absent(
+            audio_finish_target,
+            absent_marker="no audio bar applies",
+        ):
+            tickets.append(
+                {
+                    "id": "AUDIO-001",
+                    "title": "Own ship-ready audio finish",
+                    "wave": wave,
+                    "lane": "finish-audio",
+                    "parallel_safe": False,
+                    "overlap_risk": "medium",
+                    "stage": "planning",
+                    "status": "todo",
+                    "resolution_state": "open",
+                    "verification_state": "suspect",
+                    "depends_on": ["SETUP-001"],
+                    "summary": f"Deliver the declared user-facing audio bar: {audio_finish_target}.",
+                    "acceptance": [
+                        f"The audio finish target is met: {audio_finish_target}",
+                        "No placeholder, missing, or temporary user-facing audio remains where the finish contract requires audio delivery",
+                    ],
+                    "decision_blockers": [],
+                    "artifacts": [],
+                    "follow_up_ticket_ids": [],
+                }
+            )
+            existing_ids.add("AUDIO-001")
+            added_finish_ids.append("AUDIO-001")
+            wave += 1
 
-    if not added_finish_ids and "CONTENT-001" not in existing_ids:
-        tickets.append(
-            {
-                "id": "CONTENT-001",
-                "title": "Own authored content finish",
-                "wave": wave,
-                "lane": "finish-content",
-                "parallel_safe": False,
-                "overlap_risk": "medium",
-                "stage": "planning",
-                "status": "todo",
-                "resolution_state": "open",
-                "verification_state": "suspect",
-                "depends_on": ["SETUP-001"],
-                "summary": f"Replace placeholder product content with the declared authored/licensed/procedural bar: {content_source_plan}.",
-                "acceptance": [
-                    f"The content source plan is owned and implemented: {content_source_plan}",
-                    "No placeholder user-facing content remains in the finished product surfaces",
-                ],
-                "decision_blockers": [],
-                "artifacts": [],
-                "follow_up_ticket_ids": [],
-            }
-        )
-        existing_ids.add("CONTENT-001")
-        added_finish_ids.append("CONTENT-001")
-        wave += 1
+        if not added_finish_ids and "CONTENT-001" not in existing_ids:
+            tickets.append(
+                {
+                    "id": "CONTENT-001",
+                    "title": "Own authored content finish",
+                    "wave": wave,
+                    "lane": "finish-content",
+                    "parallel_safe": False,
+                    "overlap_risk": "medium",
+                    "stage": "planning",
+                    "status": "todo",
+                    "resolution_state": "open",
+                    "verification_state": "suspect",
+                    "depends_on": ["SETUP-001"],
+                    "summary": f"Replace placeholder product content with the declared authored/licensed/procedural bar: {content_source_plan}.",
+                    "acceptance": [
+                        f"The content source plan is owned and implemented: {content_source_plan}",
+                        "No placeholder user-facing content remains in the finished product surfaces",
+                    ],
+                    "decision_blockers": [],
+                    "artifacts": [],
+                    "follow_up_ticket_ids": [],
+                }
+            )
+            existing_ids.add("CONTENT-001")
+            added_finish_ids.append("CONTENT-001")
+            wave += 1
 
     finish_dependencies = [ticket_id for ticket_id in ("VISUAL-001", "AUDIO-001", "CONTENT-001") if ticket_id in existing_ids]
-    if finish_dependencies and "FINISH-VALIDATE-001" not in existing_ids:
+    finish_validation_dependencies = finish_dependencies or _bootstrap_terminal_feature_ids(tickets)
+    if (
+        finish_validation_dependencies
+        and "FINISH-VALIDATE-001" not in existing_ids
+        and not finish_contract_value_is_placeholder(finish_acceptance_signals)
+    ):
+        finish_validation_acceptance = build_finish_validation_acceptance(
+            finish_acceptance_signals=finish_acceptance_signals,
+            interactive_required=interactive_finish_proof_required(
+                stack_label=stack_label,
+                deliverable_kind=deliverable_kind,
+                finish_acceptance_signals=finish_acceptance_signals,
+            ),
+        )
         tickets.append(
             {
                 "id": "FINISH-VALIDATE-001",
@@ -586,18 +696,15 @@ def ensure_finish_ownership_tickets(
                 "status": "todo",
                 "resolution_state": "open",
                 "verification_state": "suspect",
-                "depends_on": finish_dependencies,
-                "summary": "Prove that the declared Product Finish Contract is satisfied and that no placeholder output remains in user-facing surfaces.",
-                "acceptance": [
-                    f"Finish proof matches the declared acceptance signals: {finish_acceptance_signals}",
-                    "`godot4 --headless --path . --quit` succeeds so finish validation is based on a loadable product, not just exported artifacts",
-                    "All finish-direction, visual, audio, or content ownership tickets required by the contract are completed before closeout",
-                ],
+                "depends_on": finish_validation_dependencies,
+                "summary": "Prove that the declared Product Finish Contract is satisfied with current runnable evidence before release closeout.",
+                "acceptance": finish_validation_acceptance,
                 "decision_blockers": [],
                 "artifacts": [],
                 "follow_up_ticket_ids": [],
             }
         )
+        existing_ids.add("FINISH-VALIDATE-001")
 
     release_ticket = next(
         (
@@ -898,6 +1005,11 @@ def main() -> int:
     implementer_model = args.implementer_model
     utility_model = args.utility_model or planner_model
     model_profile = build_model_operating_profile(model_tier=args.model_tier)
+    finish_acceptance_signals = normalize_finish_acceptance_signals(
+        stack_label=args.stack_label,
+        deliverable_kind=args.deliverable_kind,
+        finish_acceptance_signals=args.finish_acceptance_signals,
+    )
 
     replacements = {
         "__PROJECT_NAME__": args.project_name,
@@ -925,7 +1037,7 @@ def main() -> int:
         "__AUDIO_FINISH_TARGET__": args.audio_finish_target,
         "__CONTENT_SOURCE_PLAN__": args.content_source_plan,
         "__LICENSING_OR_PROVENANCE_CONSTRAINTS__": args.licensing_or_provenance_constraints,
-        "__FINISH_ACCEPTANCE_SIGNALS__": args.finish_acceptance_signals,
+        "__FINISH_ACCEPTANCE_SIGNALS__": finish_acceptance_signals,
     }
     validate_replacement_values(replacements)
 
@@ -940,17 +1052,19 @@ def main() -> int:
             placeholder_policy=args.placeholder_policy,
             content_source_plan=args.content_source_plan,
             licensing_or_provenance_constraints=args.licensing_or_provenance_constraints,
-            finish_acceptance_signals=args.finish_acceptance_signals,
+            finish_acceptance_signals=finish_acceptance_signals,
             force=args.force,
         )
     )
     ensure_finish_ownership_tickets(
         dest_root,
+        stack_label=args.stack_label,
+        deliverable_kind=args.deliverable_kind,
         placeholder_policy=args.placeholder_policy,
         visual_finish_target=args.visual_finish_target,
         audio_finish_target=args.audio_finish_target,
         content_source_plan=args.content_source_plan,
-        finish_acceptance_signals=args.finish_acceptance_signals,
+        finish_acceptance_signals=finish_acceptance_signals,
     )
     ensure_godot_android_completion_tickets(
         dest_root,
@@ -978,7 +1092,7 @@ def main() -> int:
         audio_finish_target=args.audio_finish_target,
         content_source_plan=args.content_source_plan,
         licensing_or_provenance_constraints=args.licensing_or_provenance_constraints,
-        finish_acceptance_signals=args.finish_acceptance_signals,
+        finish_acceptance_signals=finish_acceptance_signals,
     )
 
     print(f"Rendered {len(created)} files into {dest_root}")

@@ -42,6 +42,7 @@ Blender-agent scope clarification:
 Additional accessible context/state locations:
 - .codex global folder
 - .copilot global folder
+- .config/kilo global folder
 
 Important environment note:
 The CLI has multi-CWD access, including at minimum Scafforge, glitch, GPTTalker, spinner, blender-agent, .codex, and .copilot. Use that access deliberately.
@@ -361,6 +362,7 @@ You must create or improve scripts and harnesses for running agents in headless 
 You must investigate and use the available execution paths for:
 - opencode
 - Codex
+- Kilo Code
 - Copilot CLI
 
 Use the following as discovery inputs where relevant:
@@ -368,7 +370,15 @@ Use the following as discovery inputs where relevant:
 - https://developers.openai.com/codex
 - opencode --help
 - codex --help
+- kilo --help
 - copilot --help
+
+For downstream audit and repair host execution, the fallback order is:
+1. Codex headless with explicit medium reasoning
+2. Kilo headless using Grok Code Fast or NVIDIA Nemotron 3 Super from a safe parent working directory when downstream workflow state interferes
+3. Copilot CLI headless as the final fallback
+
+Whenever Scafforge skill content changes, refresh the live skill copies used by Codex, Copilot, and Kilo before relying on those hosts for validation.
 
 Headless runs must be resume-style runs, not blank-start runs.
 

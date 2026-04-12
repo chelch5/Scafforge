@@ -691,6 +691,106 @@ def seed_incomplete_finish_contract(dest: Path) -> None:
     )
 
 
+def seed_weak_generated_finish_contract(dest: Path) -> None:
+    seed_godot_android_target(dest)
+    seed_minimal_godot_project(dest)
+    brief_path = dest / "docs" / "spec" / "CANONICAL-BRIEF.md"
+    weak_signals = (
+        "Release-facing milestones must confirm shipped content matches the recorded finish bar for the product."
+    )
+    brief_path.write_text(
+        brief_path.read_text(encoding="utf-8")
+        + "\n## 13. Product Finish Contract\n\n"
+        + "- deliverable_kind: playable packaged game build\n"
+        + "- placeholder_policy: placeholder_ok\n"
+        + "- visual_finish_target: User-facing visuals must match the recorded product direction across all shipped surfaces.\n"
+        + "- audio_finish_target: User-facing audio must match the recorded product direction across all shipped surfaces.\n"
+        + "- content_source_plan: Use repo-authored or appropriately licensed content. Temporary implementation assets are acceptable until a later brief revision records a stricter finish bar.\n"
+        + "- licensing_or_provenance_constraints: All committed visual and audio content must be repo-authored, user-supplied, or covered by a license compatible with the intended distribution path.\n"
+        + f"- finish_acceptance_signals: {weak_signals}\n",
+        encoding="utf-8",
+    )
+    manifest_path = dest / "tickets" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    tickets = manifest.setdefault("tickets", [])
+    existing_ids = {
+        str(ticket.get("id", "")).strip()
+        for ticket in tickets
+        if isinstance(ticket, dict)
+    }
+    if "FINISH-VALIDATE-001" not in existing_ids:
+        tickets.append(
+            {
+                "id": "FINISH-VALIDATE-001",
+                "title": "Validate product finish contract",
+                "wave": 4,
+                "lane": "finish-validation",
+                "parallel_safe": False,
+                "overlap_risk": "medium",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": ["SETUP-001"],
+                "summary": "Synthetic weak finish-validation lane.",
+                "acceptance": [
+                    f"Finish proof artifact explicitly maps current evidence to the declared acceptance signals: {weak_signals}",
+                    "`godot4 --headless --path . --quit` succeeds so finish validation is based on a loadable product, not just exported artifacts",
+                    "All finish-direction, visual, audio, or content ownership tickets required by the contract are completed before closeout",
+                ],
+                "decision_blockers": [],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+    release_ticket = next(
+        (
+            ticket
+            for ticket in tickets
+            if isinstance(ticket, dict) and str(ticket.get("id", "")).strip() == "RELEASE-001"
+        ),
+        None,
+    )
+    if not isinstance(release_ticket, dict):
+        tickets.append(
+            {
+                "id": "RELEASE-001",
+                "title": "Ship release build",
+                "wave": 5,
+                "lane": "release-readiness",
+                "parallel_safe": False,
+                "overlap_risk": "high",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": ["FINISH-VALIDATE-001"],
+                "summary": "Synthetic release lane for finish-contract audit coverage.",
+                "acceptance": ["Release artifacts are ready for handoff."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+    else:
+        release_dependencies = [
+            str(dep).strip()
+            for dep in release_ticket.get("depends_on", [])
+            if isinstance(dep, str) and str(dep).strip()
+        ]
+        if "FINISH-VALIDATE-001" not in release_dependencies:
+            release_dependencies.append("FINISH-VALIDATE-001")
+            release_ticket["depends_on"] = release_dependencies
+    manifest["active_ticket"] = "FINISH-VALIDATE-001"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    workflow["active_ticket"] = "FINISH-VALIDATE-001"
+    workflow["stage"] = "planning"
+    workflow["status"] = "planning"
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+
+
 def seed_broken_repo_venv(dest: Path) -> None:
     (dest / "pyproject.toml").write_text(
         "[project]\nname = \"broken-venv\"\nversion = \"0.1.0\"\n",
@@ -7367,6 +7467,30 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_update should allow review-to-QA transitions when a remediation review artifact records `Overall Result: **PASS**` with fenced command and output evidence"
             )
+        verdict_heading_remediation_dest = workspace / "executed-review-remediation-verdict-heading"
+        shutil.copytree(full_dest, verdict_heading_remediation_dest)
+        seed_ready_bootstrap(verdict_heading_remediation_dest)
+        seed_glitch_style_remediation_review(
+            verdict_heading_remediation_dest, "## Verdict\n\n**PASS**"
+        )
+        verdict_heading_lookup = run_generated_tool(
+            verdict_heading_remediation_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if verdict_heading_lookup["transition_guidance"]["review_verdict"] != "PASS":
+            raise RuntimeError(
+                "ticket_lookup should extract PASS verdicts from remediation review artifacts that use `## Verdict` followed by `**PASS**`"
+            )
+        verdict_heading_update = run_generated_tool(
+            verdict_heading_remediation_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "qa", "activate": True},
+        )
+        if verdict_heading_update["updated_ticket"]["stage"] != "qa":
+            raise RuntimeError(
+                "ticket_update should allow review-to-QA transitions when a remediation review artifact records `## Verdict` followed by `**PASS**` with fenced command and output evidence"
+            )
         qa_fail_dest = workspace / "executed-qa-fail-guidance"
         shutil.copytree(full_dest, qa_fail_dest)
         seed_ready_bootstrap(qa_fail_dest)
@@ -7469,6 +7593,112 @@ def main() -> int:
         if qa_pass_update["updated_ticket"]["stage"] != "smoke-test":
             raise RuntimeError(
                 "ticket_update should allow QA-to-smoke-test transitions when the latest QA artifact records `## Overall QA Verdict` followed by `**PASS**`"
+            )
+        qa_compact_heading_dest = workspace / "executed-qa-compact-heading"
+        shutil.copytree(full_dest, qa_compact_heading_dest)
+        seed_ready_bootstrap(qa_compact_heading_dest)
+        qa_compact_manifest_path = qa_compact_heading_dest / "tickets" / "manifest.json"
+        qa_compact_manifest = json.loads(
+            qa_compact_manifest_path.read_text(encoding="utf-8")
+        )
+        qa_compact_ticket = next(
+            ticket for ticket in qa_compact_manifest["tickets"] if ticket["id"] == "SETUP-001"
+        )
+        qa_compact_ticket["stage"] = "qa"
+        qa_compact_ticket["status"] = "qa"
+        qa_compact_manifest_path.write_text(
+            json.dumps(qa_compact_manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        qa_compact_workflow_path = (
+            qa_compact_heading_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        qa_compact_workflow = json.loads(
+            qa_compact_workflow_path.read_text(encoding="utf-8")
+        )
+        qa_compact_workflow["stage"] = "qa"
+        qa_compact_workflow["status"] = "qa"
+        qa_compact_workflow_path.write_text(
+            json.dumps(qa_compact_workflow, indent=2) + "\n", encoding="utf-8"
+        )
+        register_current_ticket_artifact(
+            qa_compact_heading_dest,
+            ticket_id="SETUP-001",
+            kind="qa",
+            stage="qa",
+            relative_path=".opencode/state/qa/setup-001-qa-qa.md",
+            summary="Synthetic PASS QA artifact for compact QA heading coverage.",
+            content="# QA Artifact — SETUP-001\n\n## QA PASS — Both Acceptance Criteria Satisfied\n\n## Validation Command\n\n`npm test -- --runInBand`\n\n## Raw Command Output\n\n```text\n$ npm test -- --runInBand\nPASS tests/setup.test.ts\n  setup workflow\n    ✓ keeps lifecycle routing intact (42 ms)\nEXIT_CODE: 0\nRESULT: PASS ✅\n```\n\nFinding remains stale and deterministic validation passed.\n",
+        )
+        qa_compact_lookup = run_generated_tool(
+            qa_compact_heading_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if qa_compact_lookup["transition_guidance"]["qa_verdict"] != "PASS":
+            raise RuntimeError(
+                "ticket_lookup should extract PASS verdicts from compact `## QA PASS` headings"
+            )
+        qa_compact_update = run_generated_tool(
+            qa_compact_heading_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "smoke-test", "activate": True},
+        )
+        if qa_compact_update["updated_ticket"]["stage"] != "smoke-test":
+            raise RuntimeError(
+                "ticket_update should allow QA-to-smoke-test transitions when the latest QA artifact records a compact `## QA PASS` heading"
+            )
+        qa_overall_label_dest = workspace / "executed-qa-overall-label"
+        shutil.copytree(full_dest, qa_overall_label_dest)
+        seed_ready_bootstrap(qa_overall_label_dest)
+        qa_overall_manifest_path = qa_overall_label_dest / "tickets" / "manifest.json"
+        qa_overall_manifest = json.loads(
+            qa_overall_manifest_path.read_text(encoding="utf-8")
+        )
+        qa_overall_ticket = next(
+            ticket for ticket in qa_overall_manifest["tickets"] if ticket["id"] == "SETUP-001"
+        )
+        qa_overall_ticket["stage"] = "qa"
+        qa_overall_ticket["status"] = "qa"
+        qa_overall_manifest_path.write_text(
+            json.dumps(qa_overall_manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        qa_overall_workflow_path = (
+            qa_overall_label_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        qa_overall_workflow = json.loads(
+            qa_overall_workflow_path.read_text(encoding="utf-8")
+        )
+        qa_overall_workflow["stage"] = "qa"
+        qa_overall_workflow["status"] = "qa"
+        qa_overall_workflow_path.write_text(
+            json.dumps(qa_overall_workflow, indent=2) + "\n", encoding="utf-8"
+        )
+        register_current_ticket_artifact(
+            qa_overall_label_dest,
+            ticket_id="SETUP-001",
+            kind="qa",
+            stage="qa",
+            relative_path=".opencode/state/qa/setup-001-qa-qa.md",
+            summary="Synthetic PASS QA artifact for `**Overall**: PASS` coverage.",
+            content="# QA\n\n## QA Result\n\n**Overall**: PASS pending smoke test confirmation.\n\n## Validation Command\n\n`npm test -- --runInBand`\n\n## Raw Command Output\n\n```text\n$ npm test -- --runInBand\nPASS tests/setup.test.ts\n  setup workflow\n    ✓ keeps lifecycle routing intact (42 ms)\nEXIT_CODE: 0\nRESULT: PASS ✅\n```\n",
+        )
+        qa_overall_lookup = run_generated_tool(
+            qa_overall_label_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if qa_overall_lookup["transition_guidance"]["qa_verdict"] != "PASS":
+            raise RuntimeError(
+                "ticket_lookup should extract PASS verdicts from `**Overall**: PASS` labels inside QA result sections"
+            )
+        qa_overall_update = run_generated_tool(
+            qa_overall_label_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "smoke-test", "activate": True},
+        )
+        if qa_overall_update["updated_ticket"]["stage"] != "smoke-test":
+            raise RuntimeError(
+                "ticket_update should allow QA-to-smoke-test transitions when the latest QA artifact records `**Overall**: PASS`"
             )
         split_brain_dest = workspace / "ticket-lookup-requested-ticket"
         shutil.copytree(full_dest, split_brain_dest)
@@ -7684,6 +7914,72 @@ def main() -> int:
                 "write_lock": True,
             },
         )
+        coordinator_session_id = "ses_stage_gate_team_leader"
+        invocation_log_path = (
+            executed_artifact_tools_dest / ".opencode" / "state" / "invocation-log.jsonl"
+        )
+        invocation_log_path.parent.mkdir(parents=True, exist_ok=True)
+        invocation_log_path.write_text(
+            json.dumps(
+                {
+                    "event": "chat.message",
+                    "timestamp": "2026-04-12T06:00:00Z",
+                    "session_id": coordinator_session_id,
+                    "agent": "integration-probe-team-leader",
+                    "message_id": "msg_stage_gate_team_leader",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        coordinator_artifact_write_error = run_generated_plugin_before_error(
+            executed_artifact_tools_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "artifact_write",
+            {
+                "ticket_id": "SETUP-001",
+                "path": ".opencode/state/plans/setup-001-planning-plan.md",
+                "kind": "plan",
+                "stage": "planning",
+                "content": "# Coordinator Authored Plan\n",
+            },
+            session_id=coordinator_session_id,
+        )
+        if "Coordinator-authored planning artifacts are not allowed." not in coordinator_artifact_write_error:
+            raise RuntimeError(
+                "Stage gate plugin should resolve the team leader from invocation history and block direct planning artifact writes"
+            )
+        run_generated_plugin_before(
+            executed_artifact_tools_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "artifact_write",
+            {
+                "ticket_id": "SETUP-001",
+                "path": ".opencode/state/plans/setup-001-planning-plan.md",
+                "kind": "plan",
+                "stage": "planning",
+                "content": "# Specialist Authored Plan\n",
+            },
+            agent="integration-probe-planner",
+            session_id="ses_stage_gate_planner",
+        )
+        coordinator_artifact_register_error = run_generated_plugin_before_error(
+            executed_artifact_tools_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "artifact_register",
+            {
+                "ticket_id": "SETUP-001",
+                "path": ".opencode/state/plans/setup-001-planning-plan.md",
+                "kind": "plan",
+                "stage": "planning",
+                "summary": "Coordinator tried to register the plan.",
+            },
+            session_id=coordinator_session_id,
+        )
+        if "Coordinator-authored planning artifacts are not allowed." not in coordinator_artifact_register_error:
+            raise RuntimeError(
+                "Stage gate plugin should resolve the team leader from invocation history and block direct planning artifact registration"
+            )
         run_generated_plugin_before(
             executed_artifact_tools_dest,
             ".opencode/plugins/stage-gate-enforcer.ts",
@@ -8193,17 +8489,17 @@ def main() -> int:
                 ],
             },
         )
-        if godot_export_stderr_result["passed"] is not True:
+        if godot_export_stderr_result["passed"] is not False:
             raise RuntimeError(
-                "smoke_test should treat a successful Godot export command as passing even when stderr contains parse/load noise"
+                "smoke_test should fail when a Godot export command records parse/load errors even if the process exits 0"
             )
-        if (
-            godot_export_stderr_result["failure_classification"] is not None
-            or godot_export_stderr_result["commands"][0]["failure_classification"]
-            is not None
-        ):
+        if godot_export_stderr_result["failure_classification"] != "configuration":
             raise RuntimeError(
-                "smoke_test should not classify successful Godot export stderr noise as a syntax/configuration failure"
+                "smoke_test should classify Godot export parse/load stderr as a configuration failure"
+            )
+        if godot_export_stderr_result["commands"][0]["failure_classification"] != "syntax_error":
+            raise RuntimeError(
+                "smoke_test should mark the failing Godot export command with syntax_error when stderr records parse/load failures"
             )
         godot_release_guard_dest = workspace / "executed-smoke-test-godot-release-guard"
         shutil.copytree(full_dest, godot_release_guard_dest)
@@ -8275,15 +8571,15 @@ def main() -> int:
         )
         if godot_release_guard_result["passed"] is True:
             raise RuntimeError(
-                "smoke_test should append a clean Godot load validation pass for release-readiness tickets instead of trusting export success alone"
+                "smoke_test should reject release-readiness Godot export output that records parse/load errors even when the export exits 0"
             )
-        if len(godot_release_guard_result.get("commands", [])) < 2:
+        if len(godot_release_guard_result.get("commands", [])) != 1:
             raise RuntimeError(
-                "Godot release-readiness smoke coverage should execute both export proof and load validation commands"
+                "smoke_test should stop the release-readiness command sequence as soon as the export command records parse/load failures"
             )
-        if godot_release_guard_result["commands"][1]["failure_classification"] != "syntax_error":
+        if godot_release_guard_result["commands"][0]["failure_classification"] != "syntax_error":
             raise RuntimeError(
-                "Godot release-readiness load validation should classify parse/load errors as syntax_error even when export itself exits 0"
+                "Godot release-readiness export validation should classify parse/load errors as syntax_error even when export itself exits 0"
             )
 
         executed_smoke_missing_exec_dest = (
@@ -9198,6 +9494,39 @@ def main() -> int:
             raise RuntimeError(
                 "Audit should emit WFLOW026 when the repo parser still treats explicit markdown verdict labels as unclear"
             )
+        audit_reporting_verdict_module = load_python_module(
+            ROOT / "skills" / "scafforge-audit" / "scripts" / "audit_reporting.py",
+            "scafforge_smoke_audit_reporting_wflow026_route",
+        )
+        markdown_verdict_recommendations = (
+            audit_reporting_verdict_module.build_ticket_recommendations(
+                [
+                    SimpleNamespace(
+                        code="WFLOW026",
+                        severity="error",
+                        problem="Legacy verdict parser blocks explicit QA/review verdicts.",
+                        root_cause="Synthetic legacy parser smoke fixture.",
+                        files=[".opencode/lib/workflow.ts"],
+                        safer_pattern="Use the widened shared verdict parser.",
+                        evidence=["synthetic markdown verdict evidence"],
+                        provenance="script",
+                    )
+                ],
+                audit_reporting_verdict_module.AuditReportingContext(
+                    package_root=ROOT, current_package_commit="smoke"
+                ),
+                markdown_verdict_audit_dest,
+            )
+        )
+        if not any(
+            item.get("source_finding_code") == "WFLOW026"
+            and item.get("route") == "scafforge-repair"
+            for item in markdown_verdict_recommendations
+            if isinstance(item, dict)
+        ):
+            raise RuntimeError(
+                "WFLOW026 should route to scafforge-repair once the installed package template contains the widened verdict parser"
+            )
 
         spinner_gap_dest = workspace / "spinner-target-completion-gap"
         shutil.copytree(full_dest, spinner_gap_dest)
@@ -9258,6 +9587,73 @@ def main() -> int:
         if "missing finish-contract fields" not in incomplete_finish_evidence:
             raise RuntimeError(
                 "FINISH001 should explain which Product Finish Contract fields are missing"
+            )
+
+        weak_finish_dest = workspace / "weak-generated-finish-contract"
+        shutil.copytree(full_dest, weak_finish_dest)
+        make_stack_skill_non_placeholder(weak_finish_dest)
+        seed_weak_generated_finish_contract(weak_finish_dest)
+        weak_finish_audit = run_json(
+            [sys.executable, str(AUDIT), str(weak_finish_dest), "--format", "json"],
+            ROOT,
+        )
+        weak_finish_findings = [
+            finding
+            for finding in weak_finish_audit.get("findings", [])
+            if isinstance(finding, dict) and finding.get("code") == "FINISH004"
+        ]
+        if not weak_finish_findings:
+            raise RuntimeError(
+                "Interactive repos that still use weak machine-generated finish signals should emit FINISH004"
+            )
+        weak_finish_evidence = "\n".join(
+            line
+            for finding in weak_finish_findings
+            for line in finding.get("evidence", [])
+            if isinstance(line, str)
+        )
+        if "generic finish_acceptance_signals" not in weak_finish_evidence:
+            raise RuntimeError(
+                "FINISH004 should explain that the repo is still using weak machine-generated finish_acceptance_signals"
+            )
+        run_json([sys.executable, str(REPAIR), str(weak_finish_dest)], ROOT)
+        repaired_weak_finish_brief = (
+            weak_finish_dest / "docs" / "spec" / "CANONICAL-BRIEF.md"
+        ).read_text(encoding="utf-8")
+        if "playable shipped loop on current builds with working controls/input" not in repaired_weak_finish_brief:
+            raise RuntimeError(
+                "Managed repair should replace weak generated finish_acceptance_signals with stronger interactive proof text"
+            )
+        repaired_weak_finish_manifest = json.loads(
+            (weak_finish_dest / "tickets" / "manifest.json").read_text(encoding="utf-8")
+        )
+        repaired_finish_validate = next(
+            ticket
+            for ticket in repaired_weak_finish_manifest.get("tickets", [])
+            if isinstance(ticket, dict) and ticket.get("id") == "FINISH-VALIDATE-001"
+        )
+        repaired_finish_acceptance = [
+            item
+            for item in repaired_finish_validate.get("acceptance", [])
+            if isinstance(item, str)
+        ]
+        if not any(
+            "user-observable interaction evidence" in item
+            for item in repaired_finish_acceptance
+        ):
+            raise RuntimeError(
+                "Managed repair should strengthen FINISH-VALIDATE-001 acceptance for interactive repos"
+            )
+        weak_finish_post_repair = run_json(
+            [sys.executable, str(AUDIT), str(weak_finish_dest), "--format", "json"],
+            ROOT,
+        )
+        weak_finish_post_codes = {
+            finding["code"] for finding in weak_finish_post_repair.get("findings", [])
+        }
+        if "FINISH004" in weak_finish_post_codes:
+            raise RuntimeError(
+                "FINISH004 should clear after managed repair upgrades the finish contract and finish-validation ticket"
             )
 
         ref_scan_dest = workspace / "reference-scan-exclusion"
@@ -9360,6 +9756,31 @@ def main() -> int:
         if valid_remediation_overall_findings:
             raise RuntimeError(
                 "Audit should accept remediation review artifacts that use `Overall Result: **PASS**` with fenced command and output evidence"
+            )
+        valid_remediation_heading_dest = workspace / "remediation-review-verdict-heading"
+        shutil.copytree(full_dest, valid_remediation_heading_dest)
+        make_stack_skill_non_placeholder(valid_remediation_heading_dest)
+        seed_glitch_style_remediation_review(
+            valid_remediation_heading_dest, "## Verdict\n\n**PASS**"
+        )
+        valid_remediation_heading_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(valid_remediation_heading_dest),
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        valid_remediation_heading_findings = [
+            finding
+            for finding in valid_remediation_heading_audit.get("findings", [])
+            if isinstance(finding, dict) and finding.get("code") == "EXEC-REMED-001"
+        ]
+        if valid_remediation_heading_findings:
+            raise RuntimeError(
+                "Audit should accept remediation review artifacts that use `## Verdict` followed by `**PASS**` with fenced command and output evidence"
             )
 
         empty_remediation_dest = workspace / "remediation-review-empty-output"

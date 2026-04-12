@@ -640,7 +640,7 @@ def verify_greenfield_continuation(root: Path) -> list[Finding]:
             )
         )
 
-    finish_contract_findings = [finding for finding in audit_findings if finding.code in {"FINISH001", "FINISH002"}]
+    finish_contract_findings = [finding for finding in audit_findings if finding.code in {"FINISH001", "FINISH002", "FINISH003", "FINISH004"}]
     if finish_contract_findings:
         findings.append(
             _finding(

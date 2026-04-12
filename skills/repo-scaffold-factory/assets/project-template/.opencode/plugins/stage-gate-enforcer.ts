@@ -16,6 +16,7 @@ import {
   loadManifest,
   loadWorkflowState,
   readArtifactContent,
+  resolveAgentNameFromSession,
   resolveRequestedTicketProgress,
   ticketEligibleForTrustRestoration,
   ticketClaimBlockerArgs,
@@ -32,6 +33,7 @@ const BOOTSTRAP_RECOVERY_BASH = /^(uv|python|python3|pytest|ruff|\.venv\/bin\/py
 const LEASED_ARTIFACT_STAGES = new Set(["implementation", "bootstrap", "handoff"])
 const RESERVED_ARTIFACT_STAGES = new Set(["smoke-test"])
 const HISTORICAL_VERIFICATION_KINDS = new Set(["backlog-verification", "reverification"])
+const SPECIALIST_AUTHORED_STAGES = new Set(["planning", "plan_review", "implementation", "review", "qa"])
 
 function extractFilePath(args: Record<string, unknown>): string {
   const pathValue = args.filePath || args.path || args.target
@@ -52,6 +54,30 @@ function isBootstrapRecoveryCommand(command: string, bootstrapStatus: string): b
 }
 function isHistoricalVerificationArtifactMutation(ticket: ReturnType<typeof getTicket>, stage: string, kind: unknown): boolean {
   return ticket.status === "done" && ticket.resolution_state !== "open" && stage === "review" && typeof kind === "string" && HISTORICAL_VERIFICATION_KINDS.has(kind)
+}
+
+function expectedArtifactOwner(stage: string): string {
+  if (stage === "planning") return "the planner agent"
+  if (stage === "plan_review") return "the plan-review agent"
+  if (stage === "implementation") return "the implementer or lane-executor agent"
+  if (stage === "review") return "the assigned reviewer agent"
+  if (stage === "qa") return "the QA tester agent"
+  return "the assigned specialist agent"
+}
+
+async function ensureCoordinatorDoesNotAuthorStageArtifact(input: { agent?: string | null, sessionID?: string | null }, stage: string) {
+  const directAgent = typeof input.agent === "string" ? input.agent.trim() : ""
+  const resolvedAgent = directAgent || (await resolveAgentNameFromSession(input.sessionID)) || ""
+  const agentName = resolvedAgent.trim().toLowerCase()
+  if (!agentName || !SPECIALIST_AUTHORED_STAGES.has(stage)) {
+    return
+  }
+  if (!agentName.endsWith("-team-leader")) {
+    return
+  }
+  throw new Error(
+    `Coordinator-authored ${stage} artifacts are not allowed. The team leader must delegate this artifact body to ${expectedArtifactOwner(stage)} and wait for that specialist to use artifact_write/artifact_register.`,
+  )
 }
 
 async function ensureBootstrapReadyForValidation() {
@@ -356,6 +382,7 @@ export const StageGateEnforcer: Plugin = async () => {
         const ticket = getTicket(manifest, ticketId)
         const stage = typeof output.args.stage === "string" ? output.args.stage : ""
         const historicalVerificationMutation = isHistoricalVerificationArtifactMutation(ticket, stage, output.args.kind)
+        await ensureCoordinatorDoesNotAuthorStageArtifact(input, stage)
         if (RESERVED_ARTIFACT_STAGES.has(stage)) {
           const owner = stage === "smoke-test" ? "smoke_test" : "handoff_publish"
           throw new Error(`Use ${owner} to create ${stage} artifacts. Generic artifact_register is not allowed for that stage.`)
@@ -383,6 +410,7 @@ export const StageGateEnforcer: Plugin = async () => {
         const stage = typeof output.args.stage === "string" ? output.args.stage : ""
         const artifactPath = typeof output.args.path === "string" ? output.args.path : ""
         const historicalVerificationMutation = isHistoricalVerificationArtifactMutation(ticket, stage, output.args.kind)
+        await ensureCoordinatorDoesNotAuthorStageArtifact(input, stage)
         if (RESERVED_ARTIFACT_STAGES.has(stage)) {
           const owner = stage === "smoke-test" ? "smoke_test" : "handoff_publish"
           throw new Error(`Use ${owner} to create ${stage} artifacts. Generic artifact_write is not allowed for that stage.`)

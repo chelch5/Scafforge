@@ -287,7 +287,9 @@ def plugin_runner_lines() -> list[str]:
         "if (typeof hook !== 'function') throw new Error('Missing tool.execute.before hook')",
         "const toolName = process.env.SCAFFORGE_PLUGIN_TOOL",
         "const rawArgs = process.env.SCAFFORGE_PLUGIN_ARGS || '{}'",
-        "await hook({ tool: toolName }, { args: JSON.parse(rawArgs) })",
+        "const agent = process.env.SCAFFORGE_PLUGIN_AGENT || undefined",
+        "const sessionID = process.env.SCAFFORGE_PLUGIN_SESSION_ID || undefined",
+        "await hook({ tool: toolName, agent, sessionID }, { args: JSON.parse(rawArgs) })",
         "console.log(JSON.stringify({ ok: true }))",
     ]
 
@@ -380,7 +382,13 @@ def run_generated_tool_error(
 
 
 def run_generated_plugin_before(
-    dest: Path, relative_plugin_path: str, tool_name: str, args: dict[str, object]
+    dest: Path,
+    relative_plugin_path: str,
+    tool_name: str,
+    args: dict[str, object],
+    *,
+    agent: str | None = None,
+    session_id: str | None = None,
 ) -> None:
     prepare_generated_tool_runtime(dest)
     runner = dest / ".opencode" / "state" / "plugin-runner.mjs"
@@ -389,11 +397,21 @@ def run_generated_plugin_before(
     env["SCAFFORGE_PLUGIN_PATH"] = str((dest / relative_plugin_path).resolve())
     env["SCAFFORGE_PLUGIN_TOOL"] = tool_name
     env["SCAFFORGE_PLUGIN_ARGS"] = json.dumps(args)
+    if agent:
+        env["SCAFFORGE_PLUGIN_AGENT"] = agent
+    if session_id:
+        env["SCAFFORGE_PLUGIN_SESSION_ID"] = session_id
     run([*node_command(), str(runner)], dest, env=env)
 
 
 def run_generated_plugin_before_error(
-    dest: Path, relative_plugin_path: str, tool_name: str, args: dict[str, object]
+    dest: Path,
+    relative_plugin_path: str,
+    tool_name: str,
+    args: dict[str, object],
+    *,
+    agent: str | None = None,
+    session_id: str | None = None,
 ) -> str:
     prepare_generated_tool_runtime(dest)
     runner = dest / ".opencode" / "state" / "plugin-runner.mjs"
@@ -402,6 +420,10 @@ def run_generated_plugin_before_error(
     env["SCAFFORGE_PLUGIN_PATH"] = str((dest / relative_plugin_path).resolve())
     env["SCAFFORGE_PLUGIN_TOOL"] = tool_name
     env["SCAFFORGE_PLUGIN_ARGS"] = json.dumps(args)
+    if agent:
+        env["SCAFFORGE_PLUGIN_AGENT"] = agent
+    if session_id:
+        env["SCAFFORGE_PLUGIN_SESSION_ID"] = session_id
     result = subprocess.run(
         [*node_command(), str(runner)],
         cwd=dest,

@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 import hashlib
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -178,7 +179,7 @@ def prevention_action(finding: Finding) -> str:
     if finding.code == "WFLOW025":
         return "Extend the target-completion contract so declared Godot Android repos always get canonical `ANDROID-001` and `RELEASE-001` backlog ownership instead of leaving Android delivery buried in generic polish work."
     if finding.code == "WFLOW026":
-        return "Teach the shared artifact verdict extractor to accept markdown-emphasized labels like `**Verdict**: PASS`, then route ticket_lookup and ticket_update through that single parser."
+        return "Teach the shared artifact verdict extractor to accept markdown-emphasized labels, compact `## QA PASS` / `## Review APPROVE` headings, and plain `**Overall**: PASS` labels, then route ticket_lookup and ticket_update through that single parser."
     if finding.code == "WFLOW027":
         return "Return verification metadata from restart-surface tools so callers can confirm what handoff and snapshot publication actually wrote."
     if finding.code == "WFLOW028":
@@ -264,12 +265,15 @@ def package_has_verdict_parser_fix(ctx: AuditReportingContext) -> bool:
         / "lib"
         / "workflow.ts"
     )
+    normalized_workflow_lib = workflow_lib.replace("\\\\", "\\")
     lifecycle_audit = read_text(ctx.package_root / "skills" / "scafforge-audit" / "scripts" / "audit_lifecycle_contracts.py")
     parser_supports_extended_verdict_labels = (
         "ARTIFACT_VERDICT_LABEL_PATTERN" in workflow_lib
-        and "qa\\\\s+verdict" in workflow_lib
-        and "review\\\\s+verdict" in workflow_lib
-        and "blocker\\\\s+or\\\\s+approval\\\\s+signal" in workflow_lib
+        and "overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?" in normalized_workflow_lib
+        and "qa\\s+(?:result|verdict)" in normalized_workflow_lib
+        and "review\\s+(?:result|verdict)" in normalized_workflow_lib
+        and "blocker\\s+or\\s+approval\\s+signal" in normalized_workflow_lib
+        and "(?:(?:qa|review))\\s+(pass|fail|reject|approved?|blocked?|blocker)\\b" in normalized_workflow_lib
     )
     return parser_supports_extended_verdict_labels and "WFLOW026" in lifecycle_audit
 
@@ -296,14 +300,15 @@ def package_has_split_scope_deadlock_fix(ctx: AuditReportingContext) -> bool:
     return has_no_deadlock_throw and has_wflow028_detection
 
 
-def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingContext) -> list[dict[str, Any]]:
+def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingContext, root: Path) -> list[dict[str, Any]]:
     recommendations: list[dict[str, Any]] = []
     wflow024_package_fix_available = package_has_wflow024_fix(ctx)
     target_completion_fix_available = package_has_target_completion_fix(ctx)
     verdict_parser_fix_available = package_has_verdict_parser_fix(ctx)
     split_scope_deadlock_fix_available = package_has_split_scope_deadlock_fix(ctx)
     grouped_follow_up: dict[str, list[Finding]] = {}
-    next_index = 1
+    remediation_pool, existing_ids = _load_existing_remediation_ticket_pool(root)
+    used_ids: set[str] = set()
     for finding in sorted(findings, key=lambda item: (severity_rank(item.severity), item.code)):
         if finding.code in {"BOOT001", "BOOT002"}:
             route = "scafforge-repair"
@@ -351,9 +356,19 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
             continue
 
         summary = recommendation_summary_for_finding(finding)
+        signature = _recommendation_signature(
+            source_finding_code=finding.code,
+            title=summary["title"],
+            affected_files=summary["affected_files"],
+        )
+        reusable_ids = remediation_pool.get(signature, [])
+        recommendation_id = next((ticket_id for ticket_id in reusable_ids if ticket_id not in used_ids), None)
+        if recommendation_id is None:
+            recommendation_id = _next_free_remed_id(existing_ids, used_ids)
+        used_ids.add(recommendation_id)
         recommendations.append(
             {
-                "id": f"REMED-{next_index:03d}",
+                "id": recommendation_id,
                 **summary,
                 "source_finding_code": finding.code,
                 "source_finding_codes": [finding.code],
@@ -368,14 +383,15 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
                 "description": summary["description"],
             }
         )
-        next_index += 1
 
     for surface, grouped in sorted(grouped_follow_up.items(), key=lambda item: item[0]):
         all_files = sorted({path for finding in grouped for path in finding.files})
         codes = [finding.code for finding in grouped]
+        recommendation_id = _next_free_remed_id(existing_ids, used_ids)
+        used_ids.add(recommendation_id)
         recommendations.append(
             {
-                "id": f"REMED-{next_index:03d}",
+                "id": recommendation_id,
                 "title": f"Batch remediate {surface}",
                 "description": f"Resolve the related validated warning-level findings for {surface} and rerun the affected quality checks together.",
                 "source_finding_code": codes[0],
@@ -390,7 +406,6 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
                 "assignee": "implementer",
             }
         )
-        next_index += 1
     return recommendations
 
 
@@ -455,6 +470,102 @@ def recommendation_summary_for_finding(finding: Finding) -> dict[str, Any]:
         "suggested_fix_approach": finding.safer_pattern,
         "assignee": "implementer",
     }
+
+
+_REMED_ID_RE = re.compile(r"^REMED-(\d{3,})$")
+_REPAIR_CANDIDATE_RE = re.compile(r"^/tmp/scafforge-repair-candidate-[^/]+/candidate/?")
+
+
+def _normalize_recommendation_surface(value: str) -> str:
+    normalized = str(value).strip().replace("\\", "/")
+    if not normalized:
+        return ""
+    return _REPAIR_CANDIDATE_RE.sub("candidate/", normalized)
+
+
+def _extract_ticket_summary_surfaces(summary: str) -> tuple[str, ...]:
+    marker = "Affected surfaces:"
+    if marker not in summary:
+        return ()
+    tail = summary.split(marker, 1)[1]
+    end_index = len(tail)
+    for stop_marker in (". Historical evidence sources:", " Historical evidence sources:"):
+        index = tail.find(stop_marker)
+        if index != -1:
+            end_index = min(end_index, index)
+    surface_block = tail[:end_index].strip().rstrip(".")
+    if not surface_block:
+        return ()
+    return tuple(
+        item
+        for item in (_normalize_recommendation_surface(part) for part in surface_block.split(","))
+        if item
+    )
+
+
+def _load_existing_remediation_ticket_pool(root: Path) -> tuple[dict[tuple[str, str, tuple[str, ...]], list[str]], set[str]]:
+    manifest_path = root / "tickets" / "manifest.json"
+    if not manifest_path.exists():
+        return {}, set()
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}, set()
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) else None
+    if not isinstance(tickets, list):
+        return {}, set()
+
+    pool: dict[tuple[str, str, tuple[str, ...]], list[str]] = {}
+    existing_ids: set[str] = set()
+    for ticket in tickets:
+        if not isinstance(ticket, dict):
+            continue
+        ticket_id = str(ticket.get("id", "")).strip()
+        if ticket_id:
+            existing_ids.add(ticket_id)
+        if str(ticket.get("lane", "")).strip() != "remediation":
+            continue
+        if ticket.get("status") == "done" or str(ticket.get("resolution_state", "")).strip() == "superseded":
+            continue
+        finding_source = str(ticket.get("finding_source", "")).strip()
+        title = str(ticket.get("title", "")).strip()
+        if not finding_source or not title:
+            continue
+        signature = (
+            finding_source,
+            title,
+            _extract_ticket_summary_surfaces(str(ticket.get("summary", ""))),
+        )
+        pool.setdefault(signature, []).append(ticket_id)
+    for ticket_ids in pool.values():
+        ticket_ids.sort()
+    return pool, existing_ids
+
+
+def _recommendation_signature(
+    *,
+    source_finding_code: str,
+    title: str,
+    affected_files: list[str],
+) -> tuple[str, str, tuple[str, ...]]:
+    return (
+        source_finding_code.strip(),
+        title.strip(),
+        tuple(
+            item
+            for item in (_normalize_recommendation_surface(path) for path in affected_files)
+            if item
+        ),
+    )
+
+
+def _next_free_remed_id(existing_ids: set[str], used_ids: set[str]) -> str:
+    highest = 0
+    for ticket_id in existing_ids | used_ids:
+        match = _REMED_ID_RE.match(ticket_id)
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return f"REMED-{highest + 1:03d}"
 
 
 def validation_target_for_finding(finding: Finding) -> str:
@@ -828,7 +939,7 @@ def emit_diagnosis_pack(
 ) -> dict[str, Any]:
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     destination.mkdir(parents=True, exist_ok=True)
-    recommendations = build_ticket_recommendations(findings, ctx)
+    recommendations = build_ticket_recommendations(findings, ctx, root)
     next_step = recommended_next_step(findings, recommendations)
     disposition_bundle = build_disposition_bundle(
         findings,

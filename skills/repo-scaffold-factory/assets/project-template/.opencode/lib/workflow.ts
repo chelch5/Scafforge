@@ -330,7 +330,7 @@ const REMEDIATION_REVIEW_COMMAND_PATTERN = /(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:c
 const REMEDIATION_REVIEW_COMMAND_BLOCK_PATTERN = /```(?:bash|sh|shell|console|text)?\n[\s\S]*?(?:godot(?:4)?|npm|pnpm|yarn|bun|pytest|cargo|go test|go vet|python(?:3)? -m|node(?:\s|$)|tsc(?:\s|$)|make(?:\s|$)|gradle|\.\/gradlew|adb|unzip)\b[\s\S]*?```/i
 const REMEDIATION_REVIEW_COMMAND_SUMMARY_TABLE_PATTERN = /^\|\s*#\s*\|\s*Command\s*\|\s*Exit Code\s*\|\s*Result\s*\|/im
 const REMEDIATION_REVIEW_OUTPUT_HEADING_PATTERN = /(?:raw(?:\s+command)?\s+output|raw\s+output|command\s+output|raw\s+stdout|raw\s+stderr|stdout|stderr)(?:\s*\([^)]*\))?/i
-const REMEDIATION_REVIEW_RESULT_PATTERN = /(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result):(?:\*\*|__)?)\s*(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?/i
+const REMEDIATION_REVIEW_RESULT_PATTERN = /(?:(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result):(?:\*\*|__)?)\s*(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?|(?:^|\n)#{1,6}\s*(?:overall\s+result|overall\s+verdict|review\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result|blocker\s+or\s+approval\s+signal)\s*(?:\r?\n\s*)+(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?)/i
 const CODE_BLOCK_PATTERN = /```(?:[^\n]*)\n([\s\S]*?)```/g
 
 export function rootPath(): string { return process.cwd() }
@@ -473,6 +473,31 @@ async function readText(path: string, fallback = ""): Promise<string> { try { re
 export async function writeJson(path: string, value: unknown): Promise<void> { await mkdir(dirname(path), { recursive: true }); await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf-8") }
 export async function appendJsonl(path: string, value: unknown): Promise<void> { await mkdir(dirname(path), { recursive: true }); await appendFile(path, `${JSON.stringify(value)}\n`, "utf-8") }
 export async function writeText(path: string, value: string): Promise<void> { await mkdir(dirname(path), { recursive: true }); await writeFile(path, value, "utf-8") }
+export async function resolveAgentNameFromSession(sessionID?: string | null, root = rootPath()): Promise<string | null> {
+  const normalizedSessionId = typeof sessionID === "string" ? sessionID.trim() : ""
+  if (!normalizedSessionId) {
+    return null
+  }
+  const rawLog = await readText(invocationLogPath(root))
+  if (!rawLog.trim()) {
+    return null
+  }
+  const lines = rawLog.split(/\r?\n/).filter(Boolean)
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]
+    if (!line) continue
+    try {
+      const parsed = JSON.parse(line) as { session_id?: unknown, agent?: unknown }
+      if (parsed.session_id !== normalizedSessionId) continue
+      if (typeof parsed.agent === "string" && parsed.agent.trim()) {
+        return parsed.agent.trim()
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
 // Canonical bootstrap-first examples:
 // - tickets/manifest.json not found. Run bootstrap first.
 // - .opencode/state/workflow-state.json not found. Run bootstrap first.
@@ -1096,7 +1121,7 @@ function normalizeArtifactVerdictToken(token: string): ArtifactVerdict | null {
   return null
 }
 const ARTIFACT_VERDICT_LABEL_PATTERN =
-  "(?:overall(?:\\s+qa)?\\s+(?:result|verdict)|qa\\s+verdict|review\\s+verdict|blocker\\s+or\\s+approval\\s+signal|approval\\s+signal|verdict|result)"
+  "(?:overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?|qa\\s+(?:result|verdict)|review\\s+(?:result|verdict)|blocker\\s+or\\s+approval\\s+signal|approval\\s+signal|verdict|result)"
 export function extractArtifactVerdict(content: string): ArtifactVerdictInspection {
   const lines = content.split(/\r?\n/)
   for (let i = 0; i < lines.length; i++) {
@@ -1122,6 +1147,13 @@ export function extractArtifactVerdict(content: string): ArtifactVerdictInspecti
     )
     if (headingInline) {
       const verdict = normalizeArtifactVerdictToken(headingInline[1] || "")
+      if (verdict) return { verdict, verdict_unclear: false, matched_line: trimmed }
+    }
+    const compactStageHeading = plain.match(
+      /^(?:#{1,4}\s+)?(?:(?:qa|review))\s+(pass|fail|reject|approved?|blocked?|blocker)\b/i,
+    )
+    if (compactStageHeading) {
+      const verdict = normalizeArtifactVerdictToken(compactStageHeading[1] || "")
       if (verdict) return { verdict, verdict_unclear: false, matched_line: trimmed }
     }
     // Heading-style verdict: ## Verdict / ### **APPROVE** on next non-empty line
@@ -1167,6 +1199,29 @@ export function isBlockingArtifactVerdict(verdict: ArtifactVerdict | null): bool
 }
 export function isPassingArtifactVerdict(verdict: ArtifactVerdict | null): boolean {
   return verdict === "PASS" || verdict === "APPROVED"
+}
+const SMOKE_PASS_RESULT_PATTERN = /Overall Result:\s*PASS\b/i
+const SMOKE_FAILURE_CLASSIFICATION_PATTERN = /^- failure_classification:\s*([a-z_]+)\s*$/gim
+const SMOKE_EXIT_CODE_PATTERN = /^- exit_code:\s*(-?\d+)\s*$/gim
+const SMOKE_GODOT_ERROR_PATTERN = /(?:SCRIPT ERROR:\s*)?Parse Error:|ERROR:\s*Failed to load script|syntax error|parse error|failed to load script|not declared in the current scope|not found in base self|unexpected token|missing language argument|unterminated|unmatched quote/i
+const SMOKE_PASS_SAFE_FAILURE_CLASSIFICATIONS = new Set(["none", "null", "undefined", "n/a"])
+export function smokeArtifactPassContradictionReason(content: string): string | null {
+  const hasPassingVerdict = isPassingArtifactVerdict(extractArtifactVerdict(content).verdict) || SMOKE_PASS_RESULT_PATTERN.test(content)
+  if (!hasPassingVerdict) return null
+  for (const match of content.matchAll(SMOKE_FAILURE_CLASSIFICATION_PATTERN)) {
+    const classification = (match[1] || "").trim().toLowerCase()
+    if (classification && !SMOKE_PASS_SAFE_FAILURE_CLASSIFICATIONS.has(classification)) {
+      return `command block records failure_classification ${classification}`
+    }
+  }
+  for (const match of content.matchAll(SMOKE_EXIT_CODE_PATTERN)) {
+    const exitCode = Number.parseInt(match[1] || "", 10)
+    if (Number.isFinite(exitCode) && exitCode !== 0) {
+      return `command block records non-zero exit_code ${exitCode}`
+    }
+  }
+  const contradictionLine = content.split(/\r?\n/).find((line) => SMOKE_GODOT_ERROR_PATTERN.test(line))
+  return contradictionLine ? `command output records ${contradictionLine.trim()}` : null
 }
 function artifactByteLength(content: string): number { return Buffer.byteLength(content, "utf8") }
 function hasExecutionEvidence(content: string): boolean { return EXECUTION_EVIDENCE_PATTERNS.some((pattern) => pattern.test(content)) }
@@ -1216,7 +1271,9 @@ export async function validateSmokeTestArtifactEvidence(ticket: Ticket, root = r
   const content = await readArtifactContent(artifact, root)
   if (artifactByteLength(content) < MIN_EXECUTION_ARTIFACT_BYTES) return `Smoke-test artifact must be at least ${MIN_EXECUTION_ARTIFACT_BYTES} bytes before closeout.`
   if (!hasExecutionEvidence(content)) return "Smoke-test artifact must include raw command output before closeout."
-  return isPassingArtifactVerdict(extractArtifactVerdict(content).verdict) || /Overall Result:\s*PASS/i.test(content)
+  const contradiction = smokeArtifactPassContradictionReason(content)
+  if (contradiction) return `Smoke-test artifact contradicts its PASS result: ${contradiction}.`
+  return isPassingArtifactVerdict(extractArtifactVerdict(content).verdict) || SMOKE_PASS_RESULT_PATTERN.test(content)
     ? null
     : "Smoke-test artifact must record an explicit PASS result before closeout."
 }
@@ -1346,7 +1403,11 @@ export async function validateHandoffNextAction(manifest: Manifest, workflow: Wo
     }
     const smokeTestArtifact = latestArtifact(ticket, { stage: "smoke-test", trust_state: "current" })
     const content = await readArtifactContent(smokeTestArtifact, root)
-    if (!/Overall Result:\s*PASS/i.test(content)) {
+    const contradiction = smokeArtifactPassContradictionReason(content)
+    if (contradiction) {
+      return `Cannot publish causal claims about repo readiness while the smoke-test artifact for ${ticket.id} contradicts its PASS result: ${contradiction}.`
+    }
+    if (!SMOKE_PASS_RESULT_PATTERN.test(content)) {
       return `Cannot publish causal claims about repo readiness without a passing smoke-test artifact for ${ticket.id}.`
     }
   }
@@ -1642,6 +1703,9 @@ type SaveWorkflowBundle = {
 }
 export async function saveWorkflowBundle(bundle: SaveWorkflowBundle): Promise<void> {
   const root = bundle.root ?? rootPath()
+  if (bundle.manifest) {
+    syncWorkflowSelection(bundle.workflow, bundle.manifest)
+  }
   const ctx: SaveValidationContext = { manifest: bundle.manifest, workflow: bundle.workflow, skipGraphValidation: bundle.skipGraphValidation }
   await saveWorkflowState(bundle.workflow, root, bundle.expectedRevision, { refreshDerivedSurfaces: false }, ctx)
   if (bundle.manifest) await saveManifest(bundle.manifest, root, { refreshDerivedSurfaces: false }, ctx)

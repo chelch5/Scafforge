@@ -116,6 +116,16 @@ Current focus:
 
 If a package change needs real generated runtime state, prove it in `livetesting/` or through the harness. Do not reproduce that state at the repository root.
 
+## Host-side validation hygiene
+
+When Scafforge package skill content changes and you plan to validate with host-installed skills, refresh the host copies before trusting the result:
+
+- `~/.codex/skills/`
+- `~/.copilot/skills/`
+- `~/.config/kilo/skills/`
+
+This is local operator hygiene for real validation, not part of the generated package contract and not a reason to reintroduce home-directory sync logic into the core product itself.
+
 ## First Principles
 
 1. Keep core package behavior host-agnostic unless a file is clearly adapter-specific.
@@ -439,6 +449,7 @@ When changing the package:
 - verify package-root planning surfaces have not drifted back into generated-repo semantics
 - verify generated template paths still match current OpenCode conventions
 - verify any runtime assumptions about tools or plugins are still current
+- verify host-installed validation skills have been refreshed in Codex, Copilot, and Kilo when package skill content changed
 - remove stale host-specific wording from core skills and docs
 - verify the package still meets the competence contract in `references/competence-contract.md`
 

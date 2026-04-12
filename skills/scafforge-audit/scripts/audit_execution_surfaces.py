@@ -48,6 +48,16 @@ SCAN_EXCLUDED_DIRS: frozenset[str] = frozenset({
     "htmlcov",
 })
 
+SMOKE_PASS_RESULT_PATTERN = re.compile(r"Overall Result:\s*PASS\b", re.IGNORECASE)
+SMOKE_FAILURE_CLASSIFICATION_PATTERN = re.compile(r"^- failure_classification:\s*([a-z_]+)\s*$", re.IGNORECASE | re.MULTILINE)
+SMOKE_EXIT_CODE_PATTERN = re.compile(r"^- exit_code:\s*(-?\d+)\s*$", re.MULTILINE)
+SMOKE_GODOT_ERROR_PATTERN = re.compile(
+    r'(?:SCRIPT ERROR:\s*)?Parse Error:|ERROR:\s*Failed to load script|syntax error|parse error|failed to load script|'
+    r'not declared in the current scope|not found in base self|unexpected token|missing language argument|unterminated|unmatched quote',
+    re.IGNORECASE,
+)
+SMOKE_PASS_SAFE_FAILURE_CLASSIFICATIONS: frozenset[str] = frozenset({"none", "null", "undefined", "n/a"})
+
 
 def iter_source_files(root: Path, suffixes: tuple[str, ...]) -> list[Path]:
     """Iterate repo-owned source files, skipping dependency and build trees."""
@@ -722,6 +732,45 @@ def _collect_first_error_lines(output: str) -> list[str]:
     return interesting[:5] or lines[:5]
 
 
+def _latest_current_stage_artifact(ticket: dict[str, Any], stage: str) -> dict[str, Any] | None:
+    artifacts = ticket.get("artifacts")
+    if not isinstance(artifacts, list):
+        return None
+    for artifact in reversed(artifacts):
+        if not isinstance(artifact, dict):
+            continue
+        if str(artifact.get("trust_state", "current")).strip() != "current":
+            continue
+        if str(artifact.get("stage", "")).strip() != stage:
+            continue
+        return artifact
+    return None
+
+
+def _smoke_artifact_pass_contradiction_evidence(text: str) -> list[str]:
+    if not SMOKE_PASS_RESULT_PATTERN.search(text):
+        return []
+    evidence: list[str] = []
+    for match in SMOKE_FAILURE_CLASSIFICATION_PATTERN.finditer(text):
+        classification = (match.group(1) or "").strip().lower()
+        if classification and classification not in SMOKE_PASS_SAFE_FAILURE_CLASSIFICATIONS:
+            evidence.append(f"PASS artifact command block records failure_classification {classification}")
+            break
+    for match in SMOKE_EXIT_CODE_PATTERN.finditer(text):
+        try:
+            exit_code = int(match.group(1) or "0")
+        except ValueError:
+            continue
+        if exit_code != 0:
+            evidence.append(f"PASS artifact command block records non-zero exit_code {exit_code}")
+            break
+    for line in text.splitlines():
+        if SMOKE_GODOT_ERROR_PATTERN.search(line):
+            evidence.append(line.strip())
+            break
+    return evidence[:4]
+
+
 def audit_node_execution(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
     package_path = root / "package.json"
     if not package_path.exists():
@@ -953,6 +1002,53 @@ def audit_godot_execution(root: Path, findings: list[Finding], ctx: ExecutionSur
                 ],
                 provenance="script",
             ),
+        )
+
+    contradictory_smoke_files: list[Path] = []
+    contradictory_smoke_evidence: list[str] = []
+    for ticket in manifest_tickets:
+        if not isinstance(ticket, dict):
+            continue
+        ticket_id = str(ticket.get("id", "")).strip()
+        lane = str(ticket.get("lane", "")).strip()
+        if ticket_id != "RELEASE-001" and lane != "finish-validation":
+            continue
+        artifact = _latest_current_stage_artifact(ticket, "smoke-test")
+        if artifact is None:
+            continue
+        artifact_path_value = str(artifact.get("path", "")).strip()
+        if not artifact_path_value:
+            continue
+        artifact_path = root / artifact_path_value
+        artifact_text = ctx.read_text(artifact_path)
+        evidence = _smoke_artifact_pass_contradiction_evidence(artifact_text)
+        if not evidence:
+            continue
+        contradictory_smoke_files.append(artifact_path)
+        contradictory_smoke_evidence.extend(f"{ticket_id}: {item}" for item in evidence)
+    if contradictory_smoke_evidence:
+        _add_execution_finding(
+            findings,
+            ctx,
+            code="EXEC-GODOT-006",
+            severity="error",
+            problem="Godot release smoke artifact reports PASS despite recorded runtime or command-failure evidence.",
+            root_cause=(
+                "The repo is treating a contradictory smoke artifact as release proof. A Godot export or release-validation run can "
+                "record parse/script-load failures or command-level failure markers while the artifact still says PASS, which lets a "
+                "broken runtime state look releasable."
+            ),
+            files=list(dict.fromkeys([project_file, *contradictory_smoke_files])),
+            safer_pattern=(
+                "Make smoke_test fail when Godot export/load output contains parse or script-load errors, and reject PASS smoke artifacts "
+                "whose command blocks record non-zero exit codes or non-`none` failure classifications before release closeout."
+            ),
+            evidence=[
+                f"release_lane_started_or_done = {release_lane_started_or_done(manifest)}",
+                f"repo_claims_completion = {repo_claims_completion(manifest)}",
+                *contradictory_smoke_evidence[:6],
+            ],
+            root=root,
         )
 
     # --- EXEC-GODOT-005b: missing deliverable proof when packaged product is required ---

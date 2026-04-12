@@ -208,7 +208,9 @@ def remediation_split_kind(recommendation: dict[str, Any], source_ticket_id: str
 
 
 def build_ticket_record(recommendation: dict[str, Any], manifest: dict[str, Any], active_ticket: dict[str, Any] | None, wave: int) -> dict[str, Any]:
-    source_ticket_id = active_ticket["id"] if active_ticket else None
+    recommendation_id = str(recommendation.get("id", "")).strip()
+    active_ticket_id = str(active_ticket.get("id", "")).strip() if isinstance(active_ticket, dict) else None
+    source_ticket_id = active_ticket_id if active_ticket_id and active_ticket_id != recommendation_id else None
     source_mode = "split_scope" if source_ticket_id else "net_new_scope"
     split_kind = remediation_split_kind(recommendation, source_ticket_id)
     source_files = collect_source_files(recommendation)
@@ -424,6 +426,17 @@ def canonicalize_follow_up_parent_links(
     return changed
 
 
+def ticket_uses_candidate_only_surfaces(ticket: dict[str, Any]) -> bool:
+    summary = str(ticket.get("summary", "")).strip()
+    if "Affected surfaces:" not in summary:
+        return False
+    surface_block = summary.split("Affected surfaces:", 1)[1]
+    if ". Historical evidence sources:" in surface_block:
+        surface_block = surface_block.split(". Historical evidence sources:", 1)[0]
+    surfaces = [part.strip().rstrip(".") for part in surface_block.split(",") if part.strip()]
+    return bool(surfaces) and all(surface.startswith("/tmp/scafforge-repair-candidate-") for surface in surfaces)
+
+
 def supersede_stale_remediation_tickets(
     manifest: dict[str, Any],
     *,
@@ -452,7 +465,19 @@ def supersede_stale_remediation_tickets(
         if ticket.get("status") == "done" and not already_superseded:
             continue
         finding_source = str(ticket.get("finding_source", "")).strip()
-        if not finding_source or finding_source not in recommended_finding_codes:
+        candidate_only_ticket = ticket_uses_candidate_only_surfaces(ticket)
+        should_supersede = bool(
+            finding_source
+            and (
+                finding_source in recommended_finding_codes
+                or candidate_only_ticket
+            )
+        )
+        if not should_supersede:
+            continue
+        if candidate_only_ticket and finding_source in recommended_finding_codes:
+            continue
+        if not candidate_only_ticket and finding_source not in recommended_finding_codes:
             continue
         changed = False
         if canonicalize_follow_up_parent_links(
@@ -692,6 +717,8 @@ def build_android_release_ticket(*, wave: int, source_ticket_id: str | None, rep
     needs_deliverable = requires_packaged_android_product(repo_root)
     gate_ids: list[str] = list(feature_gate_ids) if feature_gate_ids else []
     depends_on: list[str] = ([ANDROID_SIGNING_TICKET_ID] + gate_ids) if needs_deliverable else gate_ids
+    if source_ticket_id:
+        depends_on = [ticket_id for ticket_id in depends_on if ticket_id != source_ticket_id]
     deliverable_acceptance = [
         "A signed release APK or AAB is produced once signing prerequisites are satisfied via SIGNING-001.",
         f"The signed artifact path is declared in canonical project truth.",

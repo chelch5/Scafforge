@@ -308,22 +308,25 @@ Current state:
 
 Assessment:
 
-- the user-provided screenshot is strong evidence that the current accepted release quality is **not good enough**
-- the brief does permit procedural art, but it does **not** permit a nearly empty non-game as an acceptable final result
-- this is therefore a **Scafforge failure of finish/acceptance gating**, not just a repo-specific aesthetic complaint
+- the old accepted release state is not currently trustworthy
+- fresh fallback audit (`diagnosis/20260411-193418`) says `validated failures found` and specifically flags:
+  - `WFLOW019` stale / contradictory ticket lineage
+  - `EXEC-REMED-001` closure lacks runnable command evidence for the earlier `EXEC-GODOT-004` finding
+- command-backed audit evidence does **not** currently prove that VA's main issue is insufficient gameplay scope
+- command-backed audit evidence also does **not** freshly reprove the earlier parse/load failure; what is proven right now is untrustworthy historical closure around that class of issue
 
 Unaccounted Scafforge issue:
 
-- Scafforge currently allows "APK exists + minimal interaction" to pass where a meaningful finish/playability gate was needed
+- release and remediation trust could remain green even when the underlying runtime/load-class finding was not re-closed with runnable evidence
 
 ## womanvshorseVB
 
 Current state:
 
 - tickets: 17 / 22 done
-- active ticket: `REMED-002`
-- workflow: `smoke-test / smoke_test`
-- `pending_process_verification=true`
+- active ticket: `ASSET-005`
+- workflow now foregrounds live work again after remediation closeout
+- `pending_process_verification=false`
 - `ANDROID-001` is now reclosed with trusted smoke proof
 
 Assessment:
@@ -331,12 +334,15 @@ Assessment:
 - two Scafforge generator bugs were exposed here and have now been fixed package-side:
   1. Godot export stderr misclassification in generated smoke tooling
   2. remediation result parsing for `Overall Result: **PASS**`
-- however, this repo is also the clearest evidence that I drifted into direct downstream intervention instead of staying purely Scafforge-side
+- latest headless opencode evidence is positive again:
+  - `REMED-002` closed
+  - backlog verification for the affected done tickets passed
+  - `REMED-003` closed
+  - `pending_process_verification` cleared
+  - the lane returned to `ASSET-005`
 
 Current remaining repo work:
 
-- `REMED-002`
-- `REMED-003`
 - `ASSET-005`
 - `UI-003`
 - `RELEASE-001`

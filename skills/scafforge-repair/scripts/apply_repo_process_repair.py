@@ -118,6 +118,22 @@ _FINISH_CONSUMER_KEYWORDS = (
     "playable",
     "packaged product",
 )
+INTERACTIVE_FINISH_PROOF_ACCEPTANCE = (
+    "Finish proof includes explicit user-observable interaction evidence (controls/input, visible gameplay state or feedback, "
+    "and the brief-specific progression or content surfaces), not just export/install success."
+)
+WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
+    {
+        "release-facing milestones must keep the toy-box flow coherent, maintain immediate touch feedback, and ensure any shipped visual or audio content matches the toddler-safe direction recorded in this brief.",
+        "release-facing milestones must confirm shipped content matches the recorded finish bar for the product.",
+    }
+)
+_MANAGED_FINISH_VALIDATION_PREFIXES = (
+    "Finish proof artifact explicitly maps current evidence to the declared acceptance signals:",
+    INTERACTIVE_FINISH_PROOF_ACCEPTANCE,
+    "`godot4 --headless --path . --quit` succeeds so finish validation is based on a loadable product, not just exported artifacts",
+    "All finish-direction, visual, audio, or content ownership tickets required by the contract are completed before closeout",
+)
 
 
 def brief_is_consumer_facing(brief_text: str) -> bool:
@@ -127,6 +143,74 @@ def brief_is_consumer_facing(brief_text: str) -> bool:
 
 def brief_has_finish_contract(brief_text: str) -> bool:
     return bool(re.search(r"^##\s+13\.", brief_text, re.MULTILINE) or "product finish contract" in brief_text.lower())
+
+
+def _normalize_finish_contract_value(value: str) -> str:
+    return " ".join(value.lower().split())
+
+
+def brief_requires_interactive_finish_proof(brief_text: str) -> bool:
+    lowered = _normalize_finish_contract_value(brief_text)
+    interactive_markers = (
+        "project.godot",
+        "godot",
+        "android",
+        "ios",
+        "mobile",
+        "game",
+        "playable",
+        "interactive",
+        "touch",
+        "toddler",
+        "toy",
+    )
+    return any(marker in lowered for marker in interactive_markers)
+
+
+def recommended_interactive_finish_signals(brief_text: str) -> str:
+    lowered = _normalize_finish_contract_value(brief_text)
+    if "toddler" in lowered or "toy" in lowered:
+        return (
+            "Release-facing milestones must prove the shipped toy-box flow is reachable on current builds, each shipped play "
+            "surface responds to touch with immediate visible feedback, and the child-facing visual/audio direction stays "
+            "coherent beyond export success."
+        )
+    if any(marker in lowered for marker in ("game", "godot", "playable")):
+        return (
+            "Release-facing milestones must prove a playable shipped loop on current builds with working controls/input, "
+            "visible gameplay state or progression feedback, and the brief-specific user-facing surfaces beyond export success."
+        )
+    return (
+        "Release-facing milestones must prove the shipped interaction flow works on current builds with responsive input, "
+        "visible user-facing feedback, and the brief-specific content surfaces beyond export success."
+    )
+
+
+def build_finish_validation_acceptance(*, brief_text: str, finish_acceptance_signals: str) -> list[str]:
+    acceptance = [
+        f"Finish proof artifact explicitly maps current evidence to the declared acceptance signals: {finish_acceptance_signals}",
+        "`godot4 --headless --path . --quit` succeeds so finish validation is based on a loadable product, not just exported artifacts",
+        "All finish-direction, visual, audio, or content ownership tickets required by the contract are completed before closeout",
+    ]
+    if brief_requires_interactive_finish_proof(brief_text):
+        acceptance.insert(1, INTERACTIVE_FINISH_PROOF_ACCEPTANCE)
+    return acceptance
+
+
+def normalize_generated_finish_contract(brief_text: str) -> str:
+    finish_acceptance_signals = _finish_contract_field(brief_text, "finish_acceptance_signals")
+    if not finish_acceptance_signals or not brief_requires_interactive_finish_proof(brief_text):
+        return brief_text
+    if _normalize_finish_contract_value(finish_acceptance_signals) not in WEAK_GENERATED_FINISH_SIGNAL_VALUES:
+        return brief_text
+    stronger_signals = recommended_interactive_finish_signals(brief_text)
+    return re.sub(
+        r"^(\s*-\s*finish_acceptance_signals\s*:\s*).+$",
+        rf"\1{stronger_signals}",
+        brief_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
 
 
 def infer_finish_contract_section(brief_text: str) -> str | None:
@@ -155,15 +239,14 @@ def infer_finish_contract_section(brief_text: str) -> str | None:
         audio_finish_target = (
             "Soft, child-safe tactile audio feedback that supports play without startling spikes or harsh loops."
         )
-        finish_acceptance_signals = (
-            "Release-facing milestones must keep the toy-box flow coherent, maintain immediate touch feedback, "
-            "and ensure any shipped visual or audio content matches the toddler-safe direction recorded in this brief."
-        )
+        finish_acceptance_signals = recommended_interactive_finish_signals(brief_text)
     else:
         visual_finish_target = "User-facing visuals must match the recorded product direction across all shipped surfaces."
         audio_finish_target = "User-facing audio must match the recorded product direction across all shipped surfaces."
         finish_acceptance_signals = (
-            "Release-facing milestones must confirm shipped content matches the recorded finish bar for the product."
+            recommended_interactive_finish_signals(brief_text)
+            if brief_requires_interactive_finish_proof(brief_text)
+            else "Release-facing milestones must confirm shipped content matches the recorded finish bar for the product."
         )
 
     content_source_plan = (
@@ -196,6 +279,7 @@ def backfill_missing_finish_contract(brief_text: str) -> str | None:
         "and closeout must reference it before treating the product as release-ready.",
         "and closeout must reference it before treating the product as finished.",
     )
+    normalized = normalize_generated_finish_contract(normalized)
     if normalized != brief_text:
         return normalized
     section = infer_finish_contract_section(brief_text)
@@ -203,6 +287,286 @@ def backfill_missing_finish_contract(brief_text: str) -> str | None:
         return None
     body = brief_text.rstrip()
     return f"{body}\n\n{section}"
+
+
+_REPAIR_RELEASE_INFRA_LANES: frozenset[str] = frozenset(
+    {"android-export", "signing-prerequisites", "release-readiness"}
+)
+
+
+def _finish_contract_field(brief_text: str, field: str) -> str | None:
+    match = re.search(
+        rf"^\s*-\s*{re.escape(field)}\s*:\s*(.+)$",
+        brief_text,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    return match.group(1).strip() if match else None
+
+
+def _finish_contract_value_is_placeholder(value: str | None) -> bool:
+    lowered = " ".join((value or "").lower().split())
+    return (
+        not lowered
+        or lowered.startswith("record ")
+        or "__" in (value or "")
+        or "unless the normalized brief records" in lowered
+    )
+
+
+def _placeholder_policy_requires_finish_ownership(placeholder_policy: str) -> bool:
+    lowered = " ".join(placeholder_policy.lower().split())
+    if any(
+        marker in lowered
+        for marker in (
+            "placeholder_ok",
+            "placeholder ok",
+            "placeholders ok",
+            "placeholder acceptable",
+            "placeholders acceptable",
+            "placeholder allowed",
+            "placeholders allowed",
+        )
+    ):
+        return False
+    return any(
+        marker in lowered
+        for marker in (
+            "no_placeholders",
+            "no placeholder",
+            "no placeholders",
+            "placeholder-free",
+            "placeholder free",
+        )
+    )
+
+
+def _target_is_intentionally_absent(target: str, *, absent_marker: str) -> bool:
+    lowered = target.lower()
+    return absent_marker in lowered or "intentionally absent" in lowered
+
+
+def _next_ticket_wave(tickets: list[dict[str, Any]]) -> int:
+    waves: list[int] = []
+    for ticket in tickets:
+        wave = ticket.get("wave")
+        if isinstance(wave, int):
+            waves.append(wave)
+        elif isinstance(wave, str) and wave.strip().isdigit():
+            waves.append(int(wave.strip()))
+    return max(waves, default=1) + 1
+
+
+def _repair_terminal_feature_ids(tickets: list[dict[str, Any]]) -> list[str]:
+    candidates = [
+        ticket
+        for ticket in tickets
+        if isinstance(ticket, dict)
+        and str(ticket.get("lane", "")).strip() not in _REPAIR_RELEASE_INFRA_LANES
+        and str(ticket.get("lane", "")).strip() != "remediation"
+        and not str(ticket.get("id", "")).strip().startswith("REMED-")
+    ]
+    ranked: list[tuple[int, str]] = []
+    for ticket in candidates:
+        ticket_id = str(ticket.get("id", "")).strip()
+        if not ticket_id:
+            continue
+        wave = ticket.get("wave", 0)
+        if isinstance(wave, int):
+            ranked.append((wave, ticket_id))
+        elif isinstance(wave, str) and wave.strip().isdigit():
+            ranked.append((int(wave.strip()), ticket_id))
+    if ranked:
+        max_wave = max(wave for wave, _ in ranked)
+        return [ticket_id for wave, ticket_id in ranked if wave == max_wave]
+    return ["SETUP-001"] if any(str(ticket.get("id", "")).strip() == "SETUP-001" for ticket in tickets) else []
+
+
+def ensure_finish_contract_tickets(manifest: dict[str, Any], brief_text: str) -> bool:
+    if not brief_is_consumer_facing(brief_text) or not brief_has_finish_contract(brief_text):
+        return False
+    tickets = manifest.get("tickets")
+    if not isinstance(tickets, list):
+        return False
+
+    placeholder_policy = _finish_contract_field(brief_text, "placeholder_policy") or ""
+    visual_finish_target = _finish_contract_field(brief_text, "visual_finish_target") or ""
+    audio_finish_target = _finish_contract_field(brief_text, "audio_finish_target") or ""
+    content_source_plan = _finish_contract_field(brief_text, "content_source_plan") or ""
+    finish_acceptance_signals = _finish_contract_field(brief_text, "finish_acceptance_signals") or ""
+    if _finish_contract_value_is_placeholder(finish_acceptance_signals):
+        return False
+
+    existing_ids = {str(ticket.get("id", "")).strip() for ticket in tickets if isinstance(ticket, dict)}
+    modified = False
+    wave = _next_ticket_wave([ticket for ticket in tickets if isinstance(ticket, dict)])
+
+    if _placeholder_policy_requires_finish_ownership(placeholder_policy):
+        if "VISUAL-001" not in existing_ids and visual_finish_target and not _target_is_intentionally_absent(
+            visual_finish_target,
+            absent_marker="no consumer-facing visual bar applies",
+        ):
+            tickets.append(
+                {
+                    "id": "VISUAL-001",
+                    "title": "Own ship-ready visual finish",
+                    "wave": wave,
+                    "lane": "finish-visual",
+                    "parallel_safe": False,
+                    "overlap_risk": "medium",
+                    "stage": "planning",
+                    "status": "todo",
+                    "resolution_state": "open",
+                    "verification_state": "suspect",
+                    "depends_on": ["SETUP-001"],
+                    "summary": f"Replace prototype-grade visuals with the declared ship bar: {visual_finish_target}.",
+                    "acceptance": [
+                        f"The visual finish target is met: {visual_finish_target}",
+                        "No placeholder or throwaway visual assets remain in the user-facing product surfaces",
+                    ],
+                    "decision_blockers": [],
+                    "artifacts": [],
+                    "follow_up_ticket_ids": [],
+                }
+            )
+            existing_ids.add("VISUAL-001")
+            wave += 1
+            modified = True
+        if "AUDIO-001" not in existing_ids and audio_finish_target and not _target_is_intentionally_absent(
+            audio_finish_target,
+            absent_marker="no audio bar applies",
+        ):
+            tickets.append(
+                {
+                    "id": "AUDIO-001",
+                    "title": "Own ship-ready audio finish",
+                    "wave": wave,
+                    "lane": "finish-audio",
+                    "parallel_safe": False,
+                    "overlap_risk": "medium",
+                    "stage": "planning",
+                    "status": "todo",
+                    "resolution_state": "open",
+                    "verification_state": "suspect",
+                    "depends_on": ["SETUP-001"],
+                    "summary": f"Deliver the declared user-facing audio bar: {audio_finish_target}.",
+                    "acceptance": [
+                        f"The audio finish target is met: {audio_finish_target}",
+                        "No placeholder, missing, or temporary user-facing audio remains where the finish contract requires audio delivery",
+                    ],
+                    "decision_blockers": [],
+                    "artifacts": [],
+                    "follow_up_ticket_ids": [],
+                }
+            )
+            existing_ids.add("AUDIO-001")
+            wave += 1
+            modified = True
+        if "VISUAL-001" not in existing_ids and "AUDIO-001" not in existing_ids and "CONTENT-001" not in existing_ids:
+            tickets.append(
+                {
+                    "id": "CONTENT-001",
+                    "title": "Own authored content finish",
+                    "wave": wave,
+                    "lane": "finish-content",
+                    "parallel_safe": False,
+                    "overlap_risk": "medium",
+                    "stage": "planning",
+                    "status": "todo",
+                    "resolution_state": "open",
+                    "verification_state": "suspect",
+                    "depends_on": ["SETUP-001"],
+                    "summary": f"Replace placeholder product content with the declared authored/licensed/procedural bar: {content_source_plan}.",
+                    "acceptance": [
+                        f"The content source plan is owned and implemented: {content_source_plan}",
+                        "No placeholder user-facing content remains in the finished product surfaces",
+                    ],
+                    "decision_blockers": [],
+                    "artifacts": [],
+                    "follow_up_ticket_ids": [],
+                }
+            )
+            existing_ids.add("CONTENT-001")
+            wave += 1
+            modified = True
+
+    finish_dependencies = [
+        ticket_id for ticket_id in ("VISUAL-001", "AUDIO-001", "CONTENT-001") if ticket_id in existing_ids
+    ]
+    finish_validation_dependencies = finish_dependencies or _repair_terminal_feature_ids(
+        [ticket for ticket in tickets if isinstance(ticket, dict)]
+    )
+    finish_validation_ticket = next(
+        (
+            ticket
+            for ticket in tickets
+            if isinstance(ticket, dict) and str(ticket.get("id", "")).strip() == "FINISH-VALIDATE-001"
+        ),
+        None,
+    )
+    finish_validation_acceptance = build_finish_validation_acceptance(
+        brief_text=brief_text,
+        finish_acceptance_signals=finish_acceptance_signals,
+    )
+    if finish_validation_dependencies and "FINISH-VALIDATE-001" not in existing_ids:
+        tickets.append(
+            {
+                "id": "FINISH-VALIDATE-001",
+                "title": "Validate product finish contract",
+                "wave": wave,
+                "lane": "finish-validation",
+                "parallel_safe": False,
+                "overlap_risk": "medium",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": finish_validation_dependencies,
+                "summary": "Prove that the declared Product Finish Contract is satisfied with current runnable evidence before release closeout.",
+                "acceptance": finish_validation_acceptance,
+                "decision_blockers": [],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+        existing_ids.add("FINISH-VALIDATE-001")
+        modified = True
+    elif isinstance(finish_validation_ticket, dict):
+        existing_acceptance = [
+            str(item).strip()
+            for item in finish_validation_ticket.get("acceptance", [])
+            if isinstance(item, str) and str(item).strip()
+        ]
+        preserved_acceptance = [
+            item
+            for item in existing_acceptance
+            if not any(item.startswith(prefix) for prefix in _MANAGED_FINISH_VALIDATION_PREFIXES)
+            and item not in finish_validation_acceptance
+        ]
+        desired_acceptance = finish_validation_acceptance + preserved_acceptance
+        if existing_acceptance != desired_acceptance:
+            finish_validation_ticket["acceptance"] = desired_acceptance
+            modified = True
+
+    release_ticket = next(
+        (
+            ticket
+            for ticket in tickets
+            if isinstance(ticket, dict) and str(ticket.get("id", "")).strip() == "RELEASE-001"
+        ),
+        None,
+    )
+    if isinstance(release_ticket, dict) and "FINISH-VALIDATE-001" in existing_ids:
+        release_dependencies = [
+            str(dep).strip()
+            for dep in release_ticket.get("depends_on", [])
+            if isinstance(dep, str) and str(dep).strip()
+        ]
+        if "FINISH-VALIDATE-001" not in release_dependencies:
+            release_dependencies.append("FINISH-VALIDATE-001")
+            release_ticket["depends_on"] = release_dependencies
+            modified = True
+
+    return modified
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -1171,6 +1535,24 @@ def apply_repair(
                     "files_modified": ["docs/spec/CANONICAL-BRIEF.md"] if brief_before else [],
                 },
             )
+
+        manifest_path = repo_root / "tickets" / "manifest.json"
+        manifest_before = read_json(manifest_path)
+        effective_brief = brief_after if brief_after is not None else brief_before
+        if isinstance(manifest_before, dict):
+            manifest_after = json.loads(json.dumps(manifest_before))
+            if ensure_finish_contract_tickets(manifest_after, effective_brief):
+                processed_records.append(backup_target(manifest_path, backup_root, repo_root))
+                write_json(manifest_path, manifest_after)
+                replaced_surfaces.append("tickets/manifest.json")
+                diff_summary = merge_diff_summaries(
+                    diff_summary,
+                    {
+                        "files_added": ["tickets/manifest.json"] if not manifest_path.exists() else [],
+                        "files_removed": [],
+                        "files_modified": ["tickets/manifest.json"],
+                    },
+                )
 
         rendered_start_here = (rendered_root / "START-HERE.md").read_text(encoding="utf-8")
         target_start_here_path = repo_root / "START-HERE.md"

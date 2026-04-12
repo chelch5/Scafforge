@@ -351,6 +351,8 @@ def _repair_ticket_graph_contradictions(repo_root: Path) -> list[str]:
     2. Remove a self-referencing source_ticket_id (ticket cannot be its own source).
     3. Ensure source_ticket.follow_up_ticket_ids contains the follow-up ticket id when the
        follow-up names it as source_ticket_id (bidirectional sync).
+    4. Remove stale follow_up_ticket_ids edges that point to missing, superseded, self-owned,
+       or contradictory children.
     """
     manifest_path = repo_root / "tickets" / "manifest.json"
     if not manifest_path.exists():
@@ -369,6 +371,46 @@ def _repair_ticket_graph_contradictions(repo_root: Path) -> list[str]:
             tickets_by_id[t["id"]] = t
 
     changes: list[str] = []
+    for ticket in tickets:
+        if not isinstance(ticket, dict):
+            continue
+        tid = str(ticket.get("id", "")).strip()
+        follow_ups = ticket.get("follow_up_ticket_ids")
+        if not isinstance(follow_ups, list):
+            continue
+        normalized_follow_ups: list[str] = []
+        seen_follow_ups: set[str] = set()
+        removed_children: list[str] = []
+        for raw_child_id in follow_ups:
+            if not isinstance(raw_child_id, str):
+                continue
+            child_id = raw_child_id.strip()
+            if not child_id:
+                continue
+            if child_id in seen_follow_ups:
+                removed_children.append(child_id)
+                continue
+            child_ticket = tickets_by_id.get(child_id)
+            if child_id == tid:
+                removed_children.append(child_id)
+                continue
+            if child_ticket is None:
+                removed_children.append(child_id)
+                continue
+            if child_ticket.get("status") == "done" and child_ticket.get("resolution_state") == "superseded":
+                removed_children.append(child_id)
+                continue
+            if str(child_ticket.get("source_ticket_id", "")).strip() != tid:
+                removed_children.append(child_id)
+                continue
+            seen_follow_ups.add(child_id)
+            normalized_follow_ups.append(child_id)
+        if normalized_follow_ups != follow_ups:
+            ticket["follow_up_ticket_ids"] = normalized_follow_ups
+            if removed_children:
+                unique_removed = ", ".join(dict.fromkeys(removed_children))
+                changes.append(f"{tid}: pruned stale follow_up_ticket_ids entries ({unique_removed})")
+
     for ticket in tickets:
         if not isinstance(ticket, dict):
             continue
@@ -393,7 +435,11 @@ def _repair_ticket_graph_contradictions(repo_root: Path) -> list[str]:
 
         # Fix 3: source ticket missing this ticket in follow_up_ticket_ids
         source_ticket = tickets_by_id.get(source_id)
-        if source_ticket is not None:
+        is_superseded_follow_up = (
+            ticket.get("status") == "done"
+            and ticket.get("resolution_state") == "superseded"
+        )
+        if source_ticket is not None and not is_superseded_follow_up:
             follow_ups = source_ticket.get("follow_up_ticket_ids")
             if isinstance(follow_ups, list) and tid not in follow_ups:
                 source_ticket["follow_up_ticket_ids"] = follow_ups + [tid]
@@ -402,6 +448,161 @@ def _repair_ticket_graph_contradictions(repo_root: Path) -> list[str]:
     if changes:
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return changes
+
+
+def _default_ticket_workflow_state() -> dict[str, Any]:
+    return {
+        "approved_plan": False,
+        "reopen_count": 0,
+        "needs_reverification": False,
+    }
+
+
+def _select_foreground_ticket(manifest: dict[str, Any], workflow: dict[str, Any]) -> dict[str, Any] | None:
+    tickets = manifest.get("tickets") if isinstance(manifest.get("tickets"), list) else []
+    if not tickets:
+        return None
+
+    tickets_by_id: dict[str, dict[str, Any]] = {}
+    for ticket in tickets:
+        if isinstance(ticket, dict) and isinstance(ticket.get("id"), str):
+            tickets_by_id[ticket["id"]] = ticket
+
+    current_ticket_id = manifest.get("active_ticket")
+    if not isinstance(current_ticket_id, str) or not current_ticket_id.strip():
+        workflow_ticket_id = workflow.get("active_ticket")
+        current_ticket_id = workflow_ticket_id if isinstance(workflow_ticket_id, str) and workflow_ticket_id.strip() else ""
+
+    current_ticket = tickets_by_id.get(current_ticket_id)
+    if current_ticket is not None and current_ticket.get("status") != "done":
+        return current_ticket
+
+    if current_ticket_id:
+        direct_dependent = next(
+            (
+                ticket
+                for ticket in tickets
+                if isinstance(ticket, dict)
+                and ticket.get("id") != current_ticket_id
+                and ticket.get("status") != "done"
+                and isinstance(ticket.get("depends_on"), list)
+                and current_ticket_id in ticket.get("depends_on", [])
+            ),
+            None,
+        )
+        if direct_dependent is not None:
+            return direct_dependent
+
+    ready_open = next(
+        (
+            ticket
+            for ticket in tickets
+            if isinstance(ticket, dict)
+            and ticket.get("id") != current_ticket_id
+            and ticket.get("status") != "done"
+            and ticket.get("resolution_state") != "superseded"
+            and (
+                not isinstance(ticket.get("depends_on"), list)
+                or all(
+                    isinstance(dep_id, str)
+                    and dep_id in tickets_by_id
+                    and tickets_by_id[dep_id].get("status") == "done"
+                    for dep_id in ticket.get("depends_on", [])
+                )
+            )
+        ),
+        None,
+    )
+    if ready_open is not None:
+        return ready_open
+
+    any_open = next(
+        (
+            ticket
+            for ticket in tickets
+            if isinstance(ticket, dict)
+            and ticket.get("id") != current_ticket_id
+            and ticket.get("status") != "done"
+            and ticket.get("resolution_state") != "superseded"
+        ),
+        None,
+    )
+    if any_open is not None:
+        return any_open
+
+    if current_ticket is not None:
+        return current_ticket
+    return next((ticket for ticket in tickets if isinstance(ticket, dict)), None)
+
+
+def _sync_workflow_selection(repo_root: Path) -> dict[str, Any] | None:
+    manifest_path = repo_root / "tickets" / "manifest.json"
+    workflow_path = repo_root / ".opencode" / "state" / "workflow-state.json"
+    if not manifest_path.exists() or not workflow_path.exists():
+        return None
+
+    try:
+        manifest: dict[str, Any] = json.loads(manifest_path.read_text(encoding="utf-8"))
+        workflow: dict[str, Any] = json.loads(workflow_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    selected_ticket = _select_foreground_ticket(manifest, workflow)
+    if not isinstance(selected_ticket, dict):
+        return None
+
+    selected_ticket_id = str(selected_ticket.get("id", "")).strip()
+    if not selected_ticket_id:
+        return None
+
+    ticket_state = workflow.get("ticket_state")
+    if not isinstance(ticket_state, dict):
+        ticket_state = {}
+        workflow["ticket_state"] = ticket_state
+    active_ticket_state = ticket_state.get(selected_ticket_id)
+    if not isinstance(active_ticket_state, dict):
+        active_ticket_state = _default_ticket_workflow_state()
+        ticket_state[selected_ticket_id] = active_ticket_state
+
+    selected_stage = str(selected_ticket.get("stage", "planning")).strip() or "planning"
+    selected_status = str(selected_ticket.get("status", "todo")).strip() or "todo"
+    selected_approved_plan = active_ticket_state.get("approved_plan") is True
+
+    before = {
+        "manifest_active_ticket": manifest.get("active_ticket"),
+        "workflow_active_ticket": workflow.get("active_ticket"),
+        "workflow_stage": workflow.get("stage"),
+        "workflow_status": workflow.get("status"),
+        "workflow_approved_plan": workflow.get("approved_plan"),
+    }
+
+    manifest["active_ticket"] = selected_ticket_id
+    workflow["active_ticket"] = selected_ticket_id
+    workflow["stage"] = selected_stage
+    workflow["status"] = selected_status
+    workflow["approved_plan"] = selected_approved_plan
+
+    after = {
+        "manifest_active_ticket": manifest.get("active_ticket"),
+        "workflow_active_ticket": workflow.get("active_ticket"),
+        "workflow_stage": workflow.get("stage"),
+        "workflow_status": workflow.get("status"),
+        "workflow_approved_plan": workflow.get("approved_plan"),
+    }
+    changed = before != after
+    if changed:
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+
+    return {
+        "performed": changed,
+        "selected_ticket_id": selected_ticket_id,
+        "stage": selected_stage,
+        "status": selected_status,
+        "approved_plan": selected_approved_plan,
+        "before": before,
+        "after": after,
+    }
 
 
 def read_json_file(path: Path) -> Any:
@@ -697,28 +898,78 @@ def create_remediation_follow_up_tickets(repo_root: Path, diagnosis_manifest_or_
     manifest = read_json(manifest_path)
     if not isinstance(manifest, dict):
         return {"created_tickets": []}
+    recommendations = manifest.get("ticket_recommendations")
+    filtered_manifest_path = manifest_path
+    skipped_recommendations: list[dict[str, Any]] = []
+    filtered_recommendation_count: int | None = None
+    if isinstance(recommendations, list):
+        filtered_recommendations: list[dict[str, Any]] = []
+        for item in recommendations:
+            if not isinstance(item, dict):
+                continue
+            route = str(item.get("route", "")).strip()
+            surfaces = item.get("affected_files")
+            if not isinstance(surfaces, list):
+                surfaces = item.get("source_files")
+            normalized_surfaces = [str(surface).strip() for surface in surfaces if str(surface).strip()] if isinstance(surfaces, list) else []
+            candidate_only = (
+                route == "ticket-pack-builder"
+                and normalized_surfaces
+                and all(surface.startswith("/tmp/scafforge-repair-candidate-") for surface in normalized_surfaces)
+            )
+            if candidate_only:
+                skipped_recommendations.append(
+                    {
+                        "id": str(item.get("id", "")).strip(),
+                        "source_finding_code": str(item.get("source_finding_code", "")).strip(),
+                        "reason": "candidate-only verification surface",
+                    }
+                )
+                continue
+            filtered_recommendations.append(item)
+        filtered_recommendation_count = len(filtered_recommendations)
+        if skipped_recommendations:
+            filtered_manifest = dict(manifest)
+            filtered_manifest["ticket_recommendations"] = filtered_recommendations
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as handle:
+                json.dump(filtered_manifest, handle, indent=2)
+                handle.write("\n")
+                filtered_manifest_path = Path(handle.name)
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(remediation_follow_up_script_path()),
-            str(repo_root),
-            "--diagnosis",
-            str(diagnosis_path),
-        ],
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise SystemExit(
-            "Unable to create repair remediation follow-up tickets.\n"
-            f"STDOUT:\n{result.stdout}\n"
-            f"STDERR:\n{result.stderr}"
+    if filtered_recommendation_count == 0 and skipped_recommendations:
+        if filtered_manifest_path != manifest_path and filtered_manifest_path.exists():
+            filtered_manifest_path.unlink(missing_ok=True)
+        return {"created_tickets": [], "skipped_recommendations": skipped_recommendations}
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(remediation_follow_up_script_path()),
+                str(repo_root),
+                "--diagnosis",
+                str(filtered_manifest_path),
+            ],
+            cwd=repo_root,
+            check=False,
+            capture_output=True,
+            text=True,
         )
-    payload = json.loads(result.stdout) if result.stdout.strip() else {"created_tickets": []}
-    return payload if isinstance(payload, dict) else {"created_tickets": []}
+        if result.returncode != 0:
+            raise SystemExit(
+                "Unable to create repair remediation follow-up tickets.\n"
+                f"STDOUT:\n{result.stdout}\n"
+                f"STDERR:\n{result.stderr}"
+            )
+        payload = json.loads(result.stdout) if result.stdout.strip() else {"created_tickets": []}
+    finally:
+        if filtered_manifest_path != manifest_path and filtered_manifest_path.exists():
+            filtered_manifest_path.unlink(missing_ok=True)
+    if not isinstance(payload, dict):
+        payload = {"created_tickets": []}
+    if skipped_recommendations:
+        payload["skipped_recommendations"] = skipped_recommendations
+    return payload
 
 
 def classify_verification_findings(findings: list[Any]) -> dict[str, list[Any]]:
@@ -945,6 +1196,8 @@ def main() -> int:
     repair_result: dict[str, Any] = {}
     stale_stage_reconciliation: dict[str, Any] | None = None
     android_surface_result: dict[str, Any] = {"performed": False}
+    workflow_selection_sync: dict[str, Any] | None = None
+    ticket_graph_repair_changes: list[str] = []
     migration_stage: dict[str, Any] = {
         "stage": LEGACY_MIGRATION_STAGE,
         "state": "skipped" if args.skip_deterministic_refresh else "current",
@@ -1082,7 +1335,11 @@ def main() -> int:
 
         # Auto-fix deterministic ticket graph contradictions (WFLOW019) inside the staged
         # candidate before any verification or publication occurs.
-        _repair_ticket_graph_contradictions(candidate_root)
+        ticket_graph_repair_changes = _repair_ticket_graph_contradictions(candidate_root)
+
+        # Align manifest/workflow foreground selection before restart-surface publication so
+        # derived surfaces are regenerated from the canonical active ticket state.
+        workflow_selection_sync = _sync_workflow_selection(candidate_root)
 
         # Regenerate missing Scafforge-owned Android export surfaces (ANDROID-SURFACE-001).
         # Scoped strictly to repo-managed surfaces; does not touch signing secrets or keystores.
@@ -1091,6 +1348,7 @@ def main() -> int:
         # Reconcile stale-stage drift: if any current artifact outpaces the manifest stage,
         # align stage/status now so verification and restart-surface generation see correct state.
         stale_stage_reconciliation = _reconcile_stale_stage_for_active_ticket(candidate_root)
+        workflow_selection_sync = _sync_workflow_selection(candidate_root) or workflow_selection_sync
 
         regenerate_restart_surfaces(
             candidate_root,
@@ -1450,6 +1708,8 @@ def main() -> int:
             "remediation_ticket_ids": (
                 remediation_follow_up.get("created_tickets", []) if isinstance(remediation_follow_up, dict) else []
             ),
+            "workflow_selection_sync": workflow_selection_sync,
+            "ticket_graph_repair_changes": ticket_graph_repair_changes,
             "stale_stage_reconciliation": stale_stage_reconciliation,
             "android_surface_result": android_surface_result,
             "stale_surface_map": stale_surface_map,

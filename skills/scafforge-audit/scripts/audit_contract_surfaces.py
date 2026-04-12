@@ -901,9 +901,15 @@ def _is_consumer_facing_repo(root: Path, ctx: ContractSurfaceAuditContext) -> bo
         return True
     brief_path = root / "docs" / "spec" / "CANONICAL-BRIEF.md"
     if brief_path.exists():
-        brief_text = ctx.read_text(brief_path).lower()
+        brief_text = ctx.read_text(brief_path)
+        brief_without_finish_contract = re.sub(
+            r"^##\s+13\.[^\n]*\n.*?(?=^##\s+\d+\.|\Z)",
+            "",
+            brief_text,
+            flags=re.MULTILINE | re.DOTALL,
+        ).lower()
         consumer_keywords = ("mobile app", "android app", "ios app", "game", "toddler", "consumer-facing", "store-ready", "playable", "packaged product")
-        if any(kw in brief_text for kw in consumer_keywords):
+        if any(kw in brief_without_finish_contract for kw in consumer_keywords):
             return True
     return False
 
@@ -950,6 +956,100 @@ def _finish_contract_allows_placeholders(brief_text: str) -> bool:
         if re.search(pattern, brief_text, re.IGNORECASE):
             return True
     return False
+
+
+def _finish_contract_field(brief_text: str, field: str) -> str | None:
+    section = _finish_contract_section(brief_text)
+    if not section:
+        return None
+    match = re.search(rf"^\s*-\s*{re.escape(field)}\s*:\s*(.+)$", section, re.IGNORECASE | re.MULTILINE)
+    return match.group(1).strip() if match else None
+
+
+def _finish_contract_value_is_placeholder(value: str | None) -> bool:
+    lowered = " ".join((value or "").lower().split())
+    return (
+        not lowered
+        or lowered.startswith("record ")
+        or "__" in (value or "")
+        or "unless the normalized brief records" in lowered
+    )
+
+
+INTERACTIVE_FINISH_PROOF_ACCEPTANCE = (
+    "Finish proof includes explicit user-observable interaction evidence (controls/input, visible gameplay state or feedback, "
+    "and the brief-specific progression or content surfaces), not just export/install success."
+)
+WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
+    {
+        "release-facing milestones must keep the toy-box flow coherent, maintain immediate touch feedback, and ensure any shipped visual or audio content matches the toddler-safe direction recorded in this brief.",
+        "release-facing milestones must confirm shipped content matches the recorded finish bar for the product.",
+    }
+)
+
+
+def _consumer_repo_requires_interactive_finish_proof(
+    root: Path, ctx: ContractSurfaceAuditContext, brief_text: str
+) -> bool:
+    lowered = " ".join(brief_text.lower().split())
+    if (root / "project.godot").exists():
+        return True
+    provenance_path = root / ".opencode" / "meta" / "bootstrap-provenance.json"
+    provenance = ctx.read_json(provenance_path)
+    if isinstance(provenance, dict):
+        stack = str(provenance.get("stack_label", "")).lower()
+        deliverable = str(provenance.get("deliverable_kind", "")).lower()
+        if any(
+            marker in stack or marker in deliverable
+            for marker in (
+                "godot",
+                "android",
+                "ios",
+                "mobile",
+                "game",
+                "playable",
+                "interactive",
+                "toddler",
+                "toy",
+            )
+        ):
+            return True
+    return any(
+        marker in lowered
+        for marker in (
+            "godot",
+            "android",
+            "ios",
+            "mobile",
+            "game",
+            "playable",
+            "interactive",
+            "touch",
+            "toddler",
+            "toy",
+        )
+    )
+
+
+def _ticket_acceptance_lines(ticket: dict[str, Any] | None) -> list[str]:
+    if not isinstance(ticket, dict):
+        return []
+    return [
+        str(item).strip()
+        for item in ticket.get("acceptance", [])
+        if isinstance(item, str) and str(item).strip()
+    ]
+
+
+def _manifest_tickets(root: Path, ctx: ContractSurfaceAuditContext) -> list[dict[str, Any]]:
+    manifest_path = root / "tickets" / "manifest.json"
+    manifest = ctx.read_json(manifest_path)
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) else None
+    return [ticket for ticket in tickets if isinstance(ticket, dict)] if isinstance(tickets, list) else []
+
+
+def _ticket_by_id(tickets: list[dict[str, Any]], ticket_id: str) -> dict[str, Any] | None:
+    return next((ticket for ticket in tickets if str(ticket.get("id", "")).strip() == ticket_id), None)
 
 
 def _open_finish_lane_tickets(root: Path, ctx: ContractSurfaceAuditContext) -> list[str]:
@@ -1036,6 +1136,71 @@ def audit_product_finish_contract(root: Path, findings: list[Finding], ctx: Cont
             ),
         )
         return
+
+    tickets = _manifest_tickets(root, ctx)
+    finish_validation_ticket = _ticket_by_id(tickets, "FINISH-VALIDATE-001")
+    release_ticket = _ticket_by_id(tickets, "RELEASE-001")
+    finish_acceptance_signals = _finish_contract_field(brief_text, "finish_acceptance_signals")
+    finish_gap_evidence: list[str] = []
+    if finish_acceptance_signals and not _finish_contract_value_is_placeholder(finish_acceptance_signals) and finish_validation_ticket is None:
+        finish_gap_evidence.append(
+            "tickets/manifest.json has no FINISH-VALIDATE-001 even though the canonical brief records finish_acceptance_signals."
+        )
+    if finish_validation_ticket is not None and release_ticket is not None:
+        release_dependencies = [
+            str(dep).strip()
+            for dep in release_ticket.get("depends_on", [])
+            if isinstance(dep, str) and str(dep).strip()
+        ]
+        if "FINISH-VALIDATE-001" not in release_dependencies:
+            finish_gap_evidence.append("RELEASE-001 does not depend on FINISH-VALIDATE-001.")
+    if finish_gap_evidence:
+        ctx.add_finding(
+            findings,
+            Finding(
+                code="FINISH003",
+                severity="error",
+                problem="Consumer-facing repo records a Product Finish Contract but is missing the finish-validation workflow lane that proves it.",
+                root_cause="The canonical brief declares finish acceptance signals, but the ticket graph does not guarantee a dedicated finish-validation owner or release dependency. Older repos can then close release work without any first-class lane that proves the recorded finish bar.",
+                files=[brief_rel, "tickets/manifest.json"],
+                safer_pattern="Seed FINISH-VALIDATE-001 for consumer-facing repos whenever the Product Finish Contract records finish_acceptance_signals, and require RELEASE-001 to depend on that finish-validation lane before closeout.",
+                evidence=finish_gap_evidence[:4],
+                provenance="script",
+            ),
+        )
+
+    if (
+        finish_acceptance_signals
+        and not _finish_contract_value_is_placeholder(finish_acceptance_signals)
+        and _consumer_repo_requires_interactive_finish_proof(root, ctx, brief_text)
+    ):
+        finish_quality_evidence: list[str] = []
+        if " ".join(finish_acceptance_signals.lower().split()) in WEAK_GENERATED_FINISH_SIGNAL_VALUES:
+            finish_quality_evidence.append(
+                "docs/spec/CANONICAL-BRIEF.md still uses package-generated generic finish_acceptance_signals instead of repo-specific interactive proof."
+            )
+        finish_validation_acceptance = _ticket_acceptance_lines(finish_validation_ticket)
+        if (
+            finish_validation_ticket is not None
+            and INTERACTIVE_FINISH_PROOF_ACCEPTANCE not in finish_validation_acceptance
+        ):
+            finish_quality_evidence.append(
+                "tickets/manifest.json has FINISH-VALIDATE-001, but its acceptance criteria do not require explicit user-observable interaction evidence."
+            )
+        if finish_quality_evidence:
+            ctx.add_finding(
+                findings,
+                Finding(
+                    code="FINISH004",
+                    severity="error",
+                    problem="Interactive consumer-facing repo still relies on a weak generic finish bar instead of explicit interaction-proof requirements.",
+                    root_cause="Older Scafforge-generated finish contracts and finish-validation tickets could prove only that a build exists, not that the shipped interaction loop and visible user-facing state were actually demonstrated. That leaves low-quality interactive products able to look complete through generic prose.",
+                    files=[brief_rel, "tickets/manifest.json"],
+                    safer_pattern="Replace generic machine-generated finish_acceptance_signals with repo-specific interactive proof requirements, and require FINISH-VALIDATE-001 to demand user-observable interaction evidence in addition to load/export proof.",
+                    evidence=finish_quality_evidence[:4],
+                    provenance="script",
+                ),
+            )
 
     if _finish_contract_allows_placeholders(brief_text):
         return

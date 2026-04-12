@@ -216,14 +216,28 @@ def audit_markdown_verdict_parser_mismatch(
         return
 
     workflow_text = ctx.read_text(workflow_tool)
-    plain_label_parser_fragment = (
-        "labeled = trimmed.match(/^(?:overall(?:\\s+result)?|verdict|result|approval\\s+signal)\\s*:"
+    supports_broad_labeled_verdicts = (
+        "overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?" in workflow_text
+        and "qa\\s+(?:result|verdict)" in workflow_text
+        and "review\\s+(?:result|verdict)" in workflow_text
     )
-    if plain_label_parser_fragment not in workflow_text:
+    supports_compact_stage_headings = (
+        "(?:(?:qa|review))\\s+(pass|fail|reject|approved?|blocked?|blocker)\\b"
+        in workflow_text
+    )
+    if supports_broad_labeled_verdicts and supports_compact_stage_headings:
         return
 
     emphasized_verdict = re.compile(
-        r"^(?:[-*]\s*)?(?:\*\*|__)(overall(?:\s+result)?|verdict|result|approval\s+signal)(?:\*\*|__)\s*:\s*(?:\*\*|__)?\s*(pass|fail|reject|approved?|blocked?|blocker)(?:\*\*|__)?\b",
+        r"^(?:[-*]\s*)?(?:\*\*|__)(overall(?:\s+qa)?(?:\s+(?:result|verdict))?|qa\s+(?:result|verdict)|review\s+(?:result|verdict)|verdict|result|approval\s+signal)(?:\*\*|__)\s*:\s*(?:\*\*|__)?\s*(pass|fail|reject|approved?|blocked?|blocker)(?:\*\*|__)?\b",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    overall_verdict = re.compile(
+        r"^(?:[-*]\s*)?(?:\*\*|__)?overall(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s*(pass|fail|reject|approved?|blocked?|blocker)\b",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    compact_stage_heading = re.compile(
+        r"^#{1,4}\s*(?:QA|Review)\s+(?:PASS|FAIL|REJECT|APPROVED?|BLOCKED?|BLOCKER)\b",
         re.IGNORECASE | re.MULTILINE,
     )
     evidence: list[str] = []
@@ -242,13 +256,24 @@ def audit_markdown_verdict_parser_mismatch(
                 continue
             artifact_path = root / str(artifact.get("path", "")).strip()
             artifact_text = ctx.read_text(artifact_path)
-            match = emphasized_verdict.search(artifact_text)
-            if not match:
+            artifact_matches: list[str] = []
+            if not supports_broad_labeled_verdicts:
+                for pattern in (emphasized_verdict, overall_verdict):
+                    match = pattern.search(artifact_text)
+                    if match:
+                        artifact_matches.append(match.group(0).strip())
+                        break
+            if not supports_compact_stage_headings:
+                compact_match = compact_stage_heading.search(artifact_text)
+                if compact_match:
+                    artifact_matches.append(compact_match.group(0).strip())
+            if not artifact_matches:
                 continue
             files.append(ctx.normalize_path(artifact_path, root))
-            evidence.append(
-                f"{ctx.normalize_path(artifact_path, root)} contains `{match.group(0).strip()}`, but {ctx.normalize_path(workflow_tool, root)} still uses a plain-label verdict parser."
-            )
+            for matched in artifact_matches:
+                evidence.append(
+                    f"{ctx.normalize_path(artifact_path, root)} contains `{matched}`, but {ctx.normalize_path(workflow_tool, root)} still lacks parser coverage for that explicit verdict form."
+                )
 
     if not evidence:
         return
@@ -258,10 +283,10 @@ def audit_markdown_verdict_parser_mismatch(
         Finding(
             code="WFLOW026",
             severity="error",
-            problem="Current artifacts contain explicit markdown verdict labels, but the generated verdict extractor still reports them as unclear.",
-            root_cause="The repo-local workflow parser only matches plain `Verdict:` or `Approval Signal:` labels. Markdown-emphasized labels such as `**Verdict**: PASS` then look unparseable, which blocks review or QA transitions even though the artifact body is explicit.",
+            problem="Current artifacts contain explicit verdict headings or labels, but the generated verdict extractor still reports them as unclear.",
+            root_cause="The repo-local workflow parser does not cover the real artifact verdict forms already present in downstream review and QA artifacts, including markdown-emphasized labels, compact stage headings such as `## QA PASS`, and plain `**Overall**: PASS` labels. Those explicit verdicts then look unparseable and block review or QA transitions even though the artifact body is clear.",
             files=list(dict.fromkeys(files)),
-            safer_pattern="Keep one shared artifact verdict extractor that accepts plain and markdown-emphasized verdict labels, then route ticket_lookup and ticket_update through that shared parser instead of treating explicit review or QA verdicts as unclear.",
+            safer_pattern="Keep one shared artifact verdict extractor that accepts the real artifact family in use: plain and markdown-emphasized verdict labels, compact `QA/Review + verdict` headings, and `Overall: PASS/FAIL` labels. Route ticket_lookup and ticket_update through that shared parser instead of treating explicit review or QA verdicts as unclear.",
             evidence=evidence[:8],
             provenance="script",
         ),
@@ -452,7 +477,10 @@ def audit_remediation_review_evidence(
 
     command_pattern = re.compile(r"(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:command|command run)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:command|command run):(?:\*\*|__)?)\s*(?:`[^`]+`|```[\s\S]*?```)", re.IGNORECASE)
     output_heading_pattern = re.compile(r"(?:raw(?:\s+command)?\s+output|raw\s+output|command\s+output)(?:\s*\([^)]*\))?", re.IGNORECASE)
-    result_pattern = re.compile(r"(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result):(?:\*\*|__)?)\s*(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?", re.IGNORECASE)
+    result_pattern = re.compile(
+        r"(?:(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result):(?:\*\*|__)?)\s*(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?|(?:^|\n)#{1,6}\s*(?:overall\s+result|overall\s+verdict|review\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result|blocker\s+or\s+approval\s+signal)\s*(?:\r?\n\s*)+(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?)",
+        re.IGNORECASE,
+    )
     code_block_pattern = re.compile(r"```(?:[^\n]*)\n([\s\S]*?)```", re.MULTILINE)
 
     for ticket in tickets:
