@@ -67,7 +67,7 @@ export default tool({
     if (
       rfo.outcome === "managed_blocked" &&
       requiredStages.every((stage: string) => completedStages.includes(stage)) &&
-      rfo.blocking_reasons.length === 0 &&
+      Array.isArray(rfo.blocking_reasons) && rfo.blocking_reasons.length === 0 &&
       rfo.verification_passed === true &&
       rfo.handoff_allowed === true
     ) {

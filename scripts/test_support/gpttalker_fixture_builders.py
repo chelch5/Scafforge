@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Callable
@@ -303,10 +304,19 @@ def build_validation_verdict_routing_drift(dest: Path, family: dict[str, Any]) -
 
     workflow_tool_path = dest / ".opencode" / "lib" / "workflow.ts"
     workflow_tool_text = workflow_tool_path.read_text(encoding="utf-8")
-    workflow_tool_text = workflow_tool_text.replace(
-        'const labeled = trimmed.match(/^(?:[-*]\\s*)?(?:\\*\\*|__)?(?:overall(?:\\s+result)?|verdict|result|approval\\s+signal)(?:\\*\\*|__)?\\s*:\\s*(?:\\*\\*|__)?\\s*(pass|fail|reject|approved?|blocked?|blocker)(?:\\*\\*|__)?\\b/i)',
-        'const labeled = trimmed.match(/^(?:[-*]\\s*)?(?:overall(?:\\s+result)?|verdict|result|approval\\s+signal)\\s*:\\s*(pass|fail|reject|approved?|blocked?|blocker)\\b/i)',
+    # Degrade the shared verdict-label pattern constant to a narrower version that
+    # omits qa/review-specific alternations.  The audit checks for those substrings
+    # and emits WFLOW026 when they are missing.
+    workflow_tool_text, n = re.subn(
+        r'(const ARTIFACT_VERDICT_LABEL_PATTERN\s*=\s*\n?\s*")[^"]+(")',
+        r'\g<1>(?:overall(?:\\s+(?:result|verdict))?|blocker\\s+or\\s+approval\\s+signal|approval\\s+signal|verdict|result)\g<2>',
+        workflow_tool_text,
     )
+    if n != 1:
+        raise RuntimeError(
+            f"ARTIFACT_VERDICT_LABEL_PATTERN replacement matched {n} times (expected 1). "
+            "The workflow.ts parser layout may have changed."
+        )
     workflow_tool_path.write_text(workflow_tool_text, encoding="utf-8")
 
     ticket_lookup_path = dest / ".opencode" / "tools" / "ticket_lookup.ts"

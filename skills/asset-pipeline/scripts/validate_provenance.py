@@ -17,7 +17,7 @@ def parse_provenance(provenance_path: Path) -> set[str]:
     if not provenance_path.exists():
         return paths
 
-    content = provenance_path.read_text()
+    content = provenance_path.read_text(encoding="utf-8")
     # Match table rows: | asset_path | source | license | author | date |
     for line in content.splitlines():
         line = line.strip()

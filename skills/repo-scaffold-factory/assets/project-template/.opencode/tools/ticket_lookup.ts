@@ -182,7 +182,7 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
   // switch and produces misleading "write artifact" guidance for a ticket that has
   // unresolved decision_blockers — leaving the agent with no legal forward move.
   if (ticket.status === "blocked") {
-    const unresolvedBlockers: string[] = (ticket as any).decision_blockers ?? []
+    const unresolvedBlockers: string[] = ticket.decision_blockers ?? []
     const blockerSummary = unresolvedBlockers.length > 0
       ? unresolvedBlockers.map((b: string, i: number) => `${i + 1}. ${b}`).join("\n")
       : "(none recorded — status may have been set manually)"

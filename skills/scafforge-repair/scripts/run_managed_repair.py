@@ -92,7 +92,8 @@ def _render_android_template(template_text: str, project_slug: str, package_name
             from discover_host_paths import discover_android_debug_keystore
             keystore = discover_android_debug_keystore() or ""
         except ImportError:
-            # discover_host_paths may not be on sys.path in all contexts
+            import logging
+            logging.warning("discover_host_paths not available on sys.path; using empty keystore fallback")
             keystore = ""
         rendered = rendered.replace("__ANDROID_DEBUG_KEYSTORE__", keystore)
     return rendered
@@ -140,46 +141,6 @@ def regenerate_android_surfaces(repo_root: Path) -> dict[str, Any]:
         regenerated.append(relative_path.as_posix())
         if existing_text:
             placeholder_repairs += 1
-
-    # Ensure project.godot has ETC2/ASTC compression enabled (required for Android export).
-    # Godot 4.x checks GLOBAL_GET("rendering/textures/vram_compression/import_etc2_astc"),
-    # so the correct project.godot entry is:
-    #   [rendering]
-    #   textures/vram_compression/import_etc2_astc=true
-    # A common mistake is putting it under [textures] or omitting the textures/ prefix.
-    project_godot = repo_root / "project.godot"
-    if project_godot.exists():
-        godot_text = project_godot.read_text(encoding="utf-8")
-        lines = godot_text.split("\n")
-        correct_line = "textures/vram_compression/import_etc2_astc=true"
-        # Check if correct setting exists under [rendering] section
-        in_rendering = False
-        has_correct = False
-        wrong_lines: list[int] = []
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                in_rendering = stripped == "[rendering]"
-            elif "import_etc2_astc" in stripped:
-                if in_rendering and stripped == correct_line:
-                    has_correct = True
-                else:
-                    wrong_lines.append(i)
-        if not has_correct:
-            # Remove any wrongly-placed entries
-            for idx in reversed(wrong_lines):
-                lines.pop(idx)
-            # Remove empty [textures] section if it was only holding the ETC2 setting
-            cleaned = "\n".join(lines)
-            import re
-            cleaned = re.sub(r'\n\[textures\]\s*\n(?=\n|\[|$)', '\n', cleaned)
-            # Add correct entry under [rendering]
-            if "[rendering]" in cleaned:
-                cleaned = cleaned.replace("[rendering]", "[rendering]\n" + correct_line, 1)
-            else:
-                cleaned += "\n[rendering]\n" + correct_line + "\n"
-            project_godot.write_text(cleaned, encoding="utf-8")
-            regenerated.append("project.godot (ETC2/ASTC)")
 
     if not regenerated:
         return {"performed": False, "reason": "all managed Android surfaces already exist", "regenerated": []}

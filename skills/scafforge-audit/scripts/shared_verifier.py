@@ -526,7 +526,7 @@ def verify_greenfield_continuation(root: Path) -> list[Finding]:
     if "bootstrap_blockers" not in workflow or not isinstance(bootstrap_blockers, list):
         findings.append(
             _finding(
-                code="VERIFY009",
+                code="VERIFY016",
                 problem="The generated repo does not persist bootstrap blockers in canonical workflow state.",
                 root_cause="Greenfield continuation cannot reliably stop on missing host prerequisites when environment bootstrap results are not preserved across sessions.",
                 files=[_normalize(workflow_path, root)],

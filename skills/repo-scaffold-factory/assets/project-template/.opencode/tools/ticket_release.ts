@@ -5,7 +5,7 @@ export default tool({
   description: "Release an active lane lease after a worker finishes or yields ownership.",
   args: {
     ticket_id: tool.schema.string().describe("Ticket id whose lease should be released."),
-    owner_agent: tool.schema.string().describe("Owner name that must match the active lease.").optional(),
+    owner_agent: tool.schema.string().describe("Owner name that must match the active lease."),
   },
   async execute(args) {
     const workflow = await loadWorkflowState()

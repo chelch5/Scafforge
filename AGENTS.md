@@ -14,6 +14,8 @@ The product bias remains weak-model first. Stronger models should still work wel
 
 The package competence bar is defined in `references/competence-contract.md`. If the generated workflow leaves the operator unsure what the next legal move is, treat that as package evidence, not user error.
 
+The system architecture is documented in `architecture.md` at the repo root.
+
 ## Repo Identity
 
 There are two different layers in play.

@@ -1,10 +1,15 @@
 """Audit opencode.jsonc configuration for missing or incorrect fields.
 
 Finding codes emitted:
-  CONFIG001  model field missing from opencode.jsonc
+  CONFIG001  model field missing or unparseable in opencode.jsonc
   CONFIG002  default_agent field missing from opencode.jsonc
   CONFIG003  external_directory permission not configured
   CONFIG004  common bash commands missing from permission allowlist
+  CONFIG005  permission section missing entirely
+  CONFIG006  model field missing
+  CONFIG007  unsubstituted placeholder in model field
+  CONFIG008  model field not in provider/model format
+  CONFIG009  default_agent contains unsubstituted placeholder
 """
 
 from __future__ import annotations
@@ -171,7 +176,7 @@ def run_config_surface_audits(root: Path, findings: list[Finding], ctx: ConfigSu
         ))
     elif "__" in agent_value:
         findings.append(Finding(
-            code="CONFIG002",
+            code="CONFIG009",
             severity="error",
             problem=f"opencode.jsonc 'default_agent' contains unsubstituted placeholder: {agent_value}",
             root_cause="Template placeholder substitution failed during scaffold or repair.",
