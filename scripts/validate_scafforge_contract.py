@@ -1811,6 +1811,31 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     )
     require_contains(
         findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        'do not end your response with a self-addressed "Next Steps" summary while the active ticket is still open',
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "keep draining ready child tickets in the same run until no writable child can advance legally or a listed stop condition fires",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "when `ticket_lookup.transition_guidance.next_action_kind` is `write_artifact`, do not attempt `artifact_write` or `artifact_register` yourself",
+    )
+    require_contains(
+        findings,
+        ROOT / "scripts" / "run_agent.sh",
+        "Do not emit long self-handoff sections like Goal / Instructions / Discoveries / Accomplished / Next Steps unless you are reporting a real blocker.",
+    )
+    require_contains(
+        findings,
+        ROOT / "scripts" / "run_agent.sh",
+        "Continue working until the active ticket reaches closeout, you hit a team-leader stop condition, or no legal next action remains.",
+    )
+    require_contains(
+        findings,
         TEMPLATE_ROOT / ".opencode" / "skills" / "ticket-execution" / "SKILL.md",
         "transition_guidance",
     )

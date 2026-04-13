@@ -326,7 +326,7 @@ const EXECUTION_EVIDENCE_PATTERNS = [
   /\b(?:exit[_ -]?code|pass(?:ed)?|fail(?:ed)?|ok)\b/i,
 ]
 const INSPECTION_ONLY_PATTERNS = [/code inspection/i, /inspection only/i]
-const REMEDIATION_REVIEW_COMMAND_PATTERN = /(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:command|command run|verbatim commands?)?(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:command|command run|verbatim commands?)(?:\*\*|__)?)\s*(?:`[^`]+`|```[\s\S]*?```)?/i
+const REMEDIATION_REVIEW_COMMAND_PATTERN = /(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:exact\s+command\s+run|command|command run|verbatim commands?)?(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:exact\s+command\s+run|command|command run|verbatim commands?)(?:\*\*|__)?)\s*(?:`[^`]+`|```[\s\S]*?```)?/i
 const REMEDIATION_REVIEW_COMMAND_BLOCK_PATTERN = /```(?:bash|sh|shell|console|text)?\n[\s\S]*?(?:godot(?:4)?|npm|pnpm|yarn|bun|pytest|cargo|go test|go vet|python(?:3)? -m|node(?:\s|$)|tsc(?:\s|$)|make(?:\s|$)|gradle|\.\/gradlew|adb|unzip)\b[\s\S]*?```/i
 const REMEDIATION_REVIEW_COMMAND_SUMMARY_TABLE_PATTERN = /^\|\s*#\s*\|\s*Command\s*\|\s*Exit Code\s*\|\s*Result\s*\|/im
 const REMEDIATION_REVIEW_OUTPUT_HEADING_PATTERN = /(?:raw(?:\s+command)?\s+output|raw\s+output|command\s+output|raw\s+stdout|raw\s+stderr|stdout|stderr)(?:\s*\([^)]*\))?/i
@@ -1120,6 +1120,9 @@ function normalizeArtifactVerdictToken(token: string): ArtifactVerdict | null {
   if (normalized === "BLOCKED" || normalized === "BLOCKER") return "BLOCKED"
   return null
 }
+export function isRemediationTicket(ticket: Pick<Ticket, "id" | "lane">): boolean {
+  return ticket.lane.trim().toLowerCase() === "remediation" || ticket.id.trim().toUpperCase().startsWith("REMED-")
+}
 const ARTIFACT_VERDICT_LABEL_PATTERN =
   "(?:overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?|qa\\s+(?:result|verdict)|review\\s+(?:result|verdict)|blocker\\s+or\\s+approval\\s+signal|approval\\s+signal|verdict|result)"
 export function extractArtifactVerdict(content: string): ArtifactVerdictInspection {
@@ -1235,7 +1238,7 @@ function remediationReviewMissingEvidence(content: string): string[] {
   )
   if (!hasCommandRecord) missing.push("exact command record")
   const outputBlocks = [...content.matchAll(CODE_BLOCK_PATTERN)].map((match) => (match[1] || "").trim())
-  const hasInlineOutput = /(?:raw\s+stdout|raw\s+stderr|stdout|stderr)\s*:/i.test(content)
+  const hasInlineOutput = /(?:raw(?:\s+command)?\s+output|raw\s+output|command\s+output|raw\s+stdout|raw\s+stderr|stdout|stderr)\s*:/i.test(content)
   const hasOutput = REMEDIATION_REVIEW_OUTPUT_HEADING_PATTERN.test(content) && (outputBlocks.some(Boolean) || hasInlineOutput)
   if (!hasOutput) missing.push("raw command output")
   if (!REMEDIATION_REVIEW_RESULT_PATTERN.test(content)) missing.push("explicit PASS/FAIL result")
@@ -1250,7 +1253,7 @@ export async function validateImplementationArtifactEvidence(ticket: Ticket, roo
 export async function validateReviewArtifactEvidence(ticket: Ticket, root = rootPath()): Promise<string | null> {
   const artifact = latestReviewArtifact(ticket)
   if (!artifact) return "Cannot move to qa before at least one review artifact exists."
-  if (!ticket.finding_source?.trim()) return null
+  if (!ticket.finding_source?.trim() || !isRemediationTicket(ticket)) return null
   const content = await readArtifactContent(artifact, root)
   const missing = remediationReviewMissingEvidence(content)
   return missing.length

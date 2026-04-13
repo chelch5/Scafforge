@@ -98,6 +98,14 @@ Stop conditions:
 - stop and escalate when the active ticket cannot advance because a dependency ticket remains blocked or unresolved
 - stop and escalate when you cannot determine a single legal next move from `ticket_lookup.transition_guidance`, canonical artifacts, and the contradiction rules
 
+Headless persistence and completion discipline:
+
+- in headless `opencode run` / resume execution, do not stop just because you can describe the next legal moves
+- if a fresh `ticket_lookup.transition_guidance` still yields a legal next action, execute it in the same run unless a listed stop condition or concrete blocker prevents it
+- do not end your response with a self-addressed "Next Steps" summary while the active ticket is still open, while the current stage still has an unfinished legal transition, or while another ready child ticket can be claimed legally
+- after each successful `ticket_update`, specialist delegation, or `smoke_test`, re-run `ticket_lookup` and continue lifecycle advancement until the current ticket reaches closeout, a listed stop condition, or an explicit blocker
+- for split parents, stale-follow-up sweeps, and remediation child batches, keep draining ready child tickets in the same run until no writable child can advance legally or a listed stop condition fires
+
 Advancement rules:
 
 1. before advancing a ticket past review or QA, run `ticket_lookup` for the active ticket
@@ -173,6 +181,7 @@ Rules:
 - use `ticket_lookup` and `ticket_update` for workflow state instead of raw file edits
 - do not probe alternate stage or status values when a lifecycle error repeats; re-run `ticket_lookup`, inspect `transition_guidance`, load `ticket-execution` if needed, and return a blocker instead of inventing a workaround
 - when `ticket_lookup.transition_guidance` identifies a valid next action, you must either execute that tool path, delegate that exact action, or report a concrete blocker; summary-only stopping is invalid
+- when you have already written a self-directed "next steps" or "continue with the next steps" summary, treat that text as an execution checklist for the same run, not as a handoff that lets you stop
 - when `ticket_lookup.transition_guidance.recovery_action` is present, follow that recovery path instead of the normal happy-path advancement for the current stage
 - when the active ticket `status` is `blocked`, re-evaluate each item in `decision_blockers` against the current environment before routing any other lifecycle action; if all blockers are now resolved, call `ticket_update` with `status: "todo"` to unblock, then immediately re-run `ticket_lookup` to get updated stage routing guidance — do not attempt to write artifacts or claim leases while the ticket is still in blocked status
 - when a ticket is blocked and at least one decision_blocker is still unresolved, surface the unresolved blockers to the operator with the specific condition that must change on the host before the ticket can resume; do not write a static blocker file and stop — state clearly what the operator must do
@@ -197,6 +206,8 @@ Rules:
 - when closing a process-remediation or reverification ticket, keep `smoke_test` scoped to commands that are valid at the repo's current backlog state; do not substitute a broader product boot check that is expected to fail because upstream feature tickets (for example scene creation) are still open
 - do not create planning, implementation, review, QA, or smoke-test artifacts yourself; route those bodies through the assigned specialist lane, and let `smoke_test` produce smoke-test artifacts
 - you must not call `artifact_write` or `artifact_register` for planning, implementation, review, or QA artifact bodies; only the assigned specialist may author and persist stage artifact bodies — a coordinator-authored stage artifact created through `artifact_write` or `artifact_register` is a workflow defect
+- when `ticket_lookup.transition_guidance.next_action_kind` is `write_artifact`, do not attempt `artifact_write` or `artifact_register` yourself even if the guidance names a canonical artifact path; immediately delegate the owning specialist and require that specialist to complete both `artifact_write` and `artifact_register` in the same pass
+- if a coordinator-authored `artifact_write` or `artifact_register` attempt is rejected, do not treat the partially recovered file as sufficient; reroute the same action through the owning specialist and wait for registered artifact proof before any stage advancement
 - treat coordinator-authored planning, implementation, review, or QA artifacts as suspect evidence that needs remediation, not as proof of progression
 
 Normal lifecycle states that are NOT repair triggers (WFLOW031 anti-pattern):

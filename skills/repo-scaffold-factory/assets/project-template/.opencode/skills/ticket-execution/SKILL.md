@@ -79,7 +79,7 @@ Failure recovery paths:
 
 Remediation ticket closeout:
 
-- when a ticket carries `finding_source`, treat it as a remediation or reverification ticket
+- when a remediation ticket carries `finding_source`, treat it as a remediation or reverification ticket
 - identify the original finding code before closeout and rerun the command or check that originally produced that finding
 - include the rerun output and whether the original error signature is gone in the closeout evidence
 - if the finding-specific rerun still fails, do not close the ticket; route back to implementation with the fresh command output

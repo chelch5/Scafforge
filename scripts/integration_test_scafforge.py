@@ -1606,7 +1606,7 @@ def contract_edge_case_integration(workspace: Path) -> None:
             "id": "EXEC-001-FIX",
             "title": "Fix failing import surface",
             "wave": 2,
-            "lane": "implementation",
+            "lane": "remediation",
             "parallel_safe": False,
             "overlap_risk": "medium",
             "stage": "review",

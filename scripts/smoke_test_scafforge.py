@@ -402,6 +402,7 @@ def seed_glitch_style_remediation_review(
     ticket = manifest["tickets"][0]
     ticket["stage"] = "review"
     ticket["status"] = "review"
+    ticket["lane"] = "remediation"
     ticket["finding_source"] = "EXEC-REMED-001"
     manifest["active_ticket"] = ticket["id"]
     workflow["active_ticket"] = ticket["id"]
@@ -435,6 +436,87 @@ def seed_glitch_style_remediation_review(
             "[HUD] Successfully connected to glitch_warning signal\n"
             "```\n\n"
             f"{result_line}\n"
+        ),
+    )
+
+
+def seed_inline_exact_remediation_review(
+    dest: Path, result_line: str = "Result: PASS"
+) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    ticket = manifest["tickets"][0]
+    ticket["stage"] = "review"
+    ticket["status"] = "review"
+    ticket["lane"] = "remediation"
+    ticket["finding_source"] = "EXEC-REMED-001"
+    manifest["active_ticket"] = ticket["id"]
+    workflow["active_ticket"] = ticket["id"]
+    workflow["stage"] = "review"
+    workflow["status"] = "review"
+    workflow["ticket_state"].setdefault(
+        ticket["id"],
+        {"approved_plan": True, "reopen_count": 0, "needs_reverification": False},
+    )["approved_plan"] = True
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    register_current_ticket_artifact(
+        dest,
+        ticket_id=ticket["id"],
+        kind="review",
+        stage="review",
+        relative_path=".opencode/state/reviews/setup-001-review.md",
+        summary="Synthetic remediation review artifact with inline exact command/output evidence.",
+        content=(
+            "# Review Artifact: SETUP-001\n\n"
+            "## Verdict: **APPROVE**\n\n"
+            "**Exact command run**: `godot --headless --path . --quit`\n\n"
+            "**Raw output**: `Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org`\n\n"
+            f"**{result_line}**\n"
+        ),
+    )
+
+
+def seed_non_remediation_finding_source_review(
+    dest: Path, verdict_line: str = "## Verdict: **APPROVE**"
+) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    ticket = manifest["tickets"][0]
+    ticket["stage"] = "review"
+    ticket["status"] = "review"
+    ticket["lane"] = "signing-prerequisites"
+    ticket["finding_source"] = "WFLOW025"
+    ticket["source_mode"] = "net_new_scope"
+    manifest["active_ticket"] = ticket["id"]
+    workflow["active_ticket"] = ticket["id"]
+    workflow["stage"] = "review"
+    workflow["status"] = "review"
+    workflow["ticket_state"].setdefault(
+        ticket["id"],
+        {"approved_plan": True, "reopen_count": 0, "needs_reverification": False},
+    )["approved_plan"] = True
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    register_current_ticket_artifact(
+        dest,
+        ticket_id=ticket["id"],
+        kind="review",
+        stage="review",
+        relative_path=".opencode/state/reviews/setup-001-review.md",
+        summary="Synthetic non-remediation finding-source review artifact.",
+        content=(
+            "# Review Artifact: SETUP-001\n\n"
+            "## Review Summary\n\n"
+            f"{verdict_line}\n\n"
+            "**Command run:** `godot --headless --path . --quit`\n\n"
+            "```text\n"
+            "Godot Engine v4.6.2.stable.official.71f334935\n"
+            "```\n"
         ),
     )
 
@@ -809,7 +891,7 @@ def seed_remediation_review_without_command_evidence(dest: Path) -> None:
             "id": "EXEC-001-FIX",
             "title": "Fix failing import surface",
             "wave": 2,
-            "lane": "implementation",
+            "lane": "remediation",
             "parallel_safe": False,
             "overlap_risk": "medium",
             "stage": "review",
@@ -843,7 +925,7 @@ def seed_remediation_review_with_empty_output_block(dest: Path) -> None:
             "id": "EXEC-002-FIX",
             "title": "Fix broken runtime command",
             "wave": 2,
-            "lane": "implementation",
+            "lane": "remediation",
             "parallel_safe": False,
             "overlap_risk": "medium",
             "stage": "review",
@@ -2860,7 +2942,7 @@ def main() -> int:
         ).read_text(encoding="utf-8")
         for expected in (
             "Remediation ticket closeout:",
-            "when a ticket carries `finding_source`",
+            "when a remediation ticket carries `finding_source`",
             "if the finding-specific rerun still fails, do not close the ticket",
         ):
             if expected not in generated_ticket_execution:
@@ -3113,6 +3195,20 @@ def main() -> int:
         if "must not call `artifact_write` or `artifact_register`" not in team_leader_template:
             raise RuntimeError(
                 "team-leader agent template should explicitly forbid coordinator-authored stage artifacts"
+            )
+        if (
+            'do not end your response with a self-addressed "Next Steps" summary while the active ticket is still open'
+            not in team_leader_template
+        ):
+            raise RuntimeError(
+                "team-leader agent template should forbid headless self-handoff summaries before the active ticket is actually blocked or closed"
+            )
+        if (
+            "when `ticket_lookup.transition_guidance.next_action_kind` is `write_artifact`, do not attempt `artifact_write` or `artifact_register` yourself"
+            not in team_leader_template
+        ):
+            raise RuntimeError(
+                "team-leader agent template should route write_artifact guidance directly through the owning specialist instead of attempting coordinator artifact calls first"
             )
         generated_audit_reporting = (
             ROOT
@@ -3416,6 +3512,27 @@ def main() -> int:
         ):
             raise RuntimeError(
                 "Generated team leader prompt should own the lease claim path"
+            )
+        if (
+            'do not end your response with a self-addressed "Next Steps" summary while the active ticket is still open'
+            not in generated_team_leader
+        ):
+            raise RuntimeError(
+                "Generated team leader prompt should keep headless runs executing instead of stopping at self-directed next-step summaries"
+            )
+        if (
+            "keep draining ready child tickets in the same run until no writable child can advance legally or a listed stop condition fires"
+            not in generated_team_leader
+        ):
+            raise RuntimeError(
+                "Generated team leader prompt should keep remediation child batches draining within the same headless run"
+            )
+        if (
+            "when `ticket_lookup.transition_guidance.next_action_kind` is `write_artifact`, do not attempt `artifact_write` or `artifact_register` yourself"
+            not in generated_team_leader
+        ):
+            raise RuntimeError(
+                "Generated team leader prompt should delegate write_artifact actions directly to the owning specialist"
             )
         if (
             "ticket_create: allow" not in generated_team_leader
@@ -7393,6 +7510,36 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_update should allow review-to-QA transitions when the latest review artifact records `## Review Verdict` followed by `**APPROVE**`"
             )
+        non_remediation_finding_source_dest = (
+            workspace / "executed-review-non-remediation-finding-source"
+        )
+        shutil.copytree(full_dest, non_remediation_finding_source_dest)
+        seed_ready_bootstrap(non_remediation_finding_source_dest)
+        seed_non_remediation_finding_source_review(
+            non_remediation_finding_source_dest
+        )
+        non_remediation_lookup = run_generated_tool(
+            non_remediation_finding_source_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if non_remediation_lookup["transition_guidance"]["review_verdict"] != "APPROVED":
+            raise RuntimeError(
+                "ticket_lookup should keep extracting APPROVED verdicts for non-remediation follow-up tickets that carry finding_source"
+            )
+        if non_remediation_lookup["transition_guidance"]["current_state_blocker"]:
+            raise RuntimeError(
+                "ticket_lookup should not require remediation-only review evidence for non-remediation finding_source tickets"
+            )
+        non_remediation_update = run_generated_tool(
+            non_remediation_finding_source_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "qa", "activate": True},
+        )
+        if non_remediation_update["updated_ticket"]["stage"] != "qa":
+            raise RuntimeError(
+                "ticket_update should allow review-to-QA transitions for non-remediation finding_source tickets when the review artifact is approved"
+            )
         blocker_signal_dest = workspace / "executed-review-blocker-or-approval"
         shutil.copytree(full_dest, blocker_signal_dest)
         seed_ready_bootstrap(blocker_signal_dest)
@@ -7490,6 +7637,30 @@ def main() -> int:
         if verdict_heading_update["updated_ticket"]["stage"] != "qa":
             raise RuntimeError(
                 "ticket_update should allow review-to-QA transitions when a remediation review artifact records `## Verdict` followed by `**PASS**` with fenced command and output evidence"
+            )
+        inline_exact_remediation_dest = (
+            workspace / "executed-review-remediation-inline-exact"
+        )
+        shutil.copytree(full_dest, inline_exact_remediation_dest)
+        seed_ready_bootstrap(inline_exact_remediation_dest)
+        seed_inline_exact_remediation_review(inline_exact_remediation_dest)
+        inline_exact_lookup = run_generated_tool(
+            inline_exact_remediation_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if inline_exact_lookup["transition_guidance"]["review_verdict"] != "APPROVED":
+            raise RuntimeError(
+                "ticket_lookup should extract APPROVED verdicts from remediation review artifacts that use `Exact command run` with inline `Raw output` evidence"
+            )
+        inline_exact_update = run_generated_tool(
+            inline_exact_remediation_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "qa", "activate": True},
+        )
+        if inline_exact_update["updated_ticket"]["stage"] != "qa":
+            raise RuntimeError(
+                "ticket_update should allow review-to-QA transitions when a remediation review artifact records `Exact command run`, inline `Raw output`, and `Result: PASS`"
             )
         qa_fail_dest = workspace / "executed-qa-fail-guidance"
         shutil.copytree(full_dest, qa_fail_dest)
@@ -9527,6 +9698,21 @@ def main() -> int:
             raise RuntimeError(
                 "WFLOW026 should route to scafforge-repair once the installed package template contains the widened verdict parser"
             )
+        markdown_verdict_repaired_dest = workspace / "markdown-verdict-repaired"
+        shutil.copytree(full_dest, markdown_verdict_repaired_dest)
+        seed_ready_bootstrap(markdown_verdict_repaired_dest)
+        seed_review_stage_with_verdict(markdown_verdict_repaired_dest, "**Verdict**: PASS")
+        markdown_verdict_repaired_audit = run_json(
+            [sys.executable, str(AUDIT), str(markdown_verdict_repaired_dest), "--format", "json"],
+            ROOT,
+        )
+        markdown_verdict_repaired_codes = {
+            finding["code"] for finding in markdown_verdict_repaired_audit.get("findings", [])
+        }
+        if "WFLOW026" in markdown_verdict_repaired_codes:
+            raise RuntimeError(
+                "Audit should not emit WFLOW026 when the current repo-local workflow parser already supports the widened verdict family"
+            )
 
         spinner_gap_dest = workspace / "spinner-target-completion-gap"
         shutil.copytree(full_dest, spinner_gap_dest)
@@ -9715,6 +9901,23 @@ def main() -> int:
             raise RuntimeError(
                 "Audit should emit EXEC-REMED-001 when a remediation review artifact lacks runnable command evidence"
             )
+        non_remediation_review_dest = workspace / "non-remediation-review-evidence"
+        shutil.copytree(full_dest, non_remediation_review_dest)
+        make_stack_skill_non_placeholder(non_remediation_review_dest)
+        seed_non_remediation_finding_source_review(non_remediation_review_dest)
+        non_remediation_review_audit = run_json(
+            [sys.executable, str(AUDIT), str(non_remediation_review_dest), "--format", "json"],
+            ROOT,
+        )
+        non_remediation_review_findings = [
+            finding
+            for finding in non_remediation_review_audit.get("findings", [])
+            if isinstance(finding, dict) and finding.get("code") == "EXEC-REMED-001"
+        ]
+        if non_remediation_review_findings:
+            raise RuntimeError(
+                "Audit should not emit EXEC-REMED-001 for non-remediation tickets that merely carry finding_source"
+            )
         valid_remediation_dest = workspace / "remediation-review-glitch-style"
         shutil.copytree(full_dest, valid_remediation_dest)
         make_stack_skill_non_placeholder(valid_remediation_dest)
@@ -9781,6 +9984,31 @@ def main() -> int:
         if valid_remediation_heading_findings:
             raise RuntimeError(
                 "Audit should accept remediation review artifacts that use `## Verdict` followed by `**PASS**` with fenced command and output evidence"
+            )
+        inline_exact_remediation_audit_dest = (
+            workspace / "remediation-review-inline-exact"
+        )
+        shutil.copytree(full_dest, inline_exact_remediation_audit_dest)
+        make_stack_skill_non_placeholder(inline_exact_remediation_audit_dest)
+        seed_inline_exact_remediation_review(inline_exact_remediation_audit_dest)
+        inline_exact_remediation_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(inline_exact_remediation_audit_dest),
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        inline_exact_remediation_findings = [
+            finding
+            for finding in inline_exact_remediation_audit.get("findings", [])
+            if isinstance(finding, dict) and finding.get("code") == "EXEC-REMED-001"
+        ]
+        if inline_exact_remediation_findings:
+            raise RuntimeError(
+                "Audit should accept remediation review artifacts that use `Exact command run`, inline `Raw output`, and `Result: PASS`"
             )
 
         empty_remediation_dest = workspace / "remediation-review-empty-output"

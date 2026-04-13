@@ -216,14 +216,19 @@ def audit_markdown_verdict_parser_mismatch(
         return
 
     workflow_text = ctx.read_text(workflow_tool)
+    normalized_workflow_text = workflow_text.replace("\\\\", "\\")
     supports_broad_labeled_verdicts = (
-        "overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?" in workflow_text
-        and "qa\\s+(?:result|verdict)" in workflow_text
-        and "review\\s+(?:result|verdict)" in workflow_text
+        "ARTIFACT_VERDICT_LABEL_PATTERN" in workflow_text
+        and "const labeled = plain.match(" in workflow_text
+        and "const headingInline = plain.match(" in workflow_text
+        and "overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?" in normalized_workflow_text
+        and "qa\\s+(?:result|verdict)" in normalized_workflow_text
+        and "review\\s+(?:result|verdict)" in normalized_workflow_text
     )
     supports_compact_stage_headings = (
-        "(?:(?:qa|review))\\s+(pass|fail|reject|approved?|blocked?|blocker)\\b"
-        in workflow_text
+        "const compactStageHeading = plain.match(" in workflow_text
+        and "(?:(?:qa|review))\\s+(pass|fail|reject|approved?|blocked?|blocker)\\b"
+        in normalized_workflow_text
     )
     if supports_broad_labeled_verdicts and supports_compact_stage_headings:
         return
@@ -463,6 +468,12 @@ def _current_artifact_file_path(artifact: dict[str, Any]) -> str:
     return str(artifact.get("path", "")).strip()
 
 
+def _is_remediation_ticket(ticket: dict[str, Any]) -> bool:
+    ticket_id = str(ticket.get("id", "")).strip().upper()
+    lane = str(ticket.get("lane", "")).strip().lower()
+    return lane == "remediation" or ticket_id.startswith("REMED-")
+
+
 def audit_remediation_review_evidence(
     root: Path, findings: list[Finding], ctx: LifecycleContractAuditContext
 ) -> None:
@@ -475,7 +486,7 @@ def audit_remediation_review_evidence(
     if not tickets:
         return
 
-    command_pattern = re.compile(r"(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:command|command run)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:command|command run):(?:\*\*|__)?)\s*(?:`[^`]+`|```[\s\S]*?```)", re.IGNORECASE)
+    command_pattern = re.compile(r"(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:exact\s+command\s+run|command|command run)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:exact\s+command\s+run|command|command run):(?:\*\*|__)?)\s*(?:`[^`]+`|```[\s\S]*?```)", re.IGNORECASE)
     output_heading_pattern = re.compile(r"(?:raw(?:\s+command)?\s+output|raw\s+output|command\s+output)(?:\s*\([^)]*\))?", re.IGNORECASE)
     result_pattern = re.compile(
         r"(?:(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result):(?:\*\*|__)?)\s*(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?|(?:^|\n)#{1,6}\s*(?:overall\s+result|overall\s+verdict|review\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result|blocker\s+or\s+approval\s+signal)\s*(?:\r?\n\s*)+(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?)",
@@ -487,7 +498,7 @@ def audit_remediation_review_evidence(
         if not isinstance(ticket, dict):
             continue
         finding_source = str(ticket.get("finding_source", "")).strip()
-        if not finding_source:
+        if not finding_source or not _is_remediation_ticket(ticket):
             continue
         artifact = _latest_current_stage_artifact(ticket, "review")
         if artifact is None:
@@ -504,7 +515,8 @@ def audit_remediation_review_evidence(
         if not command_pattern.search(artifact_text):
             missing.append("missing exact command record")
         output_blocks = [match.group(1).strip() for match in code_block_pattern.finditer(artifact_text)]
-        has_output = bool(output_heading_pattern.search(artifact_text)) and any(block for block in output_blocks)
+        has_inline_output = bool(re.search(r"(?:raw(?:\s+command)?\s+output|raw\s+output|command\s+output|raw\s+stdout|raw\s+stderr|stdout|stderr)\s*:", artifact_text, re.IGNORECASE))
+        has_output = bool(output_heading_pattern.search(artifact_text)) and (any(block for block in output_blocks) or has_inline_output)
         if not has_output:
             missing.append("missing raw command output section with non-empty code block")
         if not result_pattern.search(artifact_text):

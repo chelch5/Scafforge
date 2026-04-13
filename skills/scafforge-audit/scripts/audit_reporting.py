@@ -269,6 +269,9 @@ def package_has_verdict_parser_fix(ctx: AuditReportingContext) -> bool:
     lifecycle_audit = read_text(ctx.package_root / "skills" / "scafforge-audit" / "scripts" / "audit_lifecycle_contracts.py")
     parser_supports_extended_verdict_labels = (
         "ARTIFACT_VERDICT_LABEL_PATTERN" in workflow_lib
+        and "const labeled = plain.match(" in workflow_lib
+        and "const headingInline = plain.match(" in workflow_lib
+        and "const compactStageHeading = plain.match(" in workflow_lib
         and "overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?" in normalized_workflow_lib
         and "qa\\s+(?:result|verdict)" in normalized_workflow_lib
         and "review\\s+(?:result|verdict)" in normalized_workflow_lib

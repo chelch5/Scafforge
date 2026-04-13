@@ -315,6 +315,10 @@ if [[ "$MODE" == "opencode" ]]; then
 3. If pending_process_verification is true, check affected_done_tickets
 4. Execute the next action specified by transition_guidance
 5. Do not skip stages. Do not invent workarounds. Follow the workflow.
+6. Keep narration terse. Do not emit long self-handoff sections like Goal / Instructions / Discoveries / Accomplished / Next Steps unless you are reporting a real blocker.
+7. If you can name the next legal tool call, execute it in the same run instead of stopping after a summary.
+8. Continue working until the active ticket reaches closeout, you hit a team-leader stop condition, or no legal next action remains.
+9. For split parents, remediation batches, and stale-follow-up sweeps, keep draining ready child tickets in the same run while legal next actions remain.
 
 If you encounter a blocker you cannot resolve after 3 attempts, stop and report it clearly with the exact error and what you tried."
   fi
