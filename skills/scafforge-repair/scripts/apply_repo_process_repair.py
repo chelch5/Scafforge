@@ -1566,6 +1566,12 @@ def apply_repair(
             replace_file_with_backup(rendered_export_presets, target_export_presets)
             replaced_surfaces.append("export_presets.cfg")
 
+        rendered_state_gitignore = rendered_root / ".opencode" / "state" / ".gitignore"
+        target_state_gitignore = repo_root / ".opencode" / "state" / ".gitignore"
+        if rendered_state_gitignore.exists():
+            replace_file_with_backup(rendered_state_gitignore, target_state_gitignore)
+            replaced_surfaces.append(".opencode/state/.gitignore")
+
         (repo_root / ".opencode" / "state" / "bootstrap").mkdir(parents=True, exist_ok=True)
 
         for relative in TRANSACTION_STATE_SURFACES:

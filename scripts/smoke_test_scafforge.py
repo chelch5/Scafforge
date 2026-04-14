@@ -5040,6 +5040,32 @@ def main() -> int:
                 "Routine public repair should not emit canonical-project human-decision escalation from the stale-surface map"
             )
 
+        observability_repair_dest = workspace / "observability-repair"
+        shutil.copytree(full_dest, observability_repair_dest)
+        observability_state_gitignore = (
+            observability_repair_dest / ".opencode" / "state" / ".gitignore"
+        )
+        observability_state_gitignore.unlink()
+        observability_repair = run_json(
+            [
+                sys.executable,
+                str(REPAIR),
+                str(observability_repair_dest),
+                "--skip-verify",
+            ],
+            ROOT,
+        )
+        if not observability_state_gitignore.exists():
+            raise RuntimeError(
+                "Deterministic managed repair should restore .opencode/state/.gitignore when the observability-layer state ignore file is missing"
+            )
+        if ".opencode/state/.gitignore" not in observability_repair.get(
+            "replaced_surfaces", []
+        ):
+            raise RuntimeError(
+                "Deterministic managed repair should record .opencode/state/.gitignore in replaced_surfaces when it restores the observability-layer state ignore file"
+            )
+
         windows_venv_dest = workspace / "windows-venv-detection"
         windows_venv_dest.mkdir(parents=True, exist_ok=True)
         windows_python = windows_venv_dest / ".venv" / "Scripts" / "python.exe"
@@ -5681,6 +5707,41 @@ def main() -> int:
         if "CYCLE002" in repeated_diagnosis_new_package_codes:
             raise RuntimeError(
                 "A repo whose repeated diagnosis packs were generated under an older package commit should not emit CYCLE002 on a fresh post-package revalidation audit"
+            )
+
+        repeated_diagnosis_post_repair_dest = (
+            workspace / "repeated-diagnosis-post-repair-verification"
+        )
+        shutil.copytree(repeated_diagnosis_dest, repeated_diagnosis_post_repair_dest)
+        repeated_post_repair_manifests = sorted(
+            (repeated_diagnosis_post_repair_dest / "diagnosis").glob("*/manifest.json")
+        )
+        latest_post_repair_manifest = json.loads(
+            repeated_post_repair_manifests[-1].read_text(encoding="utf-8")
+        )
+        latest_post_repair_manifest["diagnosis_kind"] = "post_repair_verification"
+        repeated_post_repair_manifests[-1].write_text(
+            json.dumps(latest_post_repair_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        repeated_diagnosis_post_repair_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(repeated_diagnosis_post_repair_dest),
+                "--format",
+                "json",
+                "--no-diagnosis-pack",
+            ],
+            ROOT,
+        )
+        repeated_diagnosis_post_repair_codes = {
+            finding["code"]
+            for finding in repeated_diagnosis_post_repair_audit.get("findings", [])
+        }
+        if "CYCLE002" in repeated_diagnosis_post_repair_codes:
+            raise RuntimeError(
+                "A latest post_repair_verification diagnosis pack should not be treated as repeated diagnosis churn"
             )
 
         verification_basis_regression_dest = workspace / "verification-basis-regression"

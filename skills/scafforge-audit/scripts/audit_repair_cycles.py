@@ -137,6 +137,11 @@ def audit_repeated_diagnosis_churn(root: Path, findings: list[Finding], ctx: Rep
     latest_generated_at = ctx.parse_iso_timestamp(latest_manifest.get("generated_at"))
     if latest_generated_at is None:
         return
+    if ctx.manifest_diagnosis_kind(latest_manifest) == "post_repair_verification":
+        # The public repair runner emits a same-day verification diagnosis as a
+        # required part of one repair cycle. That pack is not audit churn, even
+        # if it repeats findings from the immediately preceding repair basis.
+        return
 
     same_day = [item for item in diagnoses if item[0].date() == latest_generated_at.date()]
     if len(same_day) < 2:
