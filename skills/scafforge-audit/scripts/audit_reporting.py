@@ -197,6 +197,8 @@ def prevention_action(finding: Finding) -> str:
         return "Return verification metadata from restart-surface tools so callers can confirm what handoff and snapshot publication actually wrote."
     if finding.code == "WFLOW028":
         return "Remove the global split-scope completion invariant from workflow.ts validateTicketGraphInvariants so sequential-dependent split children can exist alongside completed parents, then install the fix via scafforge-repair."
+    if finding.code == "WFLOW032":
+        return "Tighten bootstrap ticket generation and review guidance so product-spine tickets cannot normalize shallow shells, justified stubs, or deferred runtime behavior."
     if finding.code == "SESSION001":
         return "Teach scafforge-audit to treat supplied session logs as first-class temporal evidence and explain final reasoning failures before reconciling current repo state."
     if finding.code == "SESSION002":
@@ -225,6 +227,8 @@ def prevention_action(finding: Finding) -> str:
         return "Teach audit to stop repeated diagnosis-pack churn when the repo has no newer package or process-version change; require Scafforge package work before the next subject-repo audit."
     if finding.code == "CYCLE003":
         return "Make repair verification inherit the transcript-backed diagnosis basis automatically, keep the final publish gate tied to that basis, emit the post-repair diagnosis pack from the repair runner, and refuse to call the repo clean on current-state evidence alone."
+    if finding.code == "EXEC-RUNTIME-001":
+        return "Detect explicit TODO, placeholder-response, and stub-integration markers in repo-owned runtime sources once tickets start closing, and require a runnable vertical slice before review, QA, or release proof can call those paths complete."
     if finding.code.startswith("EXEC"):
         return "Tighten generated review and QA guidance so runtime validation and test collection proof exist before closure."
     if finding.code.startswith("REF"):

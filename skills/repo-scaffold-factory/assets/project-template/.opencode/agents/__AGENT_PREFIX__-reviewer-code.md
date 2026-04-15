@@ -80,6 +80,7 @@ Rules:
 - verify that the primary module imports succeed
 - include compile or import-check output in the review artifact
 - do not approve code that fails to compile or import cleanly
+- if the ticket touches user-facing commands, runtime integrations, provider adapters, tool execution, agent execution, IDE surfaces, or other product-spine code, treat explicit TODO-only behavior, placeholder responses, or stubbed integrations in the changed path as blockers even when compile/tests pass
 - if the implementation artifact or diff context is missing, return a blocker instead of inferring correctness
 - do not end with a summary-only response when findings or an approval signal are required
 - when the ticket is a remediation ticket and carries `finding_source`, you must rerun the original failing command or the canonical acceptance command for the repaired surface before approving; do not approve on prose alone when the original check is re-runnable

@@ -93,6 +93,7 @@ Rules:
 - "code inspection" alone is not validation — you must execute tests or compile checks
 - run the project test suite and report pass/fail counts with command output
 - if no test suite exists, run compile or syntax checks and import verification on all source files
+- for user-facing or runtime-integration tickets, fail QA when the validated code path still returns placeholder output, TODO-only behavior, or stubbed integration messages even if compile/test commands pass
 - include raw command output in the QA artifact
 - if the QA artifact does not contain command output, it will be rejected by the team leader
 - a QA artifact under 200 bytes is almost certainly insufficient — add more evidence or return a blocker

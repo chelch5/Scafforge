@@ -2,11 +2,35 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import re
+from pathlib import Path
 
 
-ASSET_SUBDIRS = ("briefs", "models", "sprites", "audio", "fonts", "themes")
+ASSET_SUBDIRS = (
+    "briefs",
+    "models",
+    "sprites",
+    "audio",
+    "fonts",
+    "themes",
+    "previews",
+    "workfiles",
+    "licenses",
+    "import-reports",
+)
+ASSET_STARTER_PATHS = tuple(
+    [f"assets/{subdir}" for subdir in ASSET_SUBDIRS]
+    + [
+        "assets/pipeline.json",
+        "assets/PROVENANCE.md",
+        "assets/briefs/README.md",
+        ".opencode/meta/asset-pipeline-bootstrap.json",
+    ]
+)
+ASSET_JSON_PATHS = (
+    "assets/pipeline.json",
+    ".opencode/meta/asset-pipeline-bootstrap.json",
+)
 DEFAULT_LICENSE_FILTER = ["CC0", "CC-BY", "MIT", "OFL"]
 KNOWN_LICENSES = (
     "CC0",
@@ -119,8 +143,13 @@ def _art_style(stack_label: str, content_source_plan: str) -> str:
     return "mixed"
 
 
-def _infer_routes(stack_label: str, content_source_plan: str) -> tuple[dict[str, dict[str, str]], list[str]]:
-    lowered = f"{stack_label} {content_source_plan}".lower()
+def _infer_routes(
+    stack_label: str,
+    content_source_plan: str,
+    placeholder_policy: str = "",
+    licensing_or_provenance_constraints: str = "",
+) -> tuple[dict[str, dict[str, str]], list[str]]:
+    lowered = f"{stack_label} {content_source_plan} {placeholder_policy} {licensing_or_provenance_constraints}".lower()
     uses_blender = any(token in lowered for token in ("blender", ".blend", ".glb", "3d model"))
     uses_free_open = any(
         token in lowered
@@ -143,40 +172,82 @@ def _infer_routes(stack_label: str, content_source_plan: str) -> tuple[dict[str,
         for token in ("godot", "procedural", "shader", "particle", "theme", "tilemap", "builtin")
     )
     is_3d = any(token in lowered for token in ("3d", "low poly", "low-poly", ".glb", ".blend"))
+    native_only = any(
+        token in lowered
+        for token in (
+            "no external assets",
+            "no external asset",
+            "100% godot",
+            "100% godot engine features",
+            "godot engine features",
+            "godot native capabilities",
+            "godot native features",
+            "godot built-in",
+            "godot built in",
+            "nothing to track",
+        )
+    )
+    engine_authored_audio = any(
+        token in lowered
+        for token in ("audiostreamgenerator", "procedural sfx", "procedural audio", "godot audio")
+    )
 
-    routes = {
-        "characters": _route_choice(
-            "blender-mcp" if uses_blender or is_3d else "free-open" if uses_free_open else "codex-derived",
-            "free-open" if uses_free_open else None,
-            "godot-builtin" if uses_godot_builtin else None,
-        ),
-        "environments": _route_choice(
-            "godot-builtin" if uses_godot_builtin else "free-open" if uses_free_open else "codex-derived",
-            "free-open" if uses_free_open else None,
-            "codex-derived",
-        ),
-        "props": _route_choice(
+    if native_only:
+        routes = {
+            category: _route_choice("godot-builtin", "codex-derived")
+            for category in ("characters", "environments", "props", "ui", "audio", "vfx")
+        }
+    else:
+        character_primary = (
             "blender-mcp"
-            if uses_blender and is_3d
+            if uses_blender or (is_3d and not uses_godot_builtin)
+            else "godot-builtin"
+            if uses_godot_builtin and not uses_free_open
             else "free-open"
             if uses_free_open
-            else "godot-builtin"
-            if uses_godot_builtin
-            else "codex-derived",
-            "free-open" if uses_free_open else None,
-            "godot-builtin" if uses_godot_builtin else None,
-        ),
-        "ui": _route_choice(
-            "godot-builtin" if uses_godot_builtin else "free-open" if uses_free_open else "codex-derived",
-            "free-open" if uses_free_open else None,
-            "codex-derived",
-        ),
-        "audio": _route_choice("free-open" if uses_free_open else "codex-derived"),
-        "vfx": _route_choice(
-            "godot-builtin" if uses_godot_builtin else "codex-derived",
-            "free-open" if uses_free_open else None,
-        ),
-    }
+            else "codex-derived"
+        )
+        audio_primary = (
+            "godot-builtin"
+            if engine_authored_audio or (uses_godot_builtin and not uses_free_open and not uses_blender)
+            else "free-open"
+            if uses_free_open
+            else "codex-derived"
+        )
+
+        routes = {
+            "characters": _route_choice(
+                character_primary,
+                "free-open" if uses_free_open else None,
+                "godot-builtin" if uses_godot_builtin else None,
+            ),
+            "environments": _route_choice(
+                "godot-builtin" if uses_godot_builtin else "free-open" if uses_free_open else "codex-derived",
+                "free-open" if uses_free_open else None,
+                "codex-derived",
+            ),
+            "props": _route_choice(
+                "blender-mcp"
+                if uses_blender and is_3d
+                else "free-open"
+                if uses_free_open
+                else "godot-builtin"
+                if uses_godot_builtin
+                else "codex-derived",
+                "free-open" if uses_free_open else None,
+                "godot-builtin" if uses_godot_builtin else None,
+            ),
+            "ui": _route_choice(
+                "godot-builtin" if uses_godot_builtin else "free-open" if uses_free_open else "codex-derived",
+                "free-open" if uses_free_open else None,
+                "codex-derived",
+            ),
+            "audio": _route_choice(audio_primary, "free-open" if uses_free_open else None),
+            "vfx": _route_choice(
+                "godot-builtin" if uses_godot_builtin else "codex-derived",
+                "free-open" if uses_free_open else None,
+            ),
+        }
     canonical_routes: dict[str, dict[str, str]] = {}
     for category, choice in routes.items():
         canonical_choice = {
@@ -200,7 +271,12 @@ def _pipeline_payload(
     licensing_or_provenance_constraints: str,
     finish_acceptance_signals: str,
 ) -> dict[str, object]:
-    routes, brief_targets = _infer_routes(stack_label, content_source_plan)
+    routes, brief_targets = _infer_routes(
+        stack_label,
+        content_source_plan,
+        placeholder_policy,
+        licensing_or_provenance_constraints,
+    )
     target_platform = _target_platform(stack_label)
     is_mobile = target_platform in {"android", "ios"}
     return {
@@ -222,6 +298,10 @@ def _pipeline_payload(
             "machine_readable": "assets/pipeline.json",
             "human_readable": "assets/PROVENANCE.md",
             "briefs_dir": "assets/briefs",
+            "previews_dir": "assets/previews",
+            "workfiles_dir": "assets/workfiles",
+            "licenses_dir": "assets/licenses",
+            "import_reports_dir": "assets/import-reports",
             "route_specific_finish_proof_required": True,
         },
         "tool_license_policy": {
@@ -271,13 +351,46 @@ def _bootstrap_metadata(pipeline: dict[str, object]) -> dict[str, object]:
         "routes": primary_routes,
         "route_families": pipeline.get("route_families", []),
         "brief_targets": pipeline.get("brief_targets", []),
+        "requires_blender_mcp": route_map_requires_blender(primary_routes),
         "suggested_agents": suggested_agents,
         "suggested_skills": sorted(set(suggested_skills)),
         "provenance_requirements": pipeline.get("provenance_requirements", {}),
         "tool_license_policy": pipeline.get("tool_license_policy", {}),
         "model_license_policy": pipeline.get("model_license_policy", {}),
+        "previews_dir": "assets/previews",
+        "workfiles_dir": "assets/workfiles",
+        "licenses_dir": "assets/licenses",
+        "import_reports_dir": "assets/import-reports",
         "initialized_by": "skills/asset-pipeline/scripts/init_asset_pipeline.py",
     }
+
+
+def route_map_requires_blender(routes: dict[str, object]) -> bool:
+    for choice in routes.values():
+        primary = choice.get("primary") if isinstance(choice, dict) else choice
+        if isinstance(primary, str) and _canonical_route_name(primary) == "blender-mcp-generated":
+            return True
+    return False
+
+
+def preview_asset_pipeline(
+    *,
+    stack_label: str,
+    deliverable_kind: str,
+    placeholder_policy: str,
+    content_source_plan: str,
+    licensing_or_provenance_constraints: str,
+    finish_acceptance_signals: str,
+) -> tuple[dict[str, object], dict[str, object]]:
+    pipeline = _pipeline_payload(
+        stack_label=stack_label,
+        deliverable_kind=deliverable_kind,
+        placeholder_policy=placeholder_policy,
+        content_source_plan=content_source_plan,
+        licensing_or_provenance_constraints=licensing_or_provenance_constraints,
+        finish_acceptance_signals=finish_acceptance_signals,
+    )
+    return pipeline, _bootstrap_metadata(pipeline)
 
 
 def _provenance_markdown(
@@ -353,7 +466,7 @@ def initialize_asset_pipeline(
     meta_root = repo_root / ".opencode" / "meta"
     created: list[Path] = []
 
-    pipeline = _pipeline_payload(
+    pipeline, metadata = preview_asset_pipeline(
         stack_label=stack_label,
         deliverable_kind=deliverable_kind,
         placeholder_policy=placeholder_policy,
@@ -361,7 +474,6 @@ def initialize_asset_pipeline(
         licensing_or_provenance_constraints=licensing_or_provenance_constraints,
         finish_acceptance_signals=finish_acceptance_signals,
     )
-    metadata = _bootstrap_metadata(pipeline)
 
     for subdir in ASSET_SUBDIRS:
         directory = asset_root / subdir

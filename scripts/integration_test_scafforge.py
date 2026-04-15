@@ -118,6 +118,7 @@ def bootstrap_scaffold(
     content_source_plan: str | None = None,
     licensing_or_provenance_constraints: str | None = None,
     finish_acceptance_signals: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> None:
     command = [
         sys.executable,
@@ -156,7 +157,7 @@ def bootstrap_scaffold(
     for flag, value in optional_args:
         if value:
             command.extend([flag, value])
-    run(command, ROOT)
+    run(command, ROOT, env=env)
 
 
 def require_host_prerequisite(name: str, *, context: str) -> str:
@@ -176,6 +177,60 @@ def write_text(path: Path, content: str) -> None:
 def write_executable_wrapper(path: Path, target: str) -> None:
     write_text(path, f'#!/usr/bin/env sh\nexec {target} "$@"\n')
     path.chmod(path.stat().st_mode | 0o111)
+
+
+def fake_blender_host_env(workspace: Path) -> dict[str, str]:
+    host_root = workspace / "fake-blender-host"
+    bin_dir = host_root / "bin"
+    mcp_dir = host_root / "blender-agent" / "mcp-server"
+    write_executable_wrapper(bin_dir / "blender", "/bin/true")
+    write_text(mcp_dir / "pyproject.toml", "[project]\nname = \"fake-blender-mcp\"\nversion = \"0.0.0\"\n")
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+    env["BLENDER_MCP_PROJECT"] = str(mcp_dir)
+    return env
+
+
+def strip_jsonc_comments(text: str) -> str:
+    result_chars: list[str] = []
+    i = 0
+    in_string = False
+    while i < len(text):
+        char = text[i]
+        if in_string:
+            result_chars.append(char)
+            if char == "\\" and i + 1 < len(text):
+                i += 1
+                result_chars.append(text[i])
+            elif char == '"':
+                in_string = False
+            i += 1
+            continue
+        if char == '"':
+            in_string = True
+            result_chars.append(char)
+            i += 1
+            continue
+        if char == "/" and i + 1 < len(text) and text[i + 1] == "/":
+            while i < len(text) and text[i] != "\n":
+                i += 1
+            continue
+        if char == "/" and i + 1 < len(text) and text[i + 1] == "*":
+            i += 2
+            while i + 1 < len(text) and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        result_chars.append(char)
+        i += 1
+    return re.sub(r",\s*([}\]])", r"\1", "".join(result_chars))
+
+
+def load_opencode_config(repo_root: Path) -> dict[str, Any]:
+    payload = json.loads(strip_jsonc_comments((repo_root / "opencode.jsonc").read_text(encoding="utf-8")))
+    if not isinstance(payload, dict):
+        raise RuntimeError("Expected opencode.jsonc to parse as a configuration object.")
+    return payload
 
 
 def replace_stack_skill_placeholder(dest: Path, replacement: str) -> None:
@@ -959,6 +1014,7 @@ def greenfield_integration(workspace: Path) -> None:
         )
 
     asset_pipeline_dest = workspace / "greenfield-asset-pipeline"
+    blender_host_env = fake_blender_host_env(workspace)
     bootstrap_scaffold(
         asset_pipeline_dest,
         project_name="Asset Pipeline Probe",
@@ -972,6 +1028,7 @@ def greenfield_integration(workspace: Path) -> None:
         content_source_plan="blender-mcp for characters and props, godot builtin for VFX and UI themes, free-open audio/fonts",
         licensing_or_provenance_constraints="Allow CC0, CC-BY, MIT, and OFL only; every generated or sourced asset must be logged.",
         finish_acceptance_signals="Release proof requires a debug APK plus complete asset provenance coverage for every committed asset.",
+        env=blender_host_env,
     )
     make_stack_skill_non_placeholder(asset_pipeline_dest)
     pipeline_manifest = read_json(asset_pipeline_dest / "assets" / "pipeline.json")
@@ -993,9 +1050,23 @@ def greenfield_integration(workspace: Path) -> None:
         raise RuntimeError(
             "Asset-pipeline integration should suggest a blender asset subagent when the seeded routes include blender-mcp-generated."
         )
+    opencode_config = load_opencode_config(asset_pipeline_dest)
+    blender_agent = opencode_config.get("mcp", {}).get("blender_agent", {})
+    if not isinstance(blender_agent, dict) or blender_agent.get("enabled") is not True:
+        raise RuntimeError(
+            "Asset-pipeline integration should enable blender_agent when the route requires Blender-MCP and the host provides Blender paths."
+        )
     provenance_text = (asset_pipeline_dest / "assets" / "PROVENANCE.md").read_text(encoding="utf-8")
     if "| asset_path | source_or_workflow | license | author | acquired_or_generated_on | notes |" not in provenance_text:
         raise RuntimeError("Asset-pipeline integration expected a canonical provenance table header.")
+    for relative in (
+        "assets/previews",
+        "assets/workfiles",
+        "assets/licenses",
+        "assets/import-reports",
+    ):
+        if not (asset_pipeline_dest / relative).exists():
+            raise RuntimeError(f"Asset-pipeline integration expected starter surface `{relative}` to exist.")
     asset_verify = run_json(
         [sys.executable, str(VERIFY_GENERATED), str(asset_pipeline_dest), "--format", "json"],
         ROOT,
@@ -1006,6 +1077,84 @@ def greenfield_integration(workspace: Path) -> None:
     ):
         raise RuntimeError(
             "Asset-pipeline greenfield integration should pass continuation verification after seeding game asset surfaces."
+        )
+
+    non_blender_asset_dest = workspace / "greenfield-non-blender-asset-pipeline"
+    bootstrap_scaffold(
+        non_blender_asset_dest,
+        project_name="Sourced Asset Probe",
+        project_slug="sourced-asset-probe",
+        agent_prefix="sourced-asset-probe",
+        stack_label="godot-2d-android-game",
+        deliverable_kind="android apk with licensed or repo-authored 2d game content",
+        placeholder_policy="no_placeholders",
+        visual_finish_target="ship-ready sourced sprite sheets and UI with no placeholder art",
+        audio_finish_target="licensed or repo-authored audio only",
+        content_source_plan="Kenney sprites, OpenGameArt props, Freesound audio, and Godot-native UI themes",
+        licensing_or_provenance_constraints="Allow CC0 and CC-BY only; track every asset in provenance.",
+        finish_acceptance_signals="Release proof requires runnable Android builds plus provenance coverage for all committed assets.",
+        env=blender_host_env,
+    )
+    make_stack_skill_non_placeholder(non_blender_asset_dest)
+    sourced_config = load_opencode_config(non_blender_asset_dest)
+    sourced_blender_agent = sourced_config.get("mcp", {}).get("blender_agent", {})
+    if not isinstance(sourced_blender_agent, dict) or sourced_blender_agent.get("enabled") is not False:
+        raise RuntimeError(
+            "Non-Blender asset routes should keep blender_agent disabled even when Blender is available on the current host."
+        )
+    sourced_pipeline = read_json(non_blender_asset_dest / "assets" / "pipeline.json")
+    if not isinstance(sourced_pipeline, dict):
+        raise RuntimeError("Non-Blender asset integration expected assets/pipeline.json to exist.")
+    sourced_routes = sourced_pipeline.get("routes")
+    if not isinstance(sourced_routes, dict):
+        raise RuntimeError("Non-Blender asset integration expected recorded route metadata.")
+    if any(
+        isinstance(choice, dict) and choice.get("primary") == "blender-mcp-generated"
+        for choice in sourced_routes.values()
+    ):
+        raise RuntimeError(
+            "Sourced asset routes should not silently seed blender-mcp-generated primary routes."
+        )
+
+    godot_native_asset_dest = workspace / "greenfield-godot-native-asset-pipeline"
+    bootstrap_scaffold(
+        godot_native_asset_dest,
+        project_name="Godot Native Asset Probe",
+        project_slug="godot-native-asset-probe",
+        agent_prefix="godot-native-asset-probe",
+        stack_label="godot-3d-android-game",
+        deliverable_kind="android apk showcasing Godot-native visuals only",
+        placeholder_policy="No external assets. Godot features are the final art style.",
+        visual_finish_target="Godot-authored characters, shaders, particles, and UI only.",
+        audio_finish_target="Procedural AudioStreamGenerator SFX or intentional silence.",
+        content_source_plan="100% Godot engine features, shader materials, particles, tilemaps, and AudioStreamGenerator.",
+        licensing_or_provenance_constraints="No external assets. Nothing to track beyond the active Godot-native route.",
+        finish_acceptance_signals="APK compiles and the Godot-native visual stack renders cleanly on device.",
+        env=blender_host_env,
+    )
+    make_stack_skill_non_placeholder(godot_native_asset_dest)
+    godot_native_config = load_opencode_config(godot_native_asset_dest)
+    godot_native_blender_agent = godot_native_config.get("mcp", {}).get("blender_agent", {})
+    if not isinstance(godot_native_blender_agent, dict) or godot_native_blender_agent.get("enabled") is not False:
+        raise RuntimeError(
+            "Godot-native no-external-asset routes should keep blender_agent disabled even on Blender-capable hosts."
+        )
+    godot_native_pipeline = read_json(godot_native_asset_dest / "assets" / "pipeline.json")
+    if not isinstance(godot_native_pipeline, dict):
+        raise RuntimeError("Godot-native asset integration expected assets/pipeline.json to exist.")
+    if "godot_native" not in godot_native_pipeline.get("route_families", []):
+        raise RuntimeError(
+            "Godot-native no-external-asset routes should record the godot_native route family."
+        )
+    native_routes = godot_native_pipeline.get("routes")
+    if not isinstance(native_routes, dict):
+        raise RuntimeError("Godot-native asset integration expected recorded route metadata.")
+    if any(
+        isinstance(choice, dict) and choice.get("primary") == "blender-mcp-generated"
+        for choice in native_routes.values()
+    ):
+        raise RuntimeError(
+            "Godot-native no-external-asset routes should not collapse into blender-mcp-generated primaries just because the stack is 3D-capable."
         )
 
 

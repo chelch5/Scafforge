@@ -39,6 +39,7 @@ Rules:
 - use `ticket-execution` for lifecycle order and `project-context` for canonical repo docs
 - run the repo's build command, lint or type-check command, and reference-integrity checks when those quality gates exist for the active stack; include the raw command output in the review or QA artifact
 - if any required build, lint, type-check, or reference-integrity command fails, the verdict must be FAIL and the artifact must name the failing command plus the concrete error
+- when the active ticket owns a user-facing or runtime-backed surface, reject explicit TODO-only behavior, placeholder responses, shallow command shells, or stubbed integrations in the claimed code path even if compile/test checks pass
 - when reviewing or validating a remediation ticket with `finding_source`, rerun the original finding-producing command first, confirm the specific failure is gone, then check that adjacent quality gates still pass
 - write any workflow-failure explanation or review retrospective to the repo-local process-log path described in `references/review-contract.md`
 - recommend follow-up tickets only when current evidence justifies them, and route canonical ticket creation through the repo's guarded ticket workflow

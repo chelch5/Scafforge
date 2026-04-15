@@ -47,6 +47,71 @@ SCAN_EXCLUDED_DIRS: frozenset[str] = frozenset({
     ".coverage",
     "htmlcov",
 })
+RUNTIME_SOURCE_SUFFIXES: frozenset[str] = frozenset({
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".rs",
+    ".go",
+    ".gd",
+    ".cs",
+    ".java",
+    ".kt",
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".h",
+    ".hpp",
+})
+RUNTIME_SOURCE_EXCLUDED_DIRS: frozenset[str] = frozenset({
+    "test",
+    "tests",
+    "__tests__",
+    "spec",
+    "specs",
+    "fixture",
+    "fixtures",
+    "example",
+    "examples",
+    "docs",
+    "diagnosis",
+    ".opencode",
+})
+PLACEHOLDER_RUNTIME_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bTODO:\s*Implement (?:actual|full|real)\b", re.IGNORECASE),
+    re.compile(r"\bnot (?:yet )?fully implemented\b", re.IGNORECASE),
+    re.compile(r"\bplaceholder (?:response|implementation)\b", re.IGNORECASE),
+    re.compile(r"\bstub(?:bed)?\b.+\brequires\b.+\bintegration\b", re.IGNORECASE),
+    re.compile(r"\bwould send .+ configured model\b", re.IGNORECASE),
+)
+RUNTIME_PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset({
+    "agent",
+    "agents",
+    "ask",
+    "chat",
+    "cli",
+    "command",
+    "commands",
+    "edit",
+    "executor",
+    "ide",
+    "inference",
+    "llm",
+    "mcp",
+    "provider",
+    "providers",
+    "runtime",
+    "search",
+    "server",
+    "session",
+    "suggest",
+    "tool",
+    "tools",
+    "tui",
+})
 
 SMOKE_PASS_RESULT_PATTERN = re.compile(r"Overall Result:\s*PASS\b", re.IGNORECASE)
 SMOKE_FAILURE_CLASSIFICATION_PATTERN = re.compile(r"^- failure_classification:\s*([a-z_]+)\s*$", re.IGNORECASE | re.MULTILINE)
@@ -98,6 +163,53 @@ def iter_source_files(root: Path, suffixes: tuple[str, ...]) -> list[Path]:
                 continue
             results.append(path)
     return results
+
+
+def is_runtime_source_candidate(path: Path, root: Path) -> bool:
+    relative_parts = path.relative_to(root).parts
+    if any(part in RUNTIME_SOURCE_EXCLUDED_DIRS for part in relative_parts[:-1]):
+        return False
+    lowered_name = path.name.lower()
+    if (
+        lowered_name.endswith("_test.go")
+        or ".spec." in lowered_name
+        or ".test." in lowered_name
+        or lowered_name.startswith("test_")
+    ):
+        return False
+    return path.suffix in RUNTIME_SOURCE_SUFFIXES
+
+
+def runtime_placeholder_hits(root: Path, ctx: ExecutionSurfaceAuditContext) -> list[str]:
+    hits: list[str] = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        relative_parts = path.relative_to(root).parts
+        if any(part in SCAN_EXCLUDED_DIRS for part in relative_parts[:-1]):
+            continue
+        if not is_runtime_source_candidate(path, root):
+            continue
+        lowered_parts = {part.lower() for part in relative_parts}
+        lowered_name = path.name.lower()
+        if not (
+            lowered_parts & RUNTIME_PLACEHOLDER_PATH_TOKENS
+            or lowered_name in {"main.rs", "main.py", "main.ts", "main.js", "lib.rs"}
+        ):
+            continue
+        text = ctx.read_text(path)
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            for pattern in PLACEHOLDER_RUNTIME_PATTERNS:
+                if not pattern.search(stripped):
+                    continue
+                hits.append(
+                    f"{ctx.normalize_path(path, root)}:{line_number}: {stripped[:160]}"
+                )
+                break
+    return hits
 
 
 def iter_godot_resource_paths(text: str) -> list[str]:
@@ -986,6 +1098,47 @@ def audit_rust_execution(root: Path, findings: list[Finding], ctx: ExecutionSurf
         _add_execution_finding(findings, ctx, code="EXEC-RUST-002", severity="error", problem="Rust tests do not compile.", root_cause="Test targets fail to compile even before execution, so QA cannot treat the Rust test surface as runnable.", files=[cargo_toml], safer_pattern="Require cargo test --no-run to pass before treating Rust validation as healthy.", evidence=_collect_first_error_lines(output), root=root)
 
 
+def audit_placeholder_runtime_sources(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    if not manifest_path.exists():
+        return
+    manifest = ctx.read_json(manifest_path)
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) and isinstance(manifest.get("tickets"), list) else []
+    if not any(
+        isinstance(ticket, dict)
+        and (
+            str(ticket.get("resolution_state", "")).strip() == "done"
+            or str(ticket.get("verification_state", "")).strip() == "trusted"
+        )
+        for ticket in tickets
+    ):
+        return
+
+    hits = runtime_placeholder_hits(root, ctx)
+    if not hits:
+        return
+
+    impacted_files: list[Path] = []
+    for hit in hits[:8]:
+        location = hit.split(":", 2)[0]
+        candidate = root / location
+        if candidate.exists():
+            impacted_files.append(candidate)
+
+    _add_execution_finding(
+        findings,
+        ctx,
+        code="EXEC-RUNTIME-001",
+        severity="error",
+        problem="Repo-owned runtime sources still contain explicit stub or placeholder implementations.",
+        root_cause="Review, QA, or closeout accepted compile-shape and shallow checks while current runtime code still declares TODO-only behavior, placeholder responses, or stubbed integrations in user-facing execution paths.",
+        files=impacted_files[:5],
+        safer_pattern="Keep user-facing and runtime tickets blocked until TODO/stub markers are removed from the active code path and one runnable vertical-slice check proves the real backend or tool behavior.",
+        evidence=hits[:8],
+        root=root,
+    )
+
+
 def audit_go_execution(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
     go_mod = root / "go.mod"
     if not go_mod.exists():
@@ -1457,4 +1610,5 @@ def run_execution_surface_audits(root: Path, findings: list[Finding], ctx: Execu
     audit_java_android_execution(root, findings, ctx)
     audit_cpp_execution(root, findings, ctx)
     audit_dotnet_execution(root, findings, ctx)
+    audit_placeholder_runtime_sources(root, findings, ctx)
     audit_reference_integrity(root, findings, ctx)

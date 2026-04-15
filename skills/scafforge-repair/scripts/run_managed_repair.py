@@ -1274,6 +1274,7 @@ def main() -> int:
                     repo_root,
                     rendered_root,
                     args.change_summary,
+                    metadata=metadata,
                     repair_basis_path=repair_basis_path,
                     preserve_backups=args.preserve_backups,
                 )

@@ -1043,6 +1043,16 @@ def main() -> int:
         deliverable_kind=args.deliverable_kind,
         finish_acceptance_signals=args.finish_acceptance_signals,
     )
+    asset_pipeline_preview: tuple[dict[str, object], dict[str, object]] | None = None
+    if args.scope == "full" and renders_godot_android_assets(args.stack_label):
+        asset_pipeline_preview = ASSET_PIPELINE_INIT.preview_asset_pipeline(
+            stack_label=args.stack_label,
+            deliverable_kind=args.deliverable_kind,
+            placeholder_policy=args.placeholder_policy,
+            content_source_plan=args.content_source_plan,
+            licensing_or_provenance_constraints=args.licensing_or_provenance_constraints,
+            finish_acceptance_signals=finish_acceptance_signals,
+        )
 
     replacements = {
         "__PROJECT_NAME__": args.project_name,
@@ -1076,9 +1086,13 @@ def main() -> int:
     # Host-discovered paths for MCP servers, keystores, and executables
     host_paths = discover_host_paths()
     blender_found = bool(host_paths.get("blender_executable") and host_paths.get("blender_mcp_project"))
+    blender_route_required = bool(
+        asset_pipeline_preview
+        and asset_pipeline_preview[1].get("requires_blender_mcp") is True
+    )
     replacements["__BLENDER_EXECUTABLE__"] = host_paths.get("blender_executable") or "blender"
     replacements["__BLENDER_MCP_PROJECT_PATH__"] = host_paths.get("blender_mcp_project") or "/path/to/blender-agent/mcp-server"
-    replacements["__BLENDER_MCP_ENABLED__"] = "true" if blender_found else "false"
+    replacements["__BLENDER_MCP_ENABLED__"] = "true" if blender_found and blender_route_required else "false"
     replacements["__ANDROID_DEBUG_KEYSTORE__"] = host_paths.get("android_debug_keystore") or ""
 
     validate_replacement_values(replacements)

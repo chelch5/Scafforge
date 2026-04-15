@@ -1,5 +1,28 @@
 # Scafforge final master repair, simplification, and validation plan
 
+## Completion status — 2026-04-15
+
+This plan is complete and ready to archive.
+
+- Canonical package validation quartet is green:
+  - `npm run validate:contract`
+  - `npm run validate:smoke`
+  - `python3 scripts/integration_test_scafforge.py`
+  - `python3 scripts/validate_gpttalker_migration.py`
+- Downstream post-package proof loop is green on fresh current-state audits:
+  - `GPTTalker`: `diagnosis/20260415-204046`
+  - `spinner`: `diagnosis/20260415-204117`
+  - `glitch`: `diagnosis/20260415-204633`
+  - `womanvshorseVA`: `diagnosis/20260415-203209`
+  - `womanvshorseVB`: `diagnosis/20260415-203303`
+  - `womanvshorseVC`: `diagnosis/20260415-203600`
+  - `womanvshorseVD`: `diagnosis/20260415-203659`
+- Additional package hardening landed from the `mcode` investigation:
+  - audit/runtime detection for stub-only product spines (`EXEC-RUNTIME-001`)
+  - lifecycle detection for tickets that normalize shallow runtime delivery (`WFLOW032`)
+  - stronger ticket and agent prompt guidance against stub/tool-placeholder implementations
+  - package-owned deterministic smoke coverage for Godot stale-UID fallback warnings
+
 ## 1. End state
 
 The target is not merely "fewer bugs." The target is:

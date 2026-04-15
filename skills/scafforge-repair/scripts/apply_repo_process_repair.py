@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,33 @@ DETERMINISTIC_PROCESS_DOCS = (
     "model-matrix.md",
     "git-capability.md",
 )
+ASSET_PIPELINE_INIT_PATH = (
+    Path(__file__).resolve().parents[2] / "asset-pipeline" / "scripts" / "init_asset_pipeline.py"
+)
+DEFAULT_FINISH_CONTRACT_FIELD_VALUES = {
+    "deliverable_kind": "prototype unless the normalized brief records a stricter final product bar",
+    "placeholder_policy": "placeholder_ok unless the normalized brief records a stricter finish policy",
+    "visual_finish_target": "record the project-specific visual finish bar here, or state that no consumer-facing visual bar applies",
+    "audio_finish_target": "record the project-specific audio finish bar here, or state that no audio bar applies",
+    "content_source_plan": "record whether content is authored, licensed, procedural, mixed, or intentionally absent",
+    "licensing_or_provenance_constraints": "record any asset or content provenance constraints here",
+    "finish_acceptance_signals": "record the explicit finish-proof signals that must be met before the repo is treated as finished",
+}
+FINISH_CONTRACT_FIELDS = tuple(DEFAULT_FINISH_CONTRACT_FIELD_VALUES.keys())
+CANONICAL_PROVENANCE_TABLE_HEADER = "| asset_path | source_or_workflow | license | author | acquired_or_generated_on | notes |"
+
+
+def load_asset_pipeline_initializer():
+    spec = spec_from_file_location("scafforge_asset_pipeline_init_for_repair", ASSET_PIPELINE_INIT_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load asset pipeline initializer from {ASSET_PIPELINE_INIT_PATH}")
+    module = module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+ASSET_PIPELINE_INIT = load_asset_pipeline_initializer()
 
 
 class RepairFailure(RuntimeError):
@@ -311,6 +339,47 @@ def _finish_contract_value_is_placeholder(value: str | None) -> bool:
         or "__" in (value or "")
         or "unless the normalized brief records" in lowered
     )
+
+
+def infer_stack_label_from_repo(repo_root: Path, stack_label: str, brief_text: str) -> str:
+    normalized = stack_label.strip()
+    if normalized and normalized != "framework-agnostic":
+        return normalized
+    lowered = brief_text.lower()
+    has_godot = (repo_root / "project.godot").exists() or "godot" in lowered
+    has_android = (
+        "android" in lowered
+        or (repo_root / "export_presets.cfg").exists()
+        or (repo_root / "android").exists()
+    )
+    if has_godot and has_android:
+        if any(token in lowered for token in ("3d", "blender", "low-poly", "low poly", ".glb")):
+            return "godot-3d-android-game"
+        if any(token in lowered for token in ("2d", "sprite", "tilemap", "shader")):
+            return "godot-2d-android-game"
+        return "godot-android-game"
+    return normalized or "framework-agnostic"
+
+
+def finish_contract_from_brief(brief_text: str) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    for field in FINISH_CONTRACT_FIELDS:
+        value = _finish_contract_field(brief_text, field)
+        if value:
+            payload[field] = value
+    return payload
+
+
+def hydrate_finish_contract(provenance_contract: dict[str, Any], brief_text: str) -> dict[str, str]:
+    hydrated: dict[str, str] = {}
+    for field in FINISH_CONTRACT_FIELDS:
+        value = provenance_contract.get(field) if isinstance(provenance_contract, dict) else None
+        if isinstance(value, str) and value.strip() and not _finish_contract_value_is_placeholder(value):
+            hydrated[field] = value.strip()
+    for field, value in finish_contract_from_brief(brief_text).items():
+        if field not in hydrated or _finish_contract_value_is_placeholder(hydrated.get(field)):
+            hydrated[field] = value
+    return hydrated
 
 
 def _placeholder_policy_requires_finish_ownership(placeholder_policy: str) -> bool:
@@ -882,6 +951,7 @@ def bootstrap_script_path() -> Path:
 def load_metadata(repo_root: Path, args: argparse.Namespace) -> dict[str, str]:
     provenance = read_json(repo_root / ".opencode" / "meta" / "bootstrap-provenance.json")
     manifest = read_json(repo_root / "tickets" / "manifest.json")
+    brief_text = read_text(repo_root / "docs" / "spec" / "CANONICAL-BRIEF.md")
     runtime = provenance.get("runtime_models", {}) if isinstance(provenance, dict) else {}
 
     project_name = args.project_name or (provenance.get("project_name") if isinstance(provenance, dict) else None)
@@ -916,6 +986,7 @@ def load_metadata(repo_root: Path, args: argparse.Namespace) -> dict[str, str]:
         prov_stack = provenance.get("stack_label")
         if isinstance(prov_stack, str) and prov_stack.strip():
             stack_label = prov_stack.strip()
+    stack_label = infer_stack_label_from_repo(repo_root, stack_label, brief_text)
 
     # Recover product_finish_contract from provenance for round-trip fidelity.
     finish_contract = {}
@@ -923,6 +994,7 @@ def load_metadata(repo_root: Path, args: argparse.Namespace) -> dict[str, str]:
         pfc = provenance.get("product_finish_contract")
         if isinstance(pfc, dict):
             finish_contract = pfc
+    finish_contract = hydrate_finish_contract(finish_contract, brief_text)
 
     if not project_slug and project_name:
         project_slug = slugify(project_name)
@@ -948,7 +1020,10 @@ def load_metadata(repo_root: Path, args: argparse.Namespace) -> dict[str, str]:
         )
     result = {key: value.strip() for key, value in values.items()}
     result["stack_label"] = stack_label
-    result["finish_contract"] = json.dumps(finish_contract) if finish_contract else ""
+    for field in FINISH_CONTRACT_FIELDS:
+        value = finish_contract.get(field)
+        if isinstance(value, str) and value.strip():
+            result[field] = value.strip()
     return result
 
 
@@ -980,6 +1055,10 @@ def run_bootstrap_render(dest_root: Path, metadata: dict[str, str], stack_label:
         "full",
         "--force",
     ]
+    for field in FINISH_CONTRACT_FIELDS:
+        value = metadata.get(field, "").strip()
+        if value:
+            command.extend([f"--{field.replace('_', '-')}", value])
     result = subprocess.run(command, cwd=package_root(), check=False, capture_output=True, text=True)
     if result.returncode != 0:
         raise SystemExit(
@@ -1022,6 +1101,124 @@ def normalize_ticket_state_map(value: Any) -> dict[str, dict[str, Any]]:
             "needs_reverification": needs_reverification,
         }
     return normalized
+
+
+def backfill_missing_rendered_surfaces(
+    repo_root: Path,
+    rendered_root: Path,
+    backup_root: Path,
+    processed_records: list[dict[str, Any]],
+) -> list[str]:
+    backfilled: list[str] = []
+    asset_paths = [
+        Path(relative)
+        for relative in getattr(ASSET_PIPELINE_INIT, "ASSET_STARTER_PATHS", ())
+    ]
+    extra_paths = [Path("android/scafforge-managed.json")]
+    for relative in [*asset_paths, *extra_paths]:
+        source = rendered_root / relative
+        target = repo_root / relative
+        if not source.exists() or target.exists():
+            continue
+        processed_records.append(backup_target(target, backup_root, repo_root))
+        if source.is_dir():
+            shutil.copytree(source, target)
+        else:
+            replace_file(source, target)
+        backfilled.append(str(relative).replace("\\", "/"))
+    return backfilled
+
+
+def ensure_missing_asset_pipeline_surfaces(
+    repo_root: Path,
+    metadata: dict[str, str],
+    backup_root: Path,
+    processed_records: list[dict[str, Any]],
+) -> list[str]:
+    if "godot" not in metadata.get("stack_label", "").lower() or "android" not in metadata.get("stack_label", "").lower():
+        return []
+
+    existing_targets = {
+        Path(relative): (repo_root / relative).exists()
+        for relative in getattr(ASSET_PIPELINE_INIT, "ASSET_STARTER_PATHS", ())
+    }
+    if all(existing_targets.values()):
+        return []
+
+    created_paths = ASSET_PIPELINE_INIT.initialize_asset_pipeline(
+        repo_root,
+        stack_label=metadata["stack_label"],
+        deliverable_kind=metadata.get("deliverable_kind", ""),
+        placeholder_policy=metadata.get("placeholder_policy", ""),
+        content_source_plan=metadata.get("content_source_plan", ""),
+        licensing_or_provenance_constraints=metadata.get("licensing_or_provenance_constraints", ""),
+        finish_acceptance_signals=metadata.get("finish_acceptance_signals", ""),
+        force=False,
+    )
+    created_set = {
+        candidate.relative_to(repo_root)
+        for candidate in created_paths
+        if candidate.exists()
+    }
+    added: list[str] = []
+    for relative, existed_before in existing_targets.items():
+        if existed_before:
+            continue
+        if relative in created_set or (repo_root / relative).exists():
+            target = repo_root / relative
+            processed_records.append(
+                {
+                    "target": target,
+                    "backup": backup_root / relative,
+                    "existed": False,
+                    "is_dir": target.is_dir(),
+                }
+            )
+            added.append(str(relative).replace("\\", "/"))
+    return added
+
+
+def normalize_asset_provenance_surface(
+    repo_root: Path,
+    backup_root: Path,
+    processed_records: list[dict[str, Any]],
+) -> bool:
+    provenance_path = repo_root / "assets" / "PROVENANCE.md"
+    if not provenance_path.exists():
+        return False
+    existing_text = read_text(provenance_path)
+    if CANONICAL_PROVENANCE_TABLE_HEADER in existing_text:
+        return False
+
+    legacy_notes = existing_text.strip()
+    if legacy_notes.startswith("# Asset Provenance"):
+        legacy_notes = legacy_notes.split("\n", 1)[1].lstrip()
+
+    normalized_text = "\n".join(
+        (
+            "# Asset Provenance",
+            "",
+            "Track every sourced or generated asset added to this repo in the same ticket that introduces it.",
+            "",
+            "## Rules",
+            "",
+            "- Every entry must use a repo-relative path under `assets/` or a Godot `res://` import path.",
+            "- Generated assets must record the exact workflow or tool used to create them.",
+            "- Third-party assets must keep the source URL and precise license value.",
+            "- Record tool-stack license policy separately from model/checkpoint license policy when AI-assisted generation is used.",
+            "- Procedural or intentionally no-external-asset repos must still record the active route and any generated runtime content surfaces.",
+            "",
+            CANONICAL_PROVENANCE_TABLE_HEADER,
+            "| --- | --- | --- | --- | --- | --- |",
+            "",
+        )
+    )
+    if legacy_notes:
+        normalized_text += "\n## Existing Provenance Notes\n\n" + legacy_notes.rstrip() + "\n"
+
+    processed_records.append(backup_target(provenance_path, backup_root, repo_root))
+    write_text(provenance_path, normalized_text)
+    return True
 
 
 def current_iso_timestamp() -> str:
@@ -1447,6 +1644,7 @@ def apply_repair(
     rendered_root: Path,
     change_summary: str,
     *,
+    metadata: dict[str, str],
     repair_basis_path: Path | None = None,
     preserve_backups: bool = False,
 ) -> dict[str, Any]:
@@ -1572,6 +1770,51 @@ def apply_repair(
             replace_file_with_backup(rendered_state_gitignore, target_state_gitignore)
             replaced_surfaces.append(".opencode/state/.gitignore")
 
+        backfilled_surfaces = backfill_missing_rendered_surfaces(
+            repo_root,
+            rendered_root,
+            backup_root,
+            processed_records,
+        )
+        if backfilled_surfaces:
+            replaced_surfaces.extend(backfilled_surfaces)
+            diff_summary = merge_diff_summaries(
+                diff_summary,
+                {
+                    "files_added": backfilled_surfaces,
+                    "files_removed": [],
+                    "files_modified": [],
+                },
+            )
+
+        initialized_asset_surfaces = ensure_missing_asset_pipeline_surfaces(
+            repo_root,
+            metadata,
+            backup_root,
+            processed_records,
+        )
+        if initialized_asset_surfaces:
+            replaced_surfaces.extend(initialized_asset_surfaces)
+            diff_summary = merge_diff_summaries(
+                diff_summary,
+                {
+                    "files_added": initialized_asset_surfaces,
+                    "files_removed": [],
+                    "files_modified": [],
+                },
+            )
+
+        if normalize_asset_provenance_surface(repo_root, backup_root, processed_records):
+            replaced_surfaces.append("assets/PROVENANCE.md")
+            diff_summary = merge_diff_summaries(
+                diff_summary,
+                {
+                    "files_added": [],
+                    "files_removed": [],
+                    "files_modified": ["assets/PROVENANCE.md"],
+                },
+            )
+
         (repo_root / ".opencode" / "state" / "bootstrap").mkdir(parents=True, exist_ok=True)
 
         for relative in TRANSACTION_STATE_SURFACES:
@@ -1653,6 +1896,7 @@ def main() -> int:
             repo_root,
             rendered_root,
             args.change_summary,
+            metadata=metadata,
             preserve_backups=args.preserve_backups,
         )
         replaced_surfaces = result["replaced_surfaces"]

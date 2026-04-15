@@ -250,6 +250,10 @@ def asset_pipeline_surface_findings(repo_root: Path) -> list[object]:
         "assets/audio",
         "assets/fonts",
         "assets/themes",
+        "assets/previews",
+        "assets/workfiles",
+        "assets/licenses",
+        "assets/import-reports",
         ".opencode/meta/asset-pipeline-bootstrap.json",
     )
     missing: list[str] = []

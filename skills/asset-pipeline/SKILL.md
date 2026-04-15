@@ -92,6 +92,10 @@ Use Godot's native capabilities for asset creation.
 
 **Best for**: particle effects, procedural backgrounds, UI themes, tilemaps, authored scene dressing.
 
+Treat this as a first-class finish route, not a fallback. A Godot repo that explicitly says
+"no external assets", "100% Godot engine features", or equivalent should stay on the
+Godot-native route even if the stack is 3D-capable and Blender happens to be installed on the host.
+
 ### Route family E: Hybrid mixed-route
 Use this when the repo intentionally combines multiple route families. The key is not merely to
 list multiple sources; it is to map each asset category to one primary route and one fallback
@@ -118,9 +122,11 @@ That script reads `.opencode/meta/bootstrap-provenance.json` when present, then 
 - `assets/pipeline.json`
 - `assets/PROVENANCE.md`
 - `assets/briefs/`, `assets/models/`, `assets/sprites/`, `assets/audio/`, `assets/fonts/`, `assets/themes/`
+- `assets/previews/`, `assets/workfiles/`, `assets/licenses/`, `assets/import-reports/`
 - `.opencode/meta/asset-pipeline-bootstrap.json`
 
 Treat `.opencode/meta/asset-pipeline-bootstrap.json` as the machine-readable handoff for `project-skill-bootstrap` and `opencode-team-bootstrap`.
+Treat `opencode.jsonc` Blender-MCP enablement as route-driven: non-Blender routes should keep `blender_agent` disabled even if Blender is installed on the current host.
 
 ### 2. Classify Asset Requirements
 
@@ -220,7 +226,7 @@ Add to the team's agent configuration:
 - `assets/pipeline.json` — Route map, compliance policy, and pipeline configuration
 - `assets/PROVENANCE.md` — Asset provenance tracking (initialized)
 - `assets/briefs/*.md` — Asset description documents (if route C)
-- Asset directory structure created
+- Asset directory structure created, including previews/workfiles/licenses/import-report capture surfaces
 - `.opencode/meta/asset-pipeline-bootstrap.json` — machine-readable route + agent/skill hints for later bootstrap stages
 - Tickets created for asset acquisition work
 - Blender-MCP subagent configured (if route C)

@@ -119,6 +119,7 @@ Rules:
   - a compile or syntax check on all new or modified source files
   - an import check for the primary module
   - the project test suite if it exists
+- if the ticket owns a user-facing or runtime-backed surface, do not leave explicit TODO-only behavior, placeholder responses, or stubbed integrations in the delivered code path
 - include the command output in the implementation artifact
 - do not create an implementation artifact for code that fails these checks
 - stop when you hit a blocker instead of improvising around missing requirements

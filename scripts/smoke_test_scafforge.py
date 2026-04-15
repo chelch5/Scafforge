@@ -121,6 +121,168 @@ def seed_minimal_npm_repo(dest: Path) -> None:
     )
 
 
+def seed_deferred_product_behavior_ticket(dest: Path) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["tickets"].append(
+        {
+            "id": "CLI-001",
+            "title": "Build the top-level CLI shell",
+            "wave": 1,
+            "lane": "cli-surface",
+            "parallel_safe": False,
+            "overlap_risk": "medium",
+            "stage": "planning",
+            "status": "todo",
+            "resolution_state": "open",
+            "verification_state": "suspect",
+            "depends_on": [],
+            "source_ticket_id": None,
+            "follow_up_ticket_ids": [],
+            "summary": "Implement the top-level CLI shell without yet filling every command body with final product behavior.",
+            "acceptance": [
+                "CLI routes exist and compile.",
+                "Command registration is present.",
+            ],
+            "artifacts": [],
+            "decision_blockers": [],
+        }
+    )
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (dest / "tickets" / "CLI-001.md").write_text(
+        "\n".join(
+            [
+                "# CLI-001: Build the top-level CLI shell",
+                "",
+                "## Summary",
+                "",
+                "Implement the top-level CLI shell without yet filling every command body with final product behavior.",
+                "",
+                "## Wave",
+                "",
+                "1",
+                "",
+                "## Lane",
+                "",
+                "cli-surface",
+                "",
+                "## Parallel Safety",
+                "",
+                "- parallel_safe: false",
+                "- overlap_risk: medium",
+                "",
+                "## Stage",
+                "",
+                "planning",
+                "",
+                "## Status",
+                "",
+                "todo",
+                "",
+                "## Depends On",
+                "",
+                "None",
+                "",
+                "## Decision Blockers",
+                "",
+                "None",
+                "",
+                "## Acceptance Criteria",
+                "",
+                "- [ ] CLI routes exist and compile.",
+                "- [ ] Command registration is present.",
+                "",
+                "## Artifacts",
+                "",
+                "- None yet",
+                "",
+                "## Notes",
+                "",
+                "- Keep command bodies shallow if deeper subsystem wiring belongs to later tickets.",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def seed_rust_runtime_placeholder_repo(dest: Path) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("tickets"):
+        first_ticket = manifest["tickets"][0]
+        first_ticket["stage"] = "closeout"
+        first_ticket["status"] = "done"
+        first_ticket["resolution_state"] = "done"
+        first_ticket["verification_state"] = "trusted"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    (dest / "Cargo.toml").write_text(
+        "\n".join(
+            [
+                "[package]",
+                'name = "placeholder-runtime"',
+                'version = "0.1.0"',
+                'edition = "2021"',
+                "",
+                "[dependencies]",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    src_dir = dest / "src" / "commands"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    (dest / "src" / "main.rs").write_text(
+        "\n".join(
+            [
+                "mod commands;",
+                "",
+                "fn main() {",
+                '    println!(\"{}\", commands::ask::run());',
+                "}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dest / "src" / "commands" / "mod.rs").write_text(
+        "pub mod ask;\n",
+        encoding="utf-8",
+    )
+    (dest / "src" / "commands" / "ask.rs").write_text(
+        "\n".join(
+            [
+                "pub fn run() -> &'static str {",
+                "    // TODO: Implement actual ask functionality",
+                '    "[Placeholder response]"',
+                "}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dest / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "name": "smoke-example",
+                "version": "1.0.0",
+                "lockfileVersion": 3,
+                "requires": True,
+                "packages": {
+                    "": {
+                        "name": "smoke-example",
+                        "version": "1.0.0",
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def seed_dependency_group_python_fixture(dest: Path) -> None:
     seed_uv_python_fixture(
         dest,
@@ -308,6 +470,64 @@ def seed_minimal_godot_project(dest: Path) -> None:
     )
 
 
+def fake_blender_host_env(workspace: Path) -> dict[str, str]:
+    host_root = workspace / "fake-blender-host"
+    bin_dir = host_root / "bin"
+    mcp_dir = host_root / "blender-agent" / "mcp-server"
+    write_executable(bin_dir / "blender", "#!/bin/sh\nexit 0\n")
+    mcp_dir.mkdir(parents=True, exist_ok=True)
+    (mcp_dir / "pyproject.toml").write_text(
+        "[project]\nname = \"fake-blender-mcp\"\nversion = \"0.0.0\"\n",
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+    env["BLENDER_MCP_PROJECT"] = str(mcp_dir)
+    return env
+
+
+def strip_jsonc_comments(text: str) -> str:
+    result_chars: list[str] = []
+    i = 0
+    in_string = False
+    while i < len(text):
+        char = text[i]
+        if in_string:
+            result_chars.append(char)
+            if char == "\\" and i + 1 < len(text):
+                i += 1
+                result_chars.append(text[i])
+            elif char == '"':
+                in_string = False
+            i += 1
+            continue
+        if char == '"':
+            in_string = True
+            result_chars.append(char)
+            i += 1
+            continue
+        if char == "/" and i + 1 < len(text) and text[i + 1] == "/":
+            while i < len(text) and text[i] != "\n":
+                i += 1
+            continue
+        if char == "/" and i + 1 < len(text) and text[i + 1] == "*":
+            i += 2
+            while i + 1 < len(text) and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        result_chars.append(char)
+        i += 1
+    return re.sub(r",\s*([}\]])", r"\1", "".join(result_chars))
+
+
+def load_opencode_config(repo_root: Path) -> dict[str, Any]:
+    payload = json.loads(strip_jsonc_comments((repo_root / "opencode.jsonc").read_text(encoding="utf-8")))
+    if not isinstance(payload, dict):
+        raise RuntimeError("Expected opencode.jsonc to parse as a configuration object.")
+    return payload
+
+
 def seed_godot_shader_reference_fixture(dest: Path) -> None:
     seed_minimal_godot_project(dest)
     (dest / "scenes" / "main.tscn").write_text(
@@ -416,6 +636,7 @@ def seed_godot_api_contract_gap(dest: Path) -> None:
 
 def seed_godot_uid_warning_fixture(dest: Path) -> None:
     seed_minimal_godot_project(dest)
+    fixture_root = ROOT / "scripts" / "test_support" / "fixtures" / "godot_uid_warning"
     (dest / "project.godot").write_text(
         "\n".join(
             [
@@ -429,40 +650,19 @@ def seed_godot_uid_warning_fixture(dest: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    (dest / "scenes" / "ui").mkdir(parents=True, exist_ok=True)
-    (dest / "scenes" / "ui" / "title_screen.tscn").write_text(
-        "\n".join(
-            [
-                "[gd_scene load_steps=2 format=3]",
-                "",
-                '[ext_resource type="Texture2D" uid="uid://stale-texture-uid" path="res://icon.svg" id="1"]',
-                "",
-                '[node name="TitleScreen" type="Control"]',
-                "",
-                '[node name="Preview" type="TextureRect" parent="."]',
-                'texture = ExtResource("1")',
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    shutil.copyfile(
-        ROOT / "livetesting" / "glitch" / "icon.svg",
-        dest / "icon.svg",
-    )
-    shutil.copyfile(
-        ROOT / "livetesting" / "glitch" / "icon.svg.import",
-        dest / "icon.svg.import",
-    )
-    (dest / ".godot" / "imported").mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(
-        ROOT / "livetesting" / "glitch" / ".godot" / "imported" / "icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex",
-        dest / ".godot" / "imported" / "icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex",
-    )
-    shutil.copyfile(
-        ROOT / "livetesting" / "glitch" / ".godot" / "imported" / "icon.svg-218a8f2b3041327d8a5756f3a245f83b.md5",
-        dest / ".godot" / "imported" / "icon.svg-218a8f2b3041327d8a5756f3a245f83b.md5",
-    )
+    for relative in (
+        "scenes/ui/title_screen.tscn",
+        "scenes/ui/title_screen.gd",
+        "assets/sprites/ui/button_square_gloss.png",
+        "assets/sprites/ui/button_square_gloss.png.import",
+        ".godot/imported/button_square_gloss.png-b89ae22c170842009bc6b34b34a72a6d.ctex",
+        ".godot/imported/button_square_gloss.png-b89ae22c170842009bc6b34b34a72a6d.md5",
+        ".godot/editor/filesystem_cache10",
+    ):
+        source = fixture_root / relative
+        target = dest / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
 
 
 def append_manifest_ticket(dest: Path, ticket: dict[str, Any]) -> None:
@@ -2668,6 +2868,7 @@ def main() -> int:
     workspace = Path(tempfile.mkdtemp(prefix="scafforge-smoke-"))
     host_has_uv = shutil.which("uv") is not None
     host_has_npm = shutil.which("npm") is not None
+    fake_blender_env = fake_blender_host_env(workspace)
     try:
         if not host_has_uv:
             print(
@@ -5159,6 +5360,253 @@ def main() -> int:
             raise RuntimeError(
                 "Audit should flag stale synthesized blender-mcp-workflow skills with SKILL001 when asset-pipeline metadata requires that skill"
             )
+
+        legacy_asset_dest = workspace / "legacy-asset-repair"
+        run(
+            [
+                sys.executable,
+                str(BOOTSTRAP),
+                "--project-name",
+                "Legacy Asset Repair Probe",
+                "--project-slug",
+                "legacy-asset-repair-probe",
+                "--agent-prefix",
+                "legacyasset",
+                "--model-provider",
+                "openrouter",
+                "--planner-model",
+                "openrouter/anthropic/claude-sonnet-4.5",
+                "--implementer-model",
+                "openrouter/openai/gpt-5-codex",
+                "--utility-model",
+                "openrouter/openai/gpt-5-mini",
+                "--stack-label",
+                "framework-agnostic",
+                "--dest",
+                str(legacy_asset_dest),
+                "--scope",
+                "full",
+                "--force",
+            ],
+            ROOT,
+            env=fake_blender_env,
+        )
+        make_stack_skill_non_placeholder(legacy_asset_dest)
+        seed_ready_bootstrap(legacy_asset_dest)
+        seed_minimal_godot_project(legacy_asset_dest)
+        (legacy_asset_dest / "docs" / "spec" / "CANONICAL-BRIEF.md").write_text(
+            "\n".join(
+                [
+                    "# Canonical Brief",
+                    "",
+                    "## Project Summary",
+                    "",
+                    "Synthetic 2D Godot Android asset-route repair probe.",
+                    "",
+                    "## Product Finish Contract",
+                    "",
+                    "- deliverable_kind: Android game APK",
+                    "- placeholder_policy: No placeholder art. All sprites from free/open sources.",
+                    "- visual_finish_target: 2D top-down sourced sprite sheets with polished UI.",
+                    "- audio_finish_target: Freesound CC0 SFX only.",
+                    "- content_source_plan: Kenney.nl sprites, OpenGameArt.org props, Freesound.org audio, and Godot-native UI themes.",
+                    "- licensing_or_provenance_constraints: Allow CC0 and CC-BY only with explicit provenance coverage.",
+                    "- finish_acceptance_signals: APK compiles. Assets import cleanly. Provenance is complete.",
+                    "",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        for relative in ("assets", ".opencode/meta/asset-pipeline-bootstrap.json", "android/scafforge-managed.json"):
+            path = legacy_asset_dest / relative
+            if path.is_dir():
+                shutil.rmtree(path)
+            elif path.exists():
+                path.unlink()
+        (legacy_asset_dest / "assets").mkdir(parents=True, exist_ok=True)
+        (legacy_asset_dest / "assets" / "PROVENANCE.md").write_text(
+            "\n".join(
+                [
+                    "# Asset Provenance",
+                    "",
+                    "| asset_path | source_url | license | author | date_acquired |",
+                    "|---|---|---|---|---|",
+                    "| sprites/example.png | https://kenney.nl | CC0 | Kenney | 2026-04-15 |",
+                    "",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        opencode_path = legacy_asset_dest / "opencode.jsonc"
+        opencode_text = opencode_path.read_text(encoding="utf-8")
+        opencode_path.write_text(
+            re.sub(
+                r'("blender_agent"\s*:\s*\{[\s\S]*?"enabled"\s*:\s*)false',
+                r"\1true",
+                opencode_text,
+                count=1,
+            ),
+            encoding="utf-8",
+        )
+        legacy_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(legacy_asset_dest),
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        legacy_codes = {finding["code"] for finding in legacy_audit.get("findings", [])}
+        if not {"CONFIG010", "CONFIG011"}.issubset(legacy_codes):
+            raise RuntimeError(
+                "Audit should flag missing asset starter surfaces and non-Blender blender_agent drift on legacy game repos."
+            )
+        run_json(
+            [
+                sys.executable,
+                str(REPAIR),
+                str(legacy_asset_dest),
+            ],
+            ROOT,
+            env=fake_blender_env,
+        )
+        for relative in (
+            "assets/pipeline.json",
+            "assets/PROVENANCE.md",
+            "assets/briefs/README.md",
+            "assets/previews",
+            "assets/workfiles",
+            "assets/licenses",
+            "assets/import-reports",
+            ".opencode/meta/asset-pipeline-bootstrap.json",
+            "android/scafforge-managed.json",
+        ):
+            if not (legacy_asset_dest / relative).exists():
+                raise RuntimeError(
+                    f"Repair should backfill missing route-aware starter surface `{relative}` for legacy game repos."
+                )
+        repaired_provenance = (legacy_asset_dest / "assets" / "PROVENANCE.md").read_text(encoding="utf-8")
+        if "| asset_path | source_or_workflow | license | author | acquired_or_generated_on | notes |" not in repaired_provenance:
+            raise RuntimeError(
+                "Repair should normalize legacy asset provenance files onto the canonical provenance table header."
+            )
+        repaired_config = load_opencode_config(legacy_asset_dest)
+        repaired_blender_agent = repaired_config.get("mcp", {}).get("blender_agent", {})
+        if not isinstance(repaired_blender_agent, dict) or repaired_blender_agent.get("enabled") is not False:
+            raise RuntimeError(
+                "Repair should disable blender_agent for non-Blender asset routes even when Blender exists on the host."
+            )
+
+        public_legacy_asset_dest = workspace / "public-legacy-asset-route"
+        run(
+            [
+                sys.executable,
+                str(BOOTSTRAP),
+                "--project-name",
+                "Public Legacy Asset Repair Probe",
+                "--project-slug",
+                "public-legacy-asset-repair-probe",
+                "--agent-prefix",
+                "public-legacy-asset-repair-probe",
+                "--model-provider",
+                "openrouter",
+                "--planner-model",
+                "openrouter/openai/gpt-5-mini",
+                "--implementer-model",
+                "openrouter/openai/gpt-5-mini",
+                "--utility-model",
+                "openrouter/openai/gpt-5-mini",
+                "--stack-label",
+                "framework-agnostic",
+                "--dest",
+                str(public_legacy_asset_dest),
+                "--scope",
+                "full",
+                "--force",
+            ],
+            ROOT,
+            env=fake_blender_env,
+        )
+        make_stack_skill_non_placeholder(public_legacy_asset_dest)
+        seed_ready_bootstrap(public_legacy_asset_dest)
+        seed_minimal_godot_project(public_legacy_asset_dest)
+        (public_legacy_asset_dest / "docs" / "spec" / "CANONICAL-BRIEF.md").write_text(
+            "\n".join(
+                [
+                    "# Canonical Brief",
+                    "",
+                    "## Project Summary",
+                    "",
+                    "Synthetic Godot-native Android asset-route public repair probe.",
+                    "",
+                    "## Product Finish Contract",
+                    "",
+                    "- deliverable_kind: Android game APK",
+                    "- placeholder_policy: No external assets. Godot features are the final art style.",
+                    "- visual_finish_target: Godot-authored characters, shaders, particles, and UI only.",
+                    "- audio_finish_target: Procedural AudioStreamGenerator SFX or intentional silence.",
+                    "- content_source_plan: 100% Godot engine features, shader materials, particles, tilemaps, and AudioStreamGenerator.",
+                    "- licensing_or_provenance_constraints: No external assets. Nothing to track beyond the active Godot-native route.",
+                    "- finish_acceptance_signals: APK compiles. Shaders work on mobile. All waves playable.",
+                    "",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        for relative in ("assets", ".opencode/meta/asset-pipeline-bootstrap.json"):
+            path = public_legacy_asset_dest / relative
+            if path.is_dir():
+                shutil.rmtree(path)
+            elif path.exists():
+                path.unlink()
+        (public_legacy_asset_dest / "assets").mkdir(parents=True, exist_ok=True)
+        public_opencode_path = public_legacy_asset_dest / "opencode.jsonc"
+        public_opencode_text = public_opencode_path.read_text(encoding="utf-8")
+        public_opencode_path.write_text(
+            re.sub(
+                r'("blender_agent"\s*:\s*\{[\s\S]*?"enabled"\s*:\s*)false',
+                r"\1true",
+                public_opencode_text,
+                count=1,
+            ),
+            encoding="utf-8",
+        )
+        run_json(
+            [
+                sys.executable,
+                str(PUBLIC_REPAIR),
+                str(public_legacy_asset_dest),
+            ],
+            ROOT,
+            env=fake_blender_env,
+            allow_returncodes={0, 3},
+        )
+        for relative in (
+            "assets/pipeline.json",
+            "assets/PROVENANCE.md",
+            "assets/briefs/README.md",
+            "assets/previews",
+            "assets/workfiles",
+            "assets/licenses",
+            "assets/import-reports",
+            ".opencode/meta/asset-pipeline-bootstrap.json",
+        ):
+            if not (public_legacy_asset_dest / relative).exists():
+                raise RuntimeError(
+                    f"Public managed repair should keep route-aware starter surface `{relative}` even when follow-on stages remain."
+                )
+        public_repaired_config = load_opencode_config(public_legacy_asset_dest)
+        public_repaired_blender_agent = public_repaired_config.get("mcp", {}).get("blender_agent", {})
+        if not isinstance(public_repaired_blender_agent, dict) or public_repaired_blender_agent.get("enabled") is not False:
+            raise RuntimeError(
+                "Public managed repair should disable blender_agent for Godot-native no-external-asset routes."
+            )
+
         diagnosis_root = full_dest / "diagnosis"
         diagnosis_dirs = (
             sorted(path for path in diagnosis_root.iterdir() if path.is_dir())
@@ -10163,6 +10611,21 @@ Overall Result: PASS
                 "A transcript where a ticket's literal acceptance command depends on later-ticket scope should emit WFLOW023"
             )
 
+        deferred_behavior_dest = workspace / "deferred-product-behavior"
+        shutil.copytree(full_dest, deferred_behavior_dest)
+        seed_deferred_product_behavior_ticket(deferred_behavior_dest)
+        deferred_behavior_audit = run_json(
+            [sys.executable, str(AUDIT), str(deferred_behavior_dest), "--format", "json"],
+            ROOT,
+        )
+        deferred_behavior_codes = {
+            finding["code"] for finding in deferred_behavior_audit.get("findings", [])
+        }
+        if "WFLOW032" not in deferred_behavior_codes:
+            raise RuntimeError(
+                "A repo whose product-spine tickets normalize shallow shells or deferred runtime behavior should emit WFLOW032"
+            )
+
         operator_trap_dest = workspace / "operator-trap"
         shutil.copytree(full_dest, operator_trap_dest)
         operator_trap_log = seed_operator_trap_log(operator_trap_dest)
@@ -10256,6 +10719,21 @@ Overall Result: PASS
         ):
             raise RuntimeError(
                 "BOOT001 should route to scafforge-repair in the diagnosis pack"
+            )
+
+        runtime_placeholder_dest = workspace / "runtime-placeholder-rust"
+        shutil.copytree(full_dest, runtime_placeholder_dest)
+        seed_rust_runtime_placeholder_repo(runtime_placeholder_dest)
+        runtime_placeholder_audit = run_json(
+            [sys.executable, str(AUDIT), str(runtime_placeholder_dest), "--format", "json"],
+            ROOT,
+        )
+        runtime_placeholder_codes = {
+            finding["code"] for finding in runtime_placeholder_audit.get("findings", [])
+        }
+        if "EXEC-RUNTIME-001" not in runtime_placeholder_codes:
+            raise RuntimeError(
+                "A repo with closed tickets and placeholder runtime code should emit EXEC-RUNTIME-001"
             )
 
         mismatch_dest = workspace / "bootstrap-command-mismatch"
@@ -10584,10 +11062,13 @@ Overall Result: PASS
                 "Audit should emit EXEC-GODOT-009 when scripts call methods that are unavailable on their declared Godot base type"
             )
 
-        live_uid_warning_repo = Path("/home/rowan/womanvshorseVB")
-        if (shutil.which("godot4") or shutil.which("godot")) and live_uid_warning_repo.exists():
+        godot_uid_warning_dest = workspace / "godot-uid-warning"
+        shutil.copytree(full_dest, godot_uid_warning_dest)
+        make_stack_skill_non_placeholder(godot_uid_warning_dest)
+        seed_godot_uid_warning_fixture(godot_uid_warning_dest)
+        if shutil.which("godot4") or shutil.which("godot"):
             godot_uid_warning_audit = run_json(
-                [sys.executable, str(AUDIT), str(live_uid_warning_repo), "--format", "json", "--no-diagnosis-pack"],
+                [sys.executable, str(AUDIT), str(godot_uid_warning_dest), "--format", "json", "--no-diagnosis-pack"],
                 ROOT,
             )
             uid_warning_findings = [

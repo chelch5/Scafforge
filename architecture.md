@@ -227,6 +227,15 @@ Extends Scafforge with game/creative asset support via 4 acquisition routes:
 | Hybrid mixed-route | Explicit category-level blend of the above | Sourced UI + Blender props + procedural VFX |
 
 All routes require provenance tracking in `assets/PROVENANCE.md`.
+Managed game repos also carry machine-readable route metadata and starter capture surfaces:
+- `assets/pipeline.json`
+- `.opencode/meta/asset-pipeline-bootstrap.json`
+- `assets/previews/`
+- `assets/workfiles/`
+- `assets/licenses/`
+- `assets/import-reports/`
+
+`opencode.jsonc` must enable `blender_agent` only when the current route map requires Blender-MCP and the current host exposes the Blender MCP prerequisites.
 
 ## Testing
 

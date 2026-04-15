@@ -52,6 +52,12 @@ Organize tickets into waves based on dependency order:
 - **Wave 2: Secondary** — supporting features, integrations, secondary workflows
 - **Wave 3: Polish** — error handling hardening, performance, documentation, UX refinement
 
+Core-wave discipline:
+- If the product is a client for an external API, LLM provider, local inference runtime, database, browser, or engine service, create explicit core tickets for that connectivity before release proof exists.
+- Do not let a parser/router/shell ticket masquerade as core product delivery when the real backend path is still unwritten.
+- A user-facing command, tool gateway, provider adapter, IDE surface, agent runtime, or other product-spine ticket must own real runnable behavior for its declared scope, not only type shells or command registration.
+- If a broad ticket title would otherwise need stubbed behavior, split the backlog into a narrower scaffold-only ticket plus the real behavior ticket instead of normalizing stubs inside the primary ticket.
+
 ### 3. Create individual tickets
 
 For each piece of work, create a ticket with these fields:
@@ -139,6 +145,30 @@ For Godot Android repos, always create:
 `source_ticket_id` records split-scope lineage for provenance only. It is **not** a `depends_on` target. The workflow engine forbids a split-scope child from blocking on its `source_ticket_id` (deadlock rule). `RELEASE-001`'s `source_ticket_id` is `ANDROID-001` or `SIGNING-001`; neither must appear in `depends_on`.
 
 Do not let a generic `POLISH-001`, UX, or validation ticket stand in for Android export or release proof ownership.
+
+### Mandatory vertical-slice tickets for backend-backed products
+
+If the canonical brief describes a product whose user-facing surfaces depend on a real backend or provider path, seed explicit tickets for that integration before the release lane.
+
+Examples include:
+- LLM or external API clients
+- local inference or model runtimes
+- IDE or agent shells that must talk to a live control plane
+- tool gateways whose value depends on real execution instead of only schema registration
+
+For these repos:
+- create at least one ticket that proves a real user-facing entrypoint reaches the actual backend/runtime path
+- keep that ticket in Wave 1 or Wave 2, not in an optional post-release bucket
+- make release-readiness depend on those vertical-slice tickets
+- keep acceptance criteria runnable and concrete, such as a real CLI invocation, provider-backed integration check, or end-to-end request/response proof
+
+Do not author tickets that say or imply:
+- "without yet filling every command body with final product behavior"
+- "keep command bodies shallow"
+- "justified stubs"
+- "deferred to later tickets" for the core runtime behavior of the same ticket's declared surface
+
+If the real behavior truly belongs later, rename the current ticket to the narrower scaffold-only scope and create the later behavior ticket immediately in the backlog.
 
 ### Mandatory finish-ownership tickets for consumer-facing repos
 
@@ -328,6 +358,7 @@ Continue to `../handoff-brief/SKILL.md` as directed by scaffold-kickoff.
 - Put acceptance criteria on every ticket
 - Prefer executable acceptance criteria where possible so downstream agents have concrete repo-local commands or observable pass/fail checks to run
 - Do not generate a ticket whose literal acceptance command knowingly reaches into sibling-ticket or later-ticket scope
+- Do not generate a product-spine ticket whose summary, acceptance, or Notes normalize shallow shells, placeholder responses, justified stubs, or deferred runtime behavior
 - Keep historical completion separate from current trust: `status` stays queue-oriented, while `resolution_state` and `verification_state` represent historical closure and present trust
 - Treat post-audit and post-repair ticket creation as a first-class workflow path, not an ad hoc backlog note
 - Keep ticket docs, workflow docs, and ticket tools aligned on the same lifecycle semantics before handoff

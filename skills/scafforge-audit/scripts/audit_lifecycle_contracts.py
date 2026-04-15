@@ -7,6 +7,40 @@ from typing import Any, Callable
 
 from shared_verifier_types import Finding
 
+_PRODUCT_SPINE_LANES: frozenset[str] = frozenset({
+    "cli-surface",
+    "tool-gateway",
+    "agent-runtime",
+    "context-engine",
+    "protocol-transport",
+    "llm-infrastructure",
+    "mcp-integration",
+    "ide-integration",
+    "tui-surface",
+    "core-runtime",
+    "release-readiness",
+})
+_PRODUCT_SPINE_TICKET_ID_PREFIXES: tuple[str, ...] = (
+    "CLI-",
+    "TOOLS-",
+    "AGENT-",
+    "CTX-",
+    "LLM-",
+    "PROTO-",
+    "IDE-",
+    "MCP-",
+    "TUI-",
+    "CORE-",
+    "REL-",
+)
+_DEFERRED_BEHAVIOR_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"without yet filling.+final product behavior", re.IGNORECASE),
+    re.compile(r"keep .+ bodies shallow", re.IGNORECASE),
+    re.compile(r"justified stubs?", re.IGNORECASE),
+    re.compile(r"defer(?:red)? to (?:later|subsequent) tickets?", re.IGNORECASE),
+    re.compile(r"stub(?:s|bed)? .*later", re.IGNORECASE),
+)
+
 
 @dataclass(frozen=True)
 class LifecycleContractAuditContext:
@@ -197,6 +231,72 @@ def audit_verdict_aware_transition_contract(
             ],
             safer_pattern="Extract verdicts from the latest review and QA artifacts, route FAIL or BLOCKED outcomes back to implementation, and reject lifecycle transitions when the latest artifact verdict is blocking or unclear.",
             evidence=evidence,
+            provenance="script",
+        ),
+    )
+
+
+def audit_deferred_product_behavior_contract(
+    root: Path, findings: list[Finding], ctx: LifecycleContractAuditContext
+) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    if not manifest_path.exists():
+        return
+
+    manifest = ctx.read_json(manifest_path)
+    tickets = (
+        manifest.get("tickets")
+        if isinstance(manifest, dict) and isinstance(manifest.get("tickets"), list)
+        else []
+    )
+    if not tickets:
+        return
+
+    evidence: list[str] = []
+    files: list[str] = [ctx.normalize_path(manifest_path, root)]
+
+    for ticket in tickets:
+        if not isinstance(ticket, dict):
+            continue
+        ticket_id = str(ticket.get("id", "")).strip().upper()
+        lane = str(ticket.get("lane", "")).strip().lower()
+        if lane not in _PRODUCT_SPINE_LANES and not ticket_id.startswith(_PRODUCT_SPINE_TICKET_ID_PREFIXES):
+            continue
+
+        ticket_file = root / "tickets" / f"{ticket_id}.md"
+        ticket_text = ctx.read_text(ticket_file)
+        if not ticket_text:
+            continue
+
+        matched_line: str | None = None
+        for line in ticket_text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if any(pattern.search(stripped) for pattern in _DEFERRED_BEHAVIOR_PATTERNS):
+                matched_line = stripped
+                break
+        if matched_line is None:
+            continue
+
+        files.append(ctx.normalize_path(ticket_file, root))
+        evidence.append(
+            f"{ctx.normalize_path(ticket_file, root)} normalizes deferred or stubbed runtime behavior: {matched_line}"
+        )
+
+    if not evidence:
+        return
+
+    ctx.add_finding(
+        findings,
+        Finding(
+            code="WFLOW032",
+            severity="error",
+            problem="Primary product-spine tickets explicitly permit shallow, stubbed, or deferred runtime behavior.",
+            root_cause="The backlog contract is allowing user-facing or core runtime tickets to close on shell shape alone while real backend, tool, or execution behavior is deferred to unspecified later work. That makes the repo look implemented without a truthful product path.",
+            files=list(dict.fromkeys(files)),
+            safer_pattern="For user-facing or core runtime lanes, name the narrower scaffold-only ticket honestly or require real runnable behavior. Do not allow ticket summaries, acceptance, or notes to normalize shallow command bodies, justified stubs, or deferred product behavior on the product spine.",
+            evidence=evidence[:8],
             provenance="script",
         ),
     )
@@ -805,6 +905,7 @@ def run_lifecycle_contract_audits(
     audit_review_stage_ambiguity(root, findings, ctx)
     audit_ticket_transition_contract(root, findings, ctx)
     audit_verdict_aware_transition_contract(root, findings, ctx)
+    audit_deferred_product_behavior_contract(root, findings, ctx)
     audit_markdown_verdict_parser_mismatch(root, findings, ctx)
     audit_reverification_deadlock(root, findings, ctx)
     audit_smoke_test_artifact_bypass(root, findings, ctx)
