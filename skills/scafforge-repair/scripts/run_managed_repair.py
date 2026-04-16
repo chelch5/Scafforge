@@ -17,6 +17,7 @@ from apply_repo_process_repair import (
     append_migration_history,
     apply_repair,
     build_stale_surface_map,
+    cleanup_backup_root,
     detect_agent_prompt_drift,
     find_placeholder_skills,
     current_iso_timestamp,
@@ -93,15 +94,28 @@ def publish_candidate_root(candidate_root: Path, repo_root: Path) -> None:
     publish_backup_parent = Path(tempfile.mkdtemp(prefix="scafforge-repair-publish-backup-"))
     publish_backup_root = publish_backup_parent / "repo"
     ignore = shutil.ignore_patterns(".git", ".venv*", "node_modules", "__pycache__", ".codex")
+    publish_succeeded = False
+    restore_succeeded = False
     try:
         shutil.copytree(repo_root, publish_backup_root, dirs_exist_ok=True, ignore=ignore)
         shutil.copytree(candidate_root, repo_root, dirs_exist_ok=True, ignore=ignore)
-    except Exception:
-        if publish_backup_root.exists():
+        publish_succeeded = True
+    except Exception as exc:
+        if not publish_backup_root.exists():
+            raise RuntimeError(
+                f"Repair publish failed before a recovery backup was created at {publish_backup_root}."
+            ) from exc
+        try:
             _restore_repo_from_publish_backup(publish_backup_root, repo_root)
-        raise
-    finally:
-        shutil.rmtree(publish_backup_parent, ignore_errors=True)
+            restore_succeeded = True
+        except Exception as restore_exc:
+            raise RuntimeError(
+                "Repair publish failed and automatic restore also failed. "
+                f"The recovery backup was preserved at {publish_backup_root} for manual restoration."
+            ) from restore_exc
+        raise RuntimeError("Repair publish failed, but the repo was restored from the recovery backup.") from exc
+    if publish_succeeded or restore_succeeded:
+        cleanup_backup_root(publish_backup_parent)
 
 
 def _is_godot_android_repo(repo_root: Path) -> bool:

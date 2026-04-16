@@ -861,7 +861,7 @@ def audit_blender_route_operating_surfaces(root: Path, findings: list[Finding], 
         ctx.add_finding(
             findings,
             Finding(
-                code="SKILL002",
+                code="SKILL003",
                 severity="warning",
                 problem="The repo requires Blender-MCP for its asset route but is missing mandatory Blender operating surfaces.",
                 root_cause="The managed repo metadata requires Blender work, but the repo-local agent and skill pack did not fully materialize the mandatory Blender contract surfaces.",

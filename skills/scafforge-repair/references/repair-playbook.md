@@ -154,6 +154,14 @@ SKILL findings of this type mean the repo-local lifecycle explainer exists but d
 - make `ticket-execution` the canonical explainer for stage order, `ticket_lookup.transition_guidance`, contradiction-stop behavior, specialist-owned artifacts, and `smoke_test`-owned smoke proof
 - rerun `../agent-prompt-engineering/SKILL.md` afterward so the prompts and the local workflow skill describe the same contract
 
+## Blender-route repair actions (SKILL003)
+
+SKILL findings of this type mean the repo declares a Blender-MCP asset route but the required Blender operating surfaces were not fully generated or repaired.
+
+- regenerate the Blender-required local skills under `.opencode/skills/`, especially `asset-description` and `blender-mcp-workflow`
+- regenerate the Blender-required agent surfaces under `.opencode/agents/`, including a `blender-asset-creator` that references `blender_agent`, `assets/briefs`, `assets/models`, and `.blender-mcp/audit`
+- keep the managed `blender_agent` MCP entry aligned with the repo's asset-route metadata before resuming implementation
+
 ## MODEL repair actions (MODEL001)
 
 MODEL findings mean the repo-local model/profile layer drifted from the current package guidance.

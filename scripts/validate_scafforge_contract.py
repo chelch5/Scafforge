@@ -3235,6 +3235,7 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
         findings, audit_contract_surfaces, 'code="invalid-opencode-tool-schema"'
     )
     require_contains(findings, audit_contract_surfaces, 'code="SKILL001"')
+    require_contains(findings, audit_contract_surfaces, 'code="SKILL003"')
     require_contains(findings, audit_contract_surfaces, 'code="MODEL001"')
     require_contains(findings, audit_repair_cycles, 'code="CYCLE001"')
     require_contains(findings, audit_repair_cycles, 'code="CYCLE002"')
@@ -3490,6 +3491,11 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         audit_skill / "references" / "process-smells.md",
+        "Missing Blender route operating surfaces (SKILL003",
+    )
+    require_contains(
+        findings,
+        audit_skill / "references" / "process-smells.md",
         "Session chronology miss (SESSION001",
     )
     require_contains(
@@ -3536,6 +3542,11 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
         findings,
         repair_skill / "references" / "repair-playbook.md",
         "## Workflow-skill repair actions (SKILL002)",
+    )
+    require_contains(
+        findings,
+        repair_skill / "references" / "repair-playbook.md",
+        "## Blender-route repair actions (SKILL003)",
     )
     require_contains(
         findings,

@@ -2,13 +2,13 @@
 
 ## Goal
 
-Close every currently valid Scafforge issue identified from:
+Close every Scafforge package issue that is still live after:
 
-- downstream audits and blocker evidence in `womanvshorseVA`, `womanvshorseVB`, `womanvshorseVC`, and `womanvshorseVD`
-- the independent PR review posted on PR 22
-- the full adjudication of all existing PR comments on PR 22
+1. the fresh downstream investigations for `womanvshorseVA`, `womanvshorseVB`, `womanvshorseVC`, and `womanvshorseVD`
+2. the independent PR review on PR #22
+3. the current-head PR adjudication posted in `#issuecomment-4262705139`
 
-Completion scope is 100%: when this plan is done, no known valid package issue from those sources remains unaddressed.
+Completion scope is still 100%: when this plan is done, no known valid package issue from those evidence sources remains open, and the downstream repos can be re-audited or repaired through Scafforge without manual source edits.
 
 ## Evidence Base
 
@@ -17,263 +17,189 @@ Completion scope is 100%: when this plan is done, no known valid package issue f
 - `womanvshorseVD`
   - `/home/rowan/womanvshorseVD/log3.md`
   - `/home/rowan/womanvshorseVD/javaandroidlog1.md`
-  - `/home/rowan/womanvshorseVD/diagnosis/20260416-144226/manifest.json`
+  - `/home/rowan/womanvshorseVD/diagnosis/20260416-184215/manifest.json`
 - `womanvshorseVA`
   - `/home/rowan/womanvshorseVA/wvhvalog1.md`
   - `/home/rowan/womanvshorseVA/.opencode/state/artifacts/history/finish-validate-001/smoke-test/2026-04-16T13-25-37-427Z-smoke-test.md`
-  - `/home/rowan/womanvshorseVA/diagnosis/20260416-144506/manifest.json`
+  - `/home/rowan/womanvshorseVA/diagnosis/20260416-184348/manifest.json`
 - `womanvshorseVC`
   - `/home/rowan/womanvshorseVC/wvhvclogblender1.md`
   - `/home/rowan/womanvshorseVC/blenderissue.md`
-  - `/home/rowan/womanvshorseVC/diagnosis/20260416-144646/manifest.json`
+  - `/home/rowan/womanvshorseVC/diagnosis/20260416-184444/manifest.json`
 - `womanvshorseVB`
-  - direct code review findings from:
+  - direct product review findings from:
     - `scripts/wave_spawner.gd`
     - `scenes/player/player.gd`
     - `scripts/autoloads/game_manager.gd`
+    - `scenes/enemies/horse_base.gd`
+    - `scenes/ui/hud.gd`
 
 ### Package evidence
 
-- Bootstrap fingerprinting and routing:
-  - `skills/repo-scaffold-factory/assets/project-template/.opencode/lib/workflow.ts`
-  - `skills/repo-scaffold-factory/assets/project-template/.opencode/tools/environment_bootstrap.ts`
-  - `skills/scafforge-audit/scripts/audit_reporting.py`
+- PR adjudication:
+  - `#issuecomment-4262644485`
+  - `#issuecomment-4262705139`
+- Audit routing / prevention:
   - `skills/scafforge-audit/scripts/disposition_bundle.py`
-- Godot smoke-test behavior:
-  - `skills/repo-scaffold-factory/assets/project-template/.opencode/tools/smoke_test.ts`
-  - `scripts/smoke_test_scafforge.py`
-- Repair behavior:
-  - `skills/scafforge-repair/scripts/apply_repo_process_repair.py`
+  - `skills/scafforge-audit/scripts/audit_reporting.py`
+- Repair publish safety:
   - `skills/scafforge-repair/scripts/run_managed_repair.py`
-- Audit robustness:
-  - `skills/scafforge-audit/scripts/audit_config_surfaces.py`
-  - `skills/scafforge-audit/scripts/audit_repo_process.py`
-  - `skills/scafforge-audit/scripts/audit_lifecycle_contracts.py`
-- Generator/verifier drift:
-  - `skills/repo-scaffold-factory/scripts/bootstrap_repo_scaffold.py`
-  - `skills/repo-scaffold-factory/scripts/verify_generated_scaffold.py`
-- Contract/docs drift:
-  - `references/authority-adr.md`
-  - `skills/skill-flow-manifest.json`
-- Windows command invocation risk:
-  - `.github/extensions/agentswarm/extension.mjs`
-- PR hygiene:
-  - `.gitignore`
-  - `active-logs/`
-  - `active-plans/agent-logs/`
-  - `livetesting/*/.godot/`
+- Godot completion-proof surfaces:
+  - `skills/repo-scaffold-factory/assets/project-template/.opencode/tools/smoke_test.ts`
+  - `skills/scafforge-audit/scripts/target_completion.py`
+  - `skills/scafforge-audit/scripts/audit_execution_surfaces.py`
+  - generated prompt/runtime guidance under `skills/repo-scaffold-factory/assets/project-template/.opencode/`
+- Branch-only merge-surface issues:
+  - `smoke-test`
+  - `active-plans/possibleassethelp/`
+  - `AGENTS.md:105-109`
 
-## Valid Issue Register
+## Resolved At Current Head - Do Not Reopen Without New Counter-Evidence
 
-### A. Greenfield and runtime contract defects
+These issues were valid earlier in the PR but are already fixed on `autofixing` now:
 
-- [ ] A1. Bootstrap freshness is file-only and misses host drift.
-  - Evidence: `workflow.ts` uses `BOOTSTRAP_INPUT_FILES` plus `computeBootstrapFingerprint()` without host/tool inputs.
-  - Downstream proof: VA, VC, and VD all persist `bootstrap.environment_fingerprint = e3b0c442...`; VD stayed blocked after host setup was fixed.
-- [ ] A2. Smoke-test PASS can still coexist with Godot parse/load failures.
-  - Evidence: `smoke_test.ts` exit-0 classification is too narrow.
-  - Downstream proof: VA smoke artifact records `Overall Result: PASS` with `Parse Error` and `Failed to load script`.
-- [ ] A3. Greenfield/restart guidance can overclaim clean state or wrong next steps when smoke proof is contradictory.
-  - Evidence: audit and runtime surfaces route around contradictory smoke artifacts instead of preventing release claims.
-- [ ] A4. Greenfield and downstream operating surfaces still do not fully protect Blender-route repos from missing mandatory agent/skill surfaces.
-  - Evidence: VC diagnosis still reports `SKILL002`; route generation is now improved, but repair/audit disposition still needs convergence.
-- [ ] A5. Greenfield and finish validation do not enforce product-level gameplay proof strongly enough for Godot projects.
-  - Downstream proof: VB headless load and APK existed, but first-wave/game-over/score integration defects remained undetected.
+- bootstrap freshness now fingerprints structured environment inputs in `workflow.ts:1071-1082,1477-1480`
+- Godot exit-0 parse/load failures are now classified as fatal in `smoke_test.ts:581-599`
+- remediation verdict regexes now accept decorated PASS/FAIL forms in:
+  - `workflow.ts:336,1153-1186`
+  - `audit_lifecycle_contracts.py:595-598`
+- scaffold verifier `TEXT_SUFFIXES` now matches bootstrap in `verify_generated_scaffold.py:16`
+- `references/authority-adr.md:15-20` now includes `scafforge-repair`
+- `repair_follow_on_refresh.ts:52-74,92-113` now validates payload shape instead of using the old double assertion path
+- `apply_repo_process_repair.py:676-701,1822-1826` now implements the ETC2 repair
+- `.github/extensions/agentswarm/extension.mjs:120-163` no longer uses the old manual `cmd.exe /c` wrapper
+- `.gitignore:34-38` now covers the earlier transient log / rollout / `.godot` artifact families
 
-### B. Audit robustness and routing defects
+## Remaining Issue Register
 
-- [ ] B1. Audit can crash on package-side helper load failure instead of emitting a package-owned finding.
-- [ ] B2. Transcript JSON decode errors are dropped silently.
-- [ ] B3. Audit routing misclassifies package-owned workflow defects as subject-repo source follow-up.
-  - Downstream proof: VD diagnosis recommends `subject_repo_source_follow_up` even though the blocker is package bootstrap freshness.
-- [ ] B4. SKILL/MODEL/BOOT/CYCLE/SESSION disposition classes are too coarse and route safe managed refresh work incorrectly.
-  - Downstream proof: VC `SKILL002` is treated as a manual blocker instead of a repairable managed surface defect.
-- [ ] B5. Remediation review verdict parsing misses decorated explicit PASS/FAIL forms and causes false `EXEC-REMED-001`.
-  - Downstream proof: recent VA/VC/VD audits still emitted duplicate `EXEC-REMED-001` churn.
+### A. Managed-repair publish safety
 
-### C. Repair safety and package-managed mutation defects
+- [x] A1. `run_managed_repair.py` now preserves the publish backup on double-failure and only cleans it up after a known-good publish or restore.
+  - Smoke coverage now exercises successful publish cleanup, successful restore cleanup, and the backup-preservation failure path.
 
-- [ ] C1. Repair cleanup hides backup deletion failures.
-- [ ] C2. Candidate promotion into the live repo is non-atomic.
-- [ ] C3. `repair_follow_on_refresh.ts` merges unvalidated runtime object shape into typed workflow state.
-- [ ] C4. Godot Android ETC2 audit finding has no repair implementation.
+### B. Audit disposition and prevention mismatches
 
-### D. Generator/verifier and contract drift
+- [x] B1. `disposition_bundle.py` now classifies package-owned `EXEC-GODOT-006` and `EXEC-REMED-001` as `managed_blocker`, aligning the authoritative bundle with report routing.
+- [x] B2. The Blender-route operating-surface finding now uses `SKILL003`, leaving `SKILL002` on its documented thin-`ticket-execution` meaning and aligning prevention guidance, repair docs, and smoke coverage.
 
-- [ ] D1. `TEXT_SUFFIXES` drift between scaffold bootstrap and scaffold verifier leaves `.cfg`/`.mjs`/`.cjs` placeholder coverage inconsistent.
-- [ ] D2. Authority ADR omits `scafforge-repair` from the ownership map even though skill metadata assigns it runtime mutation ownership.
+### C. Product-completion proof gap for Godot game repos
 
-### E. Tooling and PR hygiene defects
+- [x] C1. Scafforge now audits gameplay-shaped false-completion gaps beyond headless load/export proof.
+  - Downstream proof from VB:
+    - `start_wave()` has no caller
+    - player death reloads the current scene instead of reaching game-over flow
+    - score / wave state is not written back to `GameManager`
+  - Package coverage now includes:
+    - `EXEC-GODOT-010` for dead `start_wave()` progression entrypoints
+    - `EXEC-GODOT-011` for unreachable repo-owned game-over flows
+    - `EXEC-GODOT-012` for player-facing singleton state that UI reads but gameplay never updates
 
-- [ ] E1. `.github/extensions/agentswarm/extension.mjs` uses manual `cmd.exe /c` wrapping on Windows.
-- [ ] E2. Mergeable branch state currently includes transient runtime artifacts:
-  - `.running-pids`
-  - raw agent logs under `active-plans/agent-logs/`
-  - rollout logs under `active-logs/`
-  - Godot cache content under `livetesting/*/.godot/`
-- [ ] E3. `.gitignore` does not prevent those transient artifacts from recurring.
+### D. Branch-only merge-surface noise
+
+- [x] D1. `smoke-test` is removed from the branch.
+- [x] D2. `active-plans/possibleassethelp/` is removed from the branch so `active-plans/` returns to plan documents only.
+  - Current repo references point to it only as historical concept source inside archived plan material, not as a current canonical package surface.
 
 ## Execution Order
 
-## 1. Fix branch hygiene first
+## 1. Clean the branch-only merge surface
 
-- [ ] Remove transient runtime artifacts from the branch tip while preserving sanctioned package truth.
-- [ ] Add ignore rules for `.running-pids`, agent logs, rollout logs, and `livetesting/*/.godot/`.
-- [ ] Re-check `git diff main...HEAD --name-only` to confirm the PR shape is materially smaller and no sanctioned evidence surfaces were removed accidentally.
-
-Validation
-
-- [ ] `git status --short`
-- [ ] `git diff --name-only main...HEAD | wc -l`
-- [ ] verify `active-plans/*.md`, `active-audits/`, `archive/archived-audits/`, and sanctioned `livetesting/` source surfaces still remain when expected
-
-## 2. Repair the bootstrap freshness model
-
-- [ ] Expand generated bootstrap freshness from file-only hashing to a structured environment signature.
-  - include stack-sensitive repo inputs such as `project.godot`, `export_presets.cfg`, `opencode.jsonc`, and managed Android/Blender surfaces when present
-  - include stack-sensitive host observations that determine bootstrap truth, such as executable paths, SDK/JDK roots, export templates, debug keystore, and Blender MCP availability
-- [ ] Update `environment_bootstrap.ts` so the persisted bootstrap proof carries the resolved environment signature and enough evidence to detect host drift after machine moves.
-- [ ] Update `workflow.ts` evaluation so a changed environment signature marks bootstrap `stale`.
-- [ ] Add scaffold smoke/integration coverage reproducing the VD moved-host scenario.
-- [ ] Add audit detection for stale bootstrap truth caused by host drift so audits can call package work first when the freshness model is wrong.
+- [x] Remove the empty `smoke-test` file unless implementation work proves it is actually needed.
+- [x] Remove or relocate `active-plans/possibleassethelp/` so `active-plans/` contains planning documents only.
+- [x] Re-check the branch diff after cleanup and make sure no sanctioned evidence surfaces were removed accidentally.
 
 Validation
 
-- [ ] `python3 scripts/integration_test_scafforge.py`
-- [ ] `python3 scripts/smoke_test_scafforge.py`
-- [ ] targeted reproducible harness case proves changed host signature flips bootstrap to `stale`
+- [x] `git status --short`
+- [x] `git diff --name-only main...HEAD | rg '^smoke-test$|^active-plans/possibleassethelp/'`
+- [x] confirm `active-plans/*.md`, `archive/archived-audits/`, and sanctioned `livetesting/` source surfaces still remain when expected
 
-## 3. Repair Godot smoke proof integrity
+## 2. Fix managed-repair publish safety
 
-- [ ] Broaden `smoke_test.ts` fatal Godot diagnostic detection to cover parse/class-resolution failures seen in VA, not just the current narrow patterns.
-- [ ] Prevent `persistArtifact()` from marking smoke verified when any command records runtime parse/load contradictions, even if exit code is zero.
-- [ ] Add package smoke coverage for the exact VA-style diagnostics:
-  - `Could not parse global class`
-  - `Could not resolve class`
-  - `Failed to load script`
-- [ ] Strengthen audit wording/routing so contradictory smoke artifacts are treated as package-managed proof failures first, not only source follow-up.
-- [ ] Review finish-validation wording and generated prompts so Godot completion requires user-meaningful runtime proof, not only headless load or APK existence.
+- [x] Rework `publish_candidate_root()` so backup cleanup happens only after a known-good publish or a known-good restore.
+- [x] If restore fails, preserve the backup path and surface it in the thrown error so the operator still has a recovery handle.
+- [x] Add regression coverage for:
+  - publish failure followed by restore failure
+  - successful publish cleanup
+  - successful restore cleanup
 
 Validation
 
-- [ ] `python3 scripts/smoke_test_scafforge.py`
-- [ ] direct seed case demonstrates FAIL artifact on exit-0 Godot parse diagnostics
-- [ ] rerun VA audit after package changes and confirm the diagnosis makes the smoke proof defect explicit and routes it correctly
+- [x] targeted Python regression covering the publish/restore failure path
+- [x] `npm run validate:smoke`
 
-## 4. Repair audit routing, robustness, and remediation-evidence parsing
+## 3. Fix audit routing and prevention guidance
 
-- [ ] Wrap audit helper module loading so package-side loader failures become explicit findings rather than unhandled crashes.
-- [ ] Track transcript JSON decode failures and surface them in the audit output or diagnosis metadata.
-- [ ] Redesign disposition and next-step routing to distinguish:
-  - package defect requiring package work first
-  - safe managed repo repair
-  - host/manual prerequisite
-  - subject repo source follow-up
-- [ ] Reclassify `SKILL002` and similar generated-surface gaps so safe managed surface refresh is routed to `scafforge-repair` when appropriate.
-- [ ] Extend remediation verdict regexes in both:
-  - `workflow.ts`
-  - `audit_lifecycle_contracts.py`
-  to accept decorated verdict forms like `Result: ✅ PASS`.
-- [ ] Add package smoke/integration tests that prove decorated verdict acceptance and eliminate false `EXEC-REMED-001`.
-- [ ] Ensure diagnosis manifest/report 4 consistency: if package work is required first, `recommended_next_step` and `package_work_required_first` must agree.
+- [x] Make the authoritative disposition bundle agree with report routing for package-owned execution findings.
+- [x] Keep a clean separation between:
+  - package-owned repairable defects
+  - host/manual prerequisite blockers
+  - subject-repo source follow-up
+- [x] Update the Blender-route finding to `SKILL003` so Report 3 points at the actual Blender-route generation / repair surfaces while `SKILL002` stays on lifecycle explainer drift.
+- [x] Add regression coverage proving:
+  - package-owned `EXEC*` findings land in the same lane across the bundle and the report
+  - `SKILL003` prevention text matches the actual managed-surface failure
 
 Validation
 
-- [ ] `python3 scripts/smoke_test_scafforge.py`
-- [ ] `python3 scripts/integration_test_scafforge.py`
-- [ ] targeted audit fixture proves:
-  - decorated verdict no longer emits `EXEC-REMED-001`
-  - stale bootstrap freshness routes to package work first
-  - safe managed skill-surface gap routes to repair instead of manual blocker
+- [x] `npm run validate:smoke`
+- [x] `python3 scripts/integration_test_scafforge.py`
+- [x] targeted audit fixture or diagnosis-pack assertion for `EXEC-GODOT-006` / `EXEC-REMED-001`
 
-## 5. Repair managed-repair safety and coverage
+## 4. Strengthen gameplay-completion proof expectations
 
-- [ ] Add visible warning or hard-fail handling for backup cleanup problems instead of silent `ignore_errors=True`.
-- [ ] Make candidate promotion safer:
-  - validate candidate immediately before publish
-  - add rollback-safe promotion behavior or explicit restore on failed publish
-- [ ] Replace unsafe `unknown as Record<string, unknown>` merge in `repair_follow_on_refresh.ts` with validated shape normalization.
-- [ ] Implement `GODOT-ANDROID-001` repair support:
-  - section-aware `project.godot` editing
-  - preserve user content outside the managed setting
-  - add causal regression tests
-
-Validation
-
-- [ ] `python3 -m py_compile skills/scafforge-repair/scripts/*.py`
-- [ ] `python3 scripts/smoke_test_scafforge.py`
-- [ ] targeted repair case proves ETC2 finding is auto-repaired
-- [ ] targeted failure case proves publish rollback or safe failure preserves repo integrity
-
-## 6. Fix generator/verifier and contract drift
-
-- [ ] Synchronize or centralize `TEXT_SUFFIXES` between scaffold bootstrap and scaffold verifier.
-- [ ] Add `scafforge-repair` to `references/authority-adr.md` ownership map with wording aligned to the current runtime mutation contract.
-- [ ] Re-run contract validation to ensure docs and manifests agree after the authority update.
+- [x] Inspect the current finish-validation, target-completion, audit, and prompt surfaces together before editing.
+- [x] Add the minimum package-level proof requirement needed to stop "headless load only" from counting as product completion for Godot game repos.
+- [x] Keep this package-side:
+  - proof expectations
+  - audit/report wording
+  - generated guidance or required artifact expectations
+  - no manual downstream source edits
+- [x] Make the requirement concrete enough to catch VB-style false completion claims:
+  - progression must start
+  - a fail-state or end-state must be reachable when the game claims completion
+  - state-reporting surfaces used by the product must actually update
 
 Validation
 
-- [ ] `npm run validate:contract`
-- [ ] `python3 scripts/validate_gpttalker_migration.py`
+- [x] `npm run validate:contract`
+- [x] `npm run validate:smoke`
+- [x] direct review of the resulting completion contract against the VB findings
 
-## 7. Fix Windows command invocation safety
+## 5. Run the full package validation stack
 
-- [ ] Remove the manual `cmd.exe /c` wrapper from `agentswarm` and replace it with a safer Windows invocation path.
-- [ ] Validate behavior on non-Windows platforms remains unchanged.
+- [x] `npm run validate:contract`
+- [x] `npm run validate:smoke`
+- [x] `python3 scripts/integration_test_scafforge.py`
+- [x] `python3 scripts/validate_gpttalker_migration.py`
 
-Validation
+## 6. Revalidate downstream repos with the repaired package
 
-- [ ] targeted Node-level sanity check for the extension module
-- [ ] if no Windows runtime is available, add deterministic unit-level coverage for the invocation builder path and document the platform limitation in the commit notes
-
-## 8. Strengthen greenfield and finish-validation proof for gameplay-level completion
-
-- [ ] Extend generated finish-contract wording and/or audit heuristics so “product complete” for Godot game repos requires more than headless load plus artifact existence.
-- [ ] Encode a minimal gameplay proof concept that Scafforge can demand from the generated workflow when a repo claims completion:
-  - game loop starts
-  - core progression path advances
-  - critical end-state or fail-state is reachable
-  - core state reporting surfaces are updated if the UI depends on them
-- [ ] Keep this as package guidance/audit/proof work only. Do not patch downstream source repos manually.
+- [ ] Run fresh `post_package_revalidation` audits for VA, VC, and VD using the latest root markdown evidence files.
+- [ ] Decide from those new packs whether `scafforge-repair` is now appropriate for each repo.
+- [ ] Run only Scafforge-managed repairs where the pack says package work is no longer first.
+- [ ] Re-review VB from the Scafforge lens after the package proof changes.
 
 Validation
 
-- [ ] contract validation and smoke tests remain green
-- [ ] VB review findings are reflected in strengthened package audit/proof expectations
+- [ ] store the new diagnosis packs under each downstream repo
+- [ ] compare them against the earlier packs cited above
+- [ ] confirm blockers now route truthfully to package work, repair, host action, or source follow-up
 
-## 9. Revalidate downstream repos using the repaired package
+## 7. Final publish and skill refresh
 
-- [ ] Refresh Scafforge package state in the working tree after all fixes.
-- [ ] Run fresh post-package audits for VA, VC, and VD using the newest root markdown evidence files.
-- [ ] Decide whether managed repair is now appropriate for each repo.
-- [ ] If safe and package-owned, run Scafforge-managed repair only. No manual source edits in downstream repos.
-- [ ] Re-review VB from the Scafforge lens after package proof changes; no source edits there either.
-
-Validation
-
-- [ ] store new diagnosis packs under each downstream repo
-- [ ] compare new packs against the earlier evidence cited above
-- [ ] confirm whether blockers now route to repair, host action, or subject-repo source work truthfully
-
-## 10. Final package validation, publish, and sync
-
-- [ ] Run the canonical package validation commands:
-  - `npm run validate:contract`
-  - `npm run validate:smoke`
-  - `python3 scripts/integration_test_scafforge.py`
-  - `python3 scripts/validate_gpttalker_migration.py`
-- [ ] Stage only intended Scafforge package changes.
-- [ ] Commit with a message that matches the completed scope.
+- [ ] Stage only the intended Scafforge package changes.
+- [ ] Commit with a message aligned to the finished scope.
 - [ ] Push `autofixing`.
 - [ ] If PR 22 has no remaining valid issues, merge into `main`.
-- [ ] Refresh the global `.codex` skill copies from the updated Scafforge package, including `asset-pipeline` if needed.
+- [ ] Refresh the global `.codex` and `.copilot` skill copies from the final package state, including `asset-pipeline`.
 
 ## Completion Checklist
 
-- [ ] All valid PR review findings are fixed or explicitly proven no longer applicable at head.
-- [ ] All package validation commands pass.
-- [ ] PR 22 branch state is free of transient runtime artifacts.
-- [ ] Downstream audits for VA, VC, and VD have been rerun against the repaired package.
-- [ ] Any safe downstream repairs have been run through Scafforge only.
+- [ ] All still-valid PR review findings from `#issuecomment-4262705139` are fixed or proven no longer applicable.
+- [x] The package validation stack passes.
+- [x] The branch no longer carries the empty `smoke-test` file or the stray `active-plans/possibleassethelp/` subtree.
+- [ ] Fresh downstream audits for VA, VC, and VD were produced after the package fixes landed.
+- [ ] Any safe downstream repairs were run through Scafforge only.
 - [ ] No manual source edits were made in `womanvshorseVA`, `womanvshorseVB`, `womanvshorseVC`, or `womanvshorseVD`.
-- [ ] Global `.codex` skills are refreshed from the final package state.
+- [ ] Global `.codex` and `.copilot` skills were refreshed from the final package state.

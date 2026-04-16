@@ -13,6 +13,7 @@ DISPOSITION_CLASSES = (
     "process_state_only",
     "advisory",
 )
+PACKAGE_MANAGED_EXEC_CODES = {"EXEC-GODOT-006", "EXEC-REMED-001"}
 
 
 def evidence_grade_for_finding(finding: Finding) -> str:
@@ -33,6 +34,8 @@ def disposition_class_for_finding(finding: Finding) -> str:
         return "advisory"
     if code.startswith("ENV"):
         return "manual_prerequisite_blocker"
+    if code in PACKAGE_MANAGED_EXEC_CODES:
+        return "managed_blocker"
     if code.startswith(("EXEC", "REF")):
         return "source_follow_up"
     if code == "WFLOW008":

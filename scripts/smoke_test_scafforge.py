@@ -665,6 +665,160 @@ def seed_godot_uid_warning_fixture(dest: Path) -> None:
         shutil.copyfile(source, target)
 
 
+def seed_godot_wave_start_gap(dest: Path) -> None:
+    seed_minimal_godot_project(dest)
+    (dest / "scripts").mkdir(parents=True, exist_ok=True)
+    (dest / "scripts" / "wave_spawner.gd").write_text(
+        "\n".join(
+            [
+                "extends Node",
+                "",
+                "signal wave_started(wave_num: int)",
+                "",
+                "func start_wave() -> void:",
+                "    wave_started.emit(1)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dest / "scenes" / "main.tscn").write_text(
+        "\n".join(
+            [
+                "[gd_scene load_steps=2 format=3]",
+                "",
+                '[ext_resource type="Script" path="res://scripts/wave_spawner.gd" id="1"]',
+                "",
+                '[node name="Main" type="Node2D"]',
+                "",
+                '[node name="WaveSpawner" type="Node" parent="."]',
+                'script = ExtResource("1")',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def seed_godot_game_over_reload_gap(dest: Path) -> None:
+    seed_minimal_godot_project(dest)
+    (dest / "scripts").mkdir(parents=True, exist_ok=True)
+    (dest / "scripts" / "player.gd").write_text(
+        "\n".join(
+            [
+                "extends CharacterBody2D",
+                "",
+                "signal died",
+                "",
+                "func _die() -> void:",
+                "    died.emit()",
+                "    get_tree().reload_current_scene()",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dest / "scenes" / "main.tscn").write_text(
+        "\n".join(
+            [
+                "[gd_scene load_steps=2 format=3]",
+                "",
+                '[ext_resource type="Script" path="res://scripts/player.gd" id="1"]',
+                "",
+                '[node name="Main" type="Node2D"]',
+                "",
+                '[node name="Player" type="CharacterBody2D" parent="."]',
+                'script = ExtResource("1")',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dest / "scenes" / "ui").mkdir(parents=True, exist_ok=True)
+    (dest / "scenes" / "ui" / "game_over.tscn").write_text(
+        "[gd_scene format=3]\n\n[node name=\"GameOver\" type=\"Control\"]\n",
+        encoding="utf-8",
+    )
+
+
+def seed_godot_singleton_state_gap(dest: Path) -> None:
+    (dest / "project.godot").write_text(
+        "\n".join(
+            [
+                "; Engine configuration file.",
+                "[application]",
+                'config/name="Singleton State Gap Fixture"',
+                'run/main_scene="res://scenes/main.tscn"',
+                "",
+                "[autoload]",
+                'GameManager="*res://scripts/autoloads/game_manager.gd"',
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dest / "scenes").mkdir(parents=True, exist_ok=True)
+    (dest / "scenes" / "main.tscn").write_text(
+        '[gd_scene format=3]\n\n[node name="Main" type="Node2D"]\n',
+        encoding="utf-8",
+    )
+    (dest / "scripts" / "autoloads").mkdir(parents=True, exist_ok=True)
+    (dest / "scripts" / "autoloads" / "game_manager.gd").write_text(
+        "\n".join(
+            [
+                "extends Node",
+                "",
+                "var score: int = 0",
+                "var wave: int = 1",
+                "var max_wave: int = 1",
+                "",
+                "func add_score(points: int) -> void:",
+                "    score += points",
+                "",
+                "func set_wave(w: int) -> void:",
+                "    wave = w",
+                "    if w > max_wave:",
+                "        max_wave = w",
+                "",
+                "func reset() -> void:",
+                "    score = 0",
+                "    wave = 1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dest / "scenes" / "ui").mkdir(parents=True, exist_ok=True)
+    (dest / "scenes" / "ui" / "game_over.gd").write_text(
+        "\n".join(
+            [
+                "extends Control",
+                "",
+                "func _ready() -> void:",
+                '    print("SCORE: %d" % GameManager.score)',
+                '    print("WAVE: %d" % GameManager.max_wave)',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dest / "scenes" / "ui" / "game_over.tscn").write_text(
+        "\n".join(
+            [
+                "[gd_scene load_steps=2 format=3]",
+                "",
+                '[ext_resource type="Script" path="res://scenes/ui/game_over.gd" id="1"]',
+                "",
+                '[node name="GameOver" type="Control"]',
+                'script = ExtResource("1")',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def append_manifest_ticket(dest: Path, ticket: dict[str, Any]) -> None:
     manifest_path = dest / "tickets" / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -5399,6 +5553,52 @@ def main() -> int:
         ):
             raise RuntimeError(
                 "Audit should flag stale synthesized blender-mcp-workflow skills with SKILL001 when asset-pipeline metadata requires that skill"
+            )
+
+        blender_required_dest = workspace / "blender-required-skill-gap"
+        shutil.copytree(full_dest, blender_required_dest)
+        make_stack_skill_non_placeholder(blender_required_dest)
+        blender_metadata_path = (
+            blender_required_dest / ".opencode" / "meta" / "asset-pipeline-bootstrap.json"
+        )
+        blender_metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        blender_metadata_path.write_text(
+            json.dumps(
+                {
+                    "requires_blender_mcp": True,
+                    "required_skills": ["asset-description", "blender-mcp-workflow"],
+                    "required_agents": ["blender-asset-creator"],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        for relative in (
+            ".opencode/skills/asset-description",
+            ".opencode/skills/blender-mcp-workflow",
+        ):
+            target = blender_required_dest / relative
+            if target.exists():
+                shutil.rmtree(target)
+        for agent_path in (blender_required_dest / ".opencode" / "agents").glob("*blender-asset-creator*.md"):
+            agent_path.unlink()
+        blender_required_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(blender_required_dest),
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        blender_required_codes = {
+            finding["code"] for finding in blender_required_audit.get("findings", [])
+        }
+        if "SKILL003" not in blender_required_codes:
+            raise RuntimeError(
+                "A Blender-required repo with missing Blender operating surfaces should emit SKILL003"
             )
 
         legacy_asset_dest = workspace / "legacy-asset-repair"
@@ -11400,6 +11600,54 @@ Overall Result: PASS
                 "Audit should emit EXEC-GODOT-009 when scripts call methods that are unavailable on their declared Godot base type"
             )
 
+        godot_wave_start_dest = workspace / "godot-wave-start-gap"
+        shutil.copytree(full_dest, godot_wave_start_dest)
+        make_stack_skill_non_placeholder(godot_wave_start_dest)
+        seed_godot_wave_start_gap(godot_wave_start_dest)
+        godot_wave_start_audit = run_json(
+            [sys.executable, str(AUDIT), str(godot_wave_start_dest), "--format", "json"],
+            ROOT,
+        )
+        godot_wave_start_codes = {
+            finding["code"] for finding in godot_wave_start_audit.get("findings", [])
+        }
+        if "EXEC-GODOT-010" not in godot_wave_start_codes:
+            raise RuntimeError(
+                "Audit should emit EXEC-GODOT-010 when a wave-based Godot repo defines start_wave() but never invokes it"
+            )
+
+        godot_game_over_dest = workspace / "godot-game-over-reload-gap"
+        shutil.copytree(full_dest, godot_game_over_dest)
+        make_stack_skill_non_placeholder(godot_game_over_dest)
+        seed_godot_game_over_reload_gap(godot_game_over_dest)
+        godot_game_over_audit = run_json(
+            [sys.executable, str(AUDIT), str(godot_game_over_dest), "--format", "json"],
+            ROOT,
+        )
+        godot_game_over_codes = {
+            finding["code"] for finding in godot_game_over_audit.get("findings", [])
+        }
+        if "EXEC-GODOT-011" not in godot_game_over_codes:
+            raise RuntimeError(
+                "Audit should emit EXEC-GODOT-011 when a repo-local game-over scene is unreachable because death only reloads the current scene"
+            )
+
+        godot_singleton_state_dest = workspace / "godot-singleton-state-gap"
+        shutil.copytree(full_dest, godot_singleton_state_dest)
+        make_stack_skill_non_placeholder(godot_singleton_state_dest)
+        seed_godot_singleton_state_gap(godot_singleton_state_dest)
+        godot_singleton_state_audit = run_json(
+            [sys.executable, str(AUDIT), str(godot_singleton_state_dest), "--format", "json"],
+            ROOT,
+        )
+        godot_singleton_state_codes = {
+            finding["code"] for finding in godot_singleton_state_audit.get("findings", [])
+        }
+        if "EXEC-GODOT-012" not in godot_singleton_state_codes:
+            raise RuntimeError(
+                "Audit should emit EXEC-GODOT-012 when UI reads autoload gameplay state that no runtime path updates"
+            )
+
         godot_uid_warning_dest = workspace / "godot-uid-warning"
         shutil.copytree(full_dest, godot_uid_warning_dest)
         make_stack_skill_non_placeholder(godot_uid_warning_dest)
@@ -13662,6 +13910,127 @@ Overall Result: PASS
                 AUDIT, "scafforge_smoke_audit_repo_process_disposition"
             )
 
+            with tempfile.TemporaryDirectory(prefix="scafforge-publish-success-") as temp_dir:
+                publish_workspace = Path(temp_dir)
+                repo_root = publish_workspace / "repo"
+                candidate_root = publish_workspace / "candidate"
+                backup_parent = publish_workspace / "publish-backup"
+                repo_root.mkdir(parents=True, exist_ok=True)
+                candidate_root.mkdir(parents=True, exist_ok=True)
+                (repo_root / "state.txt").write_text("original\n", encoding="utf-8")
+                (candidate_root / "state.txt").write_text("candidate\n", encoding="utf-8")
+                original_mkdtemp = run_managed_repair_module.tempfile.mkdtemp
+                try:
+                    def publish_success_mkdtemp(*args, **kwargs):
+                        backup_parent.mkdir(parents=True, exist_ok=True)
+                        return str(backup_parent)
+
+                    run_managed_repair_module.tempfile.mkdtemp = publish_success_mkdtemp
+                    run_managed_repair_module.publish_candidate_root(candidate_root, repo_root)
+                finally:
+                    run_managed_repair_module.tempfile.mkdtemp = original_mkdtemp
+                if (repo_root / "state.txt").read_text(encoding="utf-8") != "candidate\n":
+                    raise RuntimeError(
+                        "Managed repair publish should replace repo content with the candidate on success"
+                    )
+                if backup_parent.exists():
+                    raise RuntimeError(
+                        "Managed repair publish should remove the temporary publish backup after a successful publish"
+                    )
+
+            with tempfile.TemporaryDirectory(prefix="scafforge-publish-restore-") as temp_dir:
+                publish_workspace = Path(temp_dir)
+                repo_root = publish_workspace / "repo"
+                candidate_root = publish_workspace / "candidate"
+                backup_parent = publish_workspace / "publish-backup"
+                repo_root.mkdir(parents=True, exist_ok=True)
+                candidate_root.mkdir(parents=True, exist_ok=True)
+                (repo_root / "state.txt").write_text("original\n", encoding="utf-8")
+                (candidate_root / "state.txt").write_text("candidate\n", encoding="utf-8")
+                original_mkdtemp = run_managed_repair_module.tempfile.mkdtemp
+                original_copytree = run_managed_repair_module.shutil.copytree
+                try:
+                    def publish_restore_mkdtemp(*args, **kwargs):
+                        backup_parent.mkdir(parents=True, exist_ok=True)
+                        return str(backup_parent)
+
+                    def fail_publish_copytree(src, dst, *args, **kwargs):
+                        if Path(src) == candidate_root:
+                            raise OSError("synthetic publish failure")
+                        return original_copytree(src, dst, *args, **kwargs)
+
+                    run_managed_repair_module.tempfile.mkdtemp = publish_restore_mkdtemp
+                    run_managed_repair_module.shutil.copytree = fail_publish_copytree
+                    try:
+                        run_managed_repair_module.publish_candidate_root(candidate_root, repo_root)
+                    except RuntimeError as exc:
+                        if "restored from the recovery backup" not in str(exc):
+                            raise
+                    else:
+                        raise RuntimeError(
+                            "Managed repair publish should raise when candidate promotion fails, even if restore succeeds"
+                        )
+                finally:
+                    run_managed_repair_module.tempfile.mkdtemp = original_mkdtemp
+                    run_managed_repair_module.shutil.copytree = original_copytree
+                if (repo_root / "state.txt").read_text(encoding="utf-8") != "original\n":
+                    raise RuntimeError(
+                        "Managed repair publish should restore the original repo content when publish fails but restore succeeds"
+                    )
+                if backup_parent.exists():
+                    raise RuntimeError(
+                        "Managed repair publish should remove the temporary publish backup after a successful restore"
+                    )
+
+            with tempfile.TemporaryDirectory(prefix="scafforge-publish-double-failure-") as temp_dir:
+                publish_workspace = Path(temp_dir)
+                repo_root = publish_workspace / "repo"
+                candidate_root = publish_workspace / "candidate"
+                backup_parent = publish_workspace / "publish-backup"
+                repo_root.mkdir(parents=True, exist_ok=True)
+                candidate_root.mkdir(parents=True, exist_ok=True)
+                (repo_root / "state.txt").write_text("original\n", encoding="utf-8")
+                nested_dir = repo_root / "nested"
+                nested_dir.mkdir(parents=True, exist_ok=True)
+                (nested_dir / "value.txt").write_text("nested\n", encoding="utf-8")
+                (candidate_root / "state.txt").write_text("candidate\n", encoding="utf-8")
+                original_mkdtemp = run_managed_repair_module.tempfile.mkdtemp
+                original_copytree = run_managed_repair_module.shutil.copytree
+                try:
+                    def publish_double_failure_mkdtemp(*args, **kwargs):
+                        backup_parent.mkdir(parents=True, exist_ok=True)
+                        return str(backup_parent)
+
+                    def fail_publish_and_restore_copytree(src, dst, *args, **kwargs):
+                        source = Path(src)
+                        if source == candidate_root:
+                            raise OSError("synthetic publish failure")
+                        if source.parent == backup_parent / "repo":
+                            raise OSError("synthetic restore failure")
+                        return original_copytree(src, dst, *args, **kwargs)
+
+                    run_managed_repair_module.tempfile.mkdtemp = publish_double_failure_mkdtemp
+                    run_managed_repair_module.shutil.copytree = fail_publish_and_restore_copytree
+                    try:
+                        run_managed_repair_module.publish_candidate_root(candidate_root, repo_root)
+                    except RuntimeError as exc:
+                        message = str(exc)
+                        if "recovery backup was preserved at" not in message:
+                            raise RuntimeError(
+                                "Managed repair publish should preserve and report the backup path when both publish and restore fail"
+                            ) from exc
+                    else:
+                        raise RuntimeError(
+                            "Managed repair publish should fail when both candidate promotion and restore fail"
+                        )
+                finally:
+                    run_managed_repair_module.tempfile.mkdtemp = original_mkdtemp
+                    run_managed_repair_module.shutil.copytree = original_copytree
+                if not (backup_parent / "repo").exists():
+                    raise RuntimeError(
+                        "Managed repair publish must preserve the recovery backup when automatic restore fails"
+                    )
+
             synthetic_findings = [
                 SimpleNamespace(
                     code="EXEC-SMOKE-001",
@@ -13681,6 +14050,26 @@ Overall Result: PASS
                     files=[".opencode/tools/environment_bootstrap.ts"],
                     safer_pattern="Repair the bootstrap contract before retrying.",
                     evidence=["synthetic bootstrap evidence"],
+                    provenance="script",
+                ),
+                SimpleNamespace(
+                    code="EXEC-GODOT-006",
+                    severity="error",
+                    problem="Synthetic Godot smoke false-pass failure.",
+                    root_cause="Synthetic package-owned execution failure for authoritative disposition coverage.",
+                    files=[".opencode/tools/smoke_test.ts"],
+                    safer_pattern="Treat package-owned execution-proof defects as managed blockers instead of source follow-up.",
+                    evidence=["synthetic godot exec evidence"],
+                    provenance="script",
+                ),
+                SimpleNamespace(
+                    code="SKILL003",
+                    severity="warning",
+                    problem="Synthetic missing Blender route operating surfaces.",
+                    root_cause="Synthetic Blender-route contract failure for prevention-action coverage.",
+                    files=[".opencode/agents/blender-asset-creator.md"],
+                    safer_pattern="Keep Blender route skills, agents, and MCP config aligned.",
+                    evidence=["synthetic blender route evidence"],
                     provenance="script",
                 ),
                 SimpleNamespace(
@@ -13729,8 +14118,10 @@ Overall Result: PASS
                 }
                 if emitted_classes != {
                     "BOOT001": "manual_prerequisite_blocker",
+                    "EXEC-GODOT-006": "managed_blocker",
                     "EXEC-SMOKE-001": "source_follow_up",
                     "NOTE001": "advisory",
+                    "SKILL003": "managed_blocker",
                     "WFLOW008": "process_state_only",
                 }:
                     raise RuntimeError(
@@ -13747,17 +14138,20 @@ Overall Result: PASS
                         "Diagnosis-pack manifest should record the persisted disposition bundle file"
                     )
                 shadow_deltas = emitted_bundle["shadow_mode_deltas"]
-                if shadow_deltas != [
-                    {
-                        "code": "BOOT001",
-                        "legacy_disposition_class": "managed_blocker",
-                        "disposition_class": "manual_prerequisite_blocker",
-                        "route": "scafforge-repair",
-                        "reason": "Legacy prefix classification would label BOOT001 as managed_blocker, but the authoritative bundle assigns manual_prerequisite_blocker.",
-                    }
-                ]:
+                shadow_delta_codes = {item["code"] for item in shadow_deltas}
+                if shadow_delta_codes != {"BOOT001", "EXEC-GODOT-006"}:
                     raise RuntimeError(
                         "Disposition shadow-mode output should surface authoritative-versus-legacy classification deltas"
+                    )
+                boot_delta = next(item for item in shadow_deltas if item["code"] == "BOOT001")
+                if boot_delta["disposition_class"] != "manual_prerequisite_blocker":
+                    raise RuntimeError(
+                        "BOOT001 should remain the authoritative manual prerequisite blocker in shadow-mode output"
+                    )
+                exec_delta = next(item for item in shadow_deltas if item["code"] == "EXEC-GODOT-006")
+                if exec_delta["disposition_class"] != "managed_blocker":
+                    raise RuntimeError(
+                        "Package-owned EXEC findings should surface as managed_blocker in shadow-mode output"
                     )
                 note_entry = next(
                     item for item in emitted_bundle["findings"] if item["code"] == "NOTE001"
@@ -13767,6 +14161,12 @@ Overall Result: PASS
                 ):
                     raise RuntimeError(
                         "Disposition bundle should reuse the shared evidence-grade helper for advisory findings"
+                    )
+                if "Blender-MCP" not in audit_reporting_module.prevention_action(
+                    SimpleNamespace(code="SKILL003")
+                ):
+                    raise RuntimeError(
+                        "Audit prevention guidance should map SKILL003 to the Blender-route operating surfaces"
                     )
 
             advisory_classes = run_managed_repair_module.classify_verification_findings(

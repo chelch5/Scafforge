@@ -127,6 +127,8 @@ GODOT_SIGNAL_CONNECTION_METHOD_PATTERN = re.compile(r'^\[connection\s+[^\]]*meth
 GODOT_EXT_RESOURCE_PATTERN = re.compile(r'^\[ext_resource\s+[^\]]*path="res://([^"]+)"[^\]]*id=(?:"([^"]+)"|([0-9]+))', re.MULTILINE)
 GODOT_SCRIPT_EXT_RESOURCE_PATTERN = re.compile(r'script\s*=\s*ExtResource\(\s*"?(?P<id>[^"\)\s]+)"?\s*\)')
 GODOT_SIGNAL_HANDLER_PATTERN = re.compile(r'^\s*func\s+(_on_[A-Za-z0-9_]+)\s*\(', re.MULTILINE)
+GODOT_METHOD_DEF_PATTERN = re.compile(r'^\s*func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(', re.MULTILINE)
+GODOT_VAR_DECL_PATTERN = re.compile(r'^\s*(?:@export\s+)?var\s+([A-Za-z_][A-Za-z0-9_]*)\b', re.MULTILINE)
 GODOT_UID_WARNING_PATTERN = re.compile(r'WARNING:\s+.+invalid UID:.+using text path instead:.+', re.IGNORECASE)
 GODOT_SCENE_SIGNAL_SUFFIXES: frozenset[str] = frozenset({
     "pressed",
@@ -150,6 +152,16 @@ GODOT_BASE_METHOD_DISALLOWED_EXTENDS: dict[str, frozenset[str]] = {
     "queue_redraw": frozenset({"CanvasLayer", "Node"}),
     "get_viewport_rect": frozenset({"CanvasLayer", "Node"}),
 }
+GODOT_UI_PATH_HINTS: tuple[str, ...] = ("/ui/", "hud", "game_over", "overlay", "status")
+GODOT_SINGLETON_MUTATOR_PREFIXES: tuple[str, ...] = (
+    "set_",
+    "add_",
+    "update_",
+    "record_",
+    "increment_",
+    "advance_",
+    "mark_",
+)
 BLENDER_MUTATING_TOOLS: frozenset[str] = frozenset({
     "project_initialize",
     "addon_configure",
@@ -250,6 +262,24 @@ def parse_godot_scene_ext_resources(text: str) -> dict[str, str]:
     return resources
 
 
+def parse_godot_autoloads(text: str) -> dict[str, str]:
+    autoloads: dict[str, str] = {}
+    in_autoload_section = False
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_autoload_section = stripped == "[autoload]"
+            continue
+        if not in_autoload_section or "=" not in stripped:
+            continue
+        name, value = stripped.split("=", 1)
+        match = re.search(r'\*?res://([^"\n]+)', value)
+        if match is None:
+            continue
+        autoloads[name.strip().strip('"')] = match.group(1).strip()
+    return autoloads
+
+
 def parse_godot_scene_script_paths(text: str) -> list[str]:
     ext_resources = parse_godot_scene_ext_resources(text)
     paths: list[str] = []
@@ -301,6 +331,167 @@ def gdscript_declared_base_type(text: str) -> str | None:
             return None
         return target.split(".", 1)[0]
     return None
+
+
+def gdscript_declared_methods(text: str) -> set[str]:
+    return {match.group(1) for match in GODOT_METHOD_DEF_PATTERN.finditer(text)}
+
+
+def gdscript_declared_vars(text: str) -> set[str]:
+    return {match.group(1) for match in GODOT_VAR_DECL_PATTERN.finditer(text)}
+
+
+def _gdscript_without_method_definitions(text: str, method_name: str) -> str:
+    return re.sub(
+        rf'^\s*func\s+{re.escape(method_name)}\s*\([^)]*\)\s*(?:->\s*[^:]+)?\s*:\s*$',
+        "",
+        text,
+        flags=re.MULTILINE,
+    )
+
+
+def _iter_repo_files(root: Path, suffixes: tuple[str, ...]) -> list[Path]:
+    return iter_source_files(root, suffixes)
+
+
+def _godot_method_referenced_elsewhere(
+    root: Path,
+    ctx: ExecutionSurfaceAuditContext,
+    *,
+    method_name: str,
+    definition_path: Path,
+) -> bool:
+    token_pattern = re.compile(rf'\b{re.escape(method_name)}\s*\(')
+    for path in _iter_repo_files(root, (".gd",)):
+        text = ctx.read_text(path)
+        if path == definition_path:
+            text = _gdscript_without_method_definitions(text, method_name)
+        if token_pattern.search(text):
+            return True
+        if re.search(rf'Callable\([^\n]*"{re.escape(method_name)}"', text) is not None:
+            return True
+    for path in _iter_repo_files(root, (".tscn",)):
+        text = ctx.read_text(path)
+        if re.search(rf'method="{re.escape(method_name)}"', text) is not None:
+            return True
+    return False
+
+
+def _field_mutator_method_candidates(field_name: str, methods: set[str]) -> set[str]:
+    candidates: set[str] = set()
+    base_fields = {field_name}
+    if field_name.startswith("max_") and len(field_name) > 4:
+        base_fields.add(field_name[4:])
+    for base in base_fields:
+        for prefix in GODOT_SINGLETON_MUTATOR_PREFIXES:
+            candidate = f"{prefix}{base}"
+            if candidate in methods:
+                candidates.add(candidate)
+    return candidates
+
+
+def _is_trivial_state_singleton(text: str) -> bool:
+    if re.search(r'^\s*signal\s+', text, re.MULTILINE):
+        return False
+    if "connect(" in text or "await " in text or "yield(" in text:
+        return False
+    if re.search(r'^\s*func\s+_(?:process|physics_process|input|unhandled_input)\s*\(', text, re.MULTILINE):
+        return False
+    return True
+
+
+def _godot_wave_start_gap(root: Path, ctx: ExecutionSurfaceAuditContext) -> tuple[list[str], list[Path]]:
+    evidence: list[str] = []
+    files: list[Path] = []
+    for path in _iter_repo_files(root, (".gd",)):
+        text = ctx.read_text(path)
+        if re.search(r'^\s*signal\s+wave_started\b', text, re.MULTILINE) is None:
+            continue
+        if re.search(r'^\s*func\s+start_wave\s*\(', text, re.MULTILINE) is None:
+            continue
+        if _godot_method_referenced_elsewhere(root, ctx, method_name="start_wave", definition_path=path):
+            continue
+        files.append(path)
+        evidence.append(
+            f"{ctx.normalize_path(path, root)} defines signal wave_started and func start_wave(), but no runtime script or scene invokes start_wave()."
+        )
+    return evidence, files
+
+
+def _godot_game_over_transition_gap(root: Path, ctx: ExecutionSurfaceAuditContext) -> tuple[list[str], list[Path]]:
+    game_over_scenes = [
+        path
+        for path in _iter_repo_files(root, (".tscn",))
+        if "game_over" in path.name.lower()
+    ]
+    if not game_over_scenes:
+        return [], []
+    has_game_over_transition = False
+    death_reload_evidence: list[str] = []
+    files: list[Path] = []
+    for path in _iter_repo_files(root, (".gd",)):
+        text = ctx.read_text(path)
+        if re.search(r'change_scene_to_(?:file|packed)\s*\([^\n]*game_over', text, re.IGNORECASE):
+            has_game_over_transition = True
+        if "reload_current_scene(" not in text:
+            continue
+        if re.search(r'func\s+[_A-Za-z0-9]*(?:die|death|fail|defeat|lose|game_over)[A-Za-z0-9_]*\s*\(', text, re.IGNORECASE) is None and "died.emit()" not in text:
+            continue
+        files.append(path)
+        death_reload_evidence.append(
+            f"{ctx.normalize_path(path, root)} reloads the current scene from a death/fail path while a repo-local game_over scene exists."
+        )
+    if not death_reload_evidence or has_game_over_transition:
+        return [], []
+    return death_reload_evidence, [*game_over_scenes, *files]
+
+
+def _godot_singleton_state_gap(root: Path, ctx: ExecutionSurfaceAuditContext, project_text: str) -> tuple[list[str], list[Path]]:
+    evidence: list[str] = []
+    files: list[Path] = []
+    for singleton_name, rel_path in parse_godot_autoloads(project_text).items():
+        singleton_path = root / rel_path
+        if not singleton_path.exists():
+            continue
+        singleton_text = ctx.read_text(singleton_path)
+        if not _is_trivial_state_singleton(singleton_text):
+            continue
+        fields = {field for field in gdscript_declared_vars(singleton_text) if not field.startswith("_")}
+        methods = {method for method in gdscript_declared_methods(singleton_text) if not method.startswith("_")}
+        if not fields or not methods:
+            continue
+        ui_reads: dict[str, list[str]] = {}
+        direct_writes: set[str] = set()
+        method_calls: set[str] = set()
+        impacted_paths: list[Path] = [singleton_path]
+        for path in _iter_repo_files(root, (".gd",)):
+            if path == singleton_path:
+                continue
+            text = ctx.read_text(path)
+            normalized = ctx.normalize_path(path, root)
+            is_ui_surface = any(token in normalized.lower() for token in GODOT_UI_PATH_HINTS)
+            for field in fields:
+                if re.search(rf'\b{re.escape(singleton_name)}\.{re.escape(field)}\s*=', text):
+                    direct_writes.add(field)
+                if is_ui_surface and re.search(rf'\b{re.escape(singleton_name)}\.{re.escape(field)}\b', text):
+                    ui_reads.setdefault(field, []).append(normalized)
+                    impacted_paths.append(path)
+            for method in methods:
+                if re.search(rf'\b{re.escape(singleton_name)}\.{re.escape(method)}\s*\(', text):
+                    method_calls.add(method)
+        stale_fields: list[str] = []
+        for field_name, read_locations in ui_reads.items():
+            if field_name in direct_writes:
+                continue
+            if _field_mutator_method_candidates(field_name, methods) & method_calls:
+                continue
+            stale_fields.append(field_name)
+            evidence.append(
+                f"{singleton_name}.{field_name} is read by player-facing UI ({', '.join(read_locations[:2])}), but no runtime script updates it or calls a matching {singleton_name} mutator."
+            )
+        if stale_fields:
+            files.extend(impacted_paths)
+    return evidence, files
 
 
 @dataclass(frozen=True)
@@ -1354,10 +1545,10 @@ def audit_godot_execution(root: Path, findings: list[Finding], ctx: ExecutionSur
         return
     project_text = ctx.read_text(project_file)
     missing_autoloads: list[str] = []
-    for match in re.finditer(r"^autoload/[^=]+=.*res://([^\n\"]+)", project_text, re.MULTILINE):
-        target = root / match.group(1)
+    for autoload_path in parse_godot_autoloads(project_text).values():
+        target = root / autoload_path
         if not target.exists():
-            missing_autoloads.append(match.group(1))
+            missing_autoloads.append(autoload_path)
     if missing_autoloads:
         _add_execution_finding(findings, ctx, code="EXEC-GODOT-001", severity="error", problem="Godot autoload registration references missing scripts.", root_cause="project.godot points at autoload paths that do not exist in the repo, so project startup will fail or load an incomplete runtime graph.", files=[project_file], safer_pattern="Validate every project.godot autoload path against the repo tree before handoff or audit closeout.", evidence=missing_autoloads, root=root)
 
@@ -1426,6 +1617,51 @@ def audit_godot_execution(root: Path, findings: list[Finding], ctx: ExecutionSur
             )
     if incompatible_api_calls:
         _add_execution_finding(findings, ctx, code="EXEC-GODOT-009", severity="error", problem="GDScript calls APIs that are unavailable on the script's declared base type.", root_cause="The audit found script methods that only exist on CanvasItem-style nodes being called from scripts that extend incompatible bases such as Node or CanvasLayer, which guarantees runtime parse/load failure even before gameplay starts.", files=[project_file, *incompatible_files[:3]], safer_pattern="Validate GDScript method calls against the declared base type and move draw/redraw or viewport-rect logic onto compatible CanvasItem-derived nodes before treating headless load as trustworthy.", evidence=incompatible_api_calls[:8], root=root)
+
+    wave_start_evidence, wave_start_files = _godot_wave_start_gap(root, ctx)
+    if wave_start_evidence:
+        _add_execution_finding(
+            findings,
+            ctx,
+            code="EXEC-GODOT-010",
+            severity="error",
+            problem="Wave-based Godot gameplay defines a start_wave entrypoint that nothing in the runtime ever invokes.",
+            root_cause="The repo can still load and even publish finish-proof prose while the core wave progression controller never starts, because no runtime script or scene actually calls the spawner's start_wave entrypoint.",
+            files=[project_file, *wave_start_files[:3]],
+            safer_pattern="When a gameplay controller exposes start_wave() and wave_started, make one canonical runtime owner call start_wave() so the primary progression loop actually begins on the current build.",
+            evidence=wave_start_evidence[:6],
+            root=root,
+        )
+
+    game_over_evidence, game_over_files = _godot_game_over_transition_gap(root, ctx)
+    if game_over_evidence:
+        _add_execution_finding(
+            findings,
+            ctx,
+            code="EXEC-GODOT-011",
+            severity="error",
+            problem="Godot repo ships a game-over scene, but the death path only reloads the current scene instead of reaching that fail-state.",
+            root_cause="A current build can look complete from load proof alone while its advertised fail-state is unreachable, because death/failure handlers restart the scene and never transition into the repo-owned game-over flow.",
+            files=[project_file, *game_over_files[:4]],
+            safer_pattern="If the repo ships a game-over scene or equivalent fail-state surface, route death/failure handlers into that scene instead of silently reloading the current level.",
+            evidence=game_over_evidence[:6],
+            root=root,
+        )
+
+    singleton_state_evidence, singleton_state_files = _godot_singleton_state_gap(root, ctx, project_text)
+    if singleton_state_evidence:
+        _add_execution_finding(
+            findings,
+            ctx,
+            code="EXEC-GODOT-012",
+            severity="error",
+            problem="Player-facing Godot UI reads singleton gameplay state that no runtime code ever updates.",
+            root_cause="The repo exposes scoreboard or progression state through autoload singletons, but current gameplay scripts never write those fields or call the singleton's mutator methods. UI and closeout can therefore report stale default state even when the game loop runs.",
+            files=[project_file, *singleton_state_files[:4]],
+            safer_pattern="When HUD or game-over surfaces read autoload gameplay state, ensure runtime scripts write those fields directly or call the singleton's mutator methods on the current gameplay path before claiming completion.",
+            evidence=singleton_state_evidence[:6],
+            root=root,
+        )
 
     godot_cmd = next((candidate for candidate in ("godot4", "godot") if _command_available(candidate)), None)
     if godot_cmd:

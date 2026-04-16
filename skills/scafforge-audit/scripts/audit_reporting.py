@@ -219,6 +219,8 @@ def prevention_action(finding: Finding) -> str:
         return "Detect and repair leftover placeholder local skills so generated stack guidance is concrete before implementation continues."
     if finding.code == "SKILL002":
         return "Make the generated `ticket-execution` skill the canonical lifecycle explainer so weaker models do not have to reverse-engineer the state machine from tool errors."
+    if finding.code == "SKILL003":
+        return "When asset-pipeline metadata requires Blender-MCP, keep the required Blender skills, dedicated Blender agent, and managed `blender_agent` MCP entry aligned so the repo can actually follow the declared asset route."
     if finding.code == "MODEL001":
         return "Detect deprecated or missing model-profile surfaces, treat stale package-managed defaults as safe repair instead of preserved intent, regenerate the repo-local model operating profile, and align model metadata plus agent defaults before development resumes."
     if finding.code == "CYCLE001":
@@ -899,7 +901,7 @@ def render_report_four(root: Path, findings: list[Finding], recommendations: lis
     package_first = [item for item in recommendations if item["route"] in {"scafforge-repair", "manual-prerequisite"} and "Scafforge package work required" in item.get("repair_class", "")]
     subject_repo_first = [item for item in recommendations if item["route"] == "ticket-pack-builder"]
     requires_regeneration = any(
-        finding.code in {"SKILL001", "SKILL002", "MODEL001"} or any(token in " ".join(finding.files) for token in (".opencode/agents/", ".opencode/skills/"))
+        finding.code in {"SKILL001", "SKILL002", "SKILL003", "MODEL001"} or any(token in " ".join(finding.files) for token in (".opencode/agents/", ".opencode/skills/"))
         for finding in findings
     )
     repeated_cycle = next((finding for finding in findings if finding.code in {"CYCLE001", "CYCLE002", "CYCLE003"}), None)

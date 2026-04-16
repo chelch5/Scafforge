@@ -245,6 +245,12 @@
 - result: agents have to reverse-engineer the lifecycle from tool errors instead of reading one canonical local procedure
 - why agents miss it: the skill exists, so a surface-level audit may assume the workflow explainer is present even when it carries only thin boilerplate
 
+## Missing Blender route operating surfaces (SKILL003 — Blender-required repos lack mandatory agent/skill contract surfaces)
+
+- asset-pipeline metadata says Blender-MCP is required, but the repo-local skill pack or agent pack is missing required Blender route surfaces such as `asset-description`, `blender-mcp-workflow`, or a `blender-asset-creator`
+- result: the repo advertises a Blender asset route that weaker models cannot actually execute
+- why agents miss it: the MCP entry may exist in config, so shallow review assumes the Blender route is usable even when the surrounding managed surfaces were never fully materialized
+
 ## Session chronology miss (SESSION001 — current-state-only audit misses later reasoning failure)
 
 - a supplied transcript shows stale early-session context, later corrective evidence, and a final summary that still overstates readiness or root cause
