@@ -161,9 +161,11 @@ Process-change verification:
 - when `ticket_lookup.process_verification.clearable_now` is true but the foreground ticket is already closed, do not try to reclaim the closed ticket; foreground an open writable ticket, claim it, and carry `pending_process_verification: false` through `ticket_update` on that open ticket instead
 - treat `repair_follow_on` as separate from `pending_process_verification`; historical trust restoration does not mean managed repair follow-on is complete
 - use `ticket_create(source_mode=split_scope)` when an open or reopened parent ticket needs planned child decomposition; keep the parent open and linked instead of blocking it behind the child work
+- for split parents, keep the parent in the foreground until its current `planning` proof exists and `plan_review` approval is recorded; do not foreground parallel children ahead of missing parent-owned setup proof
 - use `ticket_reconcile` when source/follow-up linkage or parent dependencies are stale or contradictory to current evidence
 - if a follow-up ticket's finding no longer reproduces, use `ticket_reconcile` with current evidence to supersede or relink that stale follow-up instead of inventing no-op implementation, QA, or smoke artifacts just to close it
 - for `ticket_reconcile`, `source_ticket_id` / `replacement_source_ticket_id` name the authoritative owner that should remain trusted after reconciliation, while `target_ticket_id` names the stale follow-up ticket being rewritten or superseded
+- when `ticket_reconcile` supersedes or relinks an open `split_scope` child that still belongs to the currently claimed parent, the parent lease is the authoritative lease in sequential mode; do not try to claim both tickets at once
 - never point `target_ticket_id` at the authoritative owner; if the duplicate or stale child should disappear, that duplicate or child is the `target_ticket_id`
 - when the stale ticket has no remaining independent work after reconciliation, set `supersede_target: true` so the manifest closes that stale ticket as `resolution_state: superseded` instead of leaving it open with only a reconciliation artifact
 

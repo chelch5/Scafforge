@@ -1510,7 +1510,12 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts",
-        "Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly.",
+        "Parent setup is complete. Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} for the next executable lane.",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts",
+        "parentMustFinishPreImplementationSetup",
     )
     require_contains(
         findings,
@@ -1662,6 +1667,11 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
         TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts",
         'if (input.tool === "ticket_reconcile") {',
     )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts",
+        "sourceLeaseCoversSplitScopeTargetMutation",
+    )
     require_absent(
         findings,
         TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts",
@@ -1681,6 +1691,26 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
         findings,
         TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-docs-handoff.md",
         "write the full handoff body with `artifact_write` and then register it with `artifact_register`",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "do not foreground parallel children ahead of missing parent-owned setup proof",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "the parent lease is the authoritative lease in sequential mode",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "skills" / "ticket-execution" / "SKILL.md",
+        "keep the parent foregrounded until that setup is complete before activating a parallel child lane",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / "docs" / "process" / "workflow.md",
+        "do not foreground a parallel child ahead of missing parent planning proof or missing plan approval",
     )
     require_absent(
         findings,

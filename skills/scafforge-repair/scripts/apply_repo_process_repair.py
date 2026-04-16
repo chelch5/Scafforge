@@ -150,6 +150,10 @@ INTERACTIVE_FINISH_PROOF_ACCEPTANCE = (
     "Finish proof includes explicit user-observable interaction evidence (controls/input, visible gameplay state or feedback, "
     "and the brief-specific progression or content surfaces), not just export/install success."
 )
+GAMEPLAY_FINISH_PROOF_ACCEPTANCE = (
+    "Gameplay finish proof demonstrates the current build's core loop starts, one primary progression path advances, "
+    "a fail-state or critical end-state is reachable, and any player-facing state reporting required by the shipped UI is exercised with current evidence."
+)
 WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
     {
         "release-facing milestones must keep the toy-box flow coherent, maintain immediate touch feedback, and ensure any shipped visual or audio content matches the toddler-safe direction recorded in this brief.",
@@ -206,12 +210,18 @@ def recommended_interactive_finish_signals(brief_text: str) -> str:
     if any(marker in lowered for marker in ("game", "godot", "playable")):
         return (
             "Release-facing milestones must prove a playable shipped loop on current builds with working controls/input, "
-            "visible gameplay state or progression feedback, and the brief-specific user-facing surfaces beyond export success."
+            "one primary progression path advancing, a fail-state or critical end-state becoming reachable, and visible gameplay "
+            "state or progression feedback beyond export success."
         )
     return (
         "Release-facing milestones must prove the shipped interaction flow works on current builds with responsive input, "
         "visible user-facing feedback, and the brief-specific content surfaces beyond export success."
     )
+
+
+def brief_requires_gameplay_finish_proof(brief_text: str) -> bool:
+    lowered = _normalize_finish_contract_value(brief_text)
+    return any(marker in lowered for marker in ("game", "godot", "playable", "toddler", "toy"))
 
 
 def build_finish_validation_acceptance(*, brief_text: str, finish_acceptance_signals: str) -> list[str]:
@@ -222,6 +232,8 @@ def build_finish_validation_acceptance(*, brief_text: str, finish_acceptance_sig
     ]
     if brief_requires_interactive_finish_proof(brief_text):
         acceptance.insert(1, INTERACTIVE_FINISH_PROOF_ACCEPTANCE)
+    if brief_requires_gameplay_finish_proof(brief_text):
+        acceptance.insert(2 if brief_requires_interactive_finish_proof(brief_text) else 1, GAMEPLAY_FINISH_PROOF_ACCEPTANCE)
     return acceptance
 
 
@@ -646,6 +658,48 @@ def write_json(path: Path, value: Any) -> None:
 def write_text(path: Path, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(value, encoding="utf-8")
+
+
+def cleanup_backup_root(path: Path) -> None:
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        print(f"Warning: unable to remove repair backup {path}: {exc}", file=sys.stderr)
+
+
+def ensure_godot_android_etc2_setting(project_path: Path) -> bool:
+    if not project_path.exists():
+        return False
+    text = project_path.read_text(encoding="utf-8")
+    setting_line = "textures/vram_compression/import_etc2_astc=true"
+    existing = re.search(r"^\s*textures/vram_compression/import_etc2_astc\s*=\s*(.+?)\s*$", text, re.MULTILINE)
+    if existing:
+        current_value = existing.group(1).strip().strip('"').lower()
+        if current_value == "true":
+            return False
+        updated = re.sub(
+            r"^\s*textures/vram_compression/import_etc2_astc\s*=\s*.+?$",
+            setting_line,
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        project_path.write_text(updated, encoding="utf-8")
+        return True
+    section_match = re.search(r"(?m)^\[rendering\]\s*$", text)
+    if section_match:
+        insert_at = section_match.end()
+        next_section = re.search(r"(?m)^\[[^\]]+\]\s*$", text[insert_at:])
+        section_end = insert_at + next_section.start() if next_section else len(text)
+        prefix = text[:section_end].rstrip("\n")
+        suffix = text[section_end:]
+        updated = f"{prefix}\n{setting_line}\n{suffix.lstrip(chr(10))}"
+    else:
+        updated = text.rstrip() + f"\n\n[rendering]\n{setting_line}\n"
+    project_path.write_text(updated, encoding="utf-8")
+    return True
 
 
 def normalize_path(path: Path, root: Path) -> str:
@@ -1764,6 +1818,13 @@ def apply_repair(
             replace_file_with_backup(rendered_export_presets, target_export_presets)
             replaced_surfaces.append("export_presets.cfg")
 
+        if "godot" in metadata.get("stack_label", "").lower() and "android" in metadata.get("stack_label", "").lower():
+            target_project_godot = repo_root / "project.godot"
+            if target_project_godot.exists():
+                processed_records.append(backup_target(target_project_godot, backup_root, repo_root))
+                if ensure_godot_android_etc2_setting(target_project_godot):
+                    replaced_surfaces.append("project.godot")
+
         rendered_state_gitignore = rendered_root / ".opencode" / "state" / ".gitignore"
         target_state_gitignore = repo_root / ".opencode" / "state" / ".gitignore"
         if rendered_state_gitignore.exists():
@@ -1868,7 +1929,7 @@ def apply_repair(
         replaced_surfaces.append(".opencode/state/context-snapshot.md")
         replaced_surfaces.append(".opencode/state/latest-handoff.md")
         if not preserve_backups:
-            shutil.rmtree(backup_root, ignore_errors=True)
+            cleanup_backup_root(backup_root)
         return {
             "replaced_surfaces": replaced_surfaces,
             "diff_summary": diff_summary,
@@ -1880,7 +1941,7 @@ def apply_repair(
     except Exception as exc:
         restore_backup_records(processed_records)
         if not preserve_backups:
-            shutil.rmtree(backup_root, ignore_errors=True)
+            cleanup_backup_root(backup_root)
         raise RepairFailure(f"Managed surface replacement failed and was restored from backup: {exc}") from exc
 
 

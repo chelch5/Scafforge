@@ -64,6 +64,9 @@ RECORD_REPAIR_STAGE = (
     / "record_repair_stage_completion.py"
 )
 BOOTSTRAP_INPUT_FILES = (
+    "project.godot",
+    "export_presets.cfg",
+    "opencode.jsonc",
     "package.json",
     "package-lock.json",
     "pnpm-lock.yaml",
@@ -85,7 +88,28 @@ BOOTSTRAP_INPUT_FILES = (
     "pytest.ini",
     "setup.py",
     "setup.cfg",
+    "android/scafforge-managed.json",
+    ".opencode/meta/asset-pipeline-bootstrap.json",
 )
+BOOTSTRAP_ENVIRONMENT_KEYS = (
+    "JAVA_HOME",
+    "ANDROID_HOME",
+    "ANDROID_SDK_ROOT",
+    "BLENDER_MCP_BLENDER_EXECUTABLE",
+)
+BOOTSTRAP_HOST_PATH_CANDIDATES = {
+    "android_debug_keystore": (
+        str(Path.home() / ".android" / "debug.keystore"),
+    ),
+    "godot_export_templates": (
+        str(Path.home() / ".local" / "share" / "godot" / "export_templates"),
+    ),
+    "android_sdk_default": (
+        str(Path.home() / "Android" / "Sdk"),
+        str(Path.home() / "Library" / "Android" / "sdk"),
+        str(Path.home() / "AppData" / "Local" / "Android" / "Sdk"),
+    ),
+}
 
 
 def load_python_module(path: Path, module_name: str):
@@ -273,9 +297,30 @@ def plugin_runner_lines() -> list[str]:
 
 def compute_bootstrap_fingerprint(dest: Path) -> str:
     digest = hashlib.sha256()
-    for relative in sorted(
-        path for path in BOOTSTRAP_INPUT_FILES if (dest / path).is_file()
-    ):
+    input_files = sorted(path for path in BOOTSTRAP_INPUT_FILES if (dest / path).is_file())
+    fingerprint_inputs = {
+        "input_files": input_files,
+        "repo_surfaces": {
+            "project_godot": (dest / "project.godot").exists(),
+            "export_presets": (dest / "export_presets.cfg").exists(),
+            "android_support_surface": (dest / "android" / "scafforge-managed.json").exists(),
+            "asset_pipeline_metadata": (dest / ".opencode" / "meta" / "asset-pipeline-bootstrap.json").exists(),
+            "opencode_config": (dest / "opencode.jsonc").exists(),
+        },
+        "env": {
+            key: (os.environ.get(key) or "<unset>")
+            for key in BOOTSTRAP_ENVIRONMENT_KEYS
+        },
+        "host_paths": {
+            label: next((candidate for candidate in candidates if Path(candidate).exists()), "<missing>")
+            for label, candidates in BOOTSTRAP_HOST_PATH_CANDIDATES.items()
+        },
+    }
+    digest.update(
+        json.dumps(fingerprint_inputs, separators=(",", ":")).encode("utf-8")
+    )
+    digest.update(b"\x00")
+    for relative in input_files:
         digest.update(relative.encode("utf-8"))
         digest.update(b"\x00")
         digest.update((dest / relative).read_bytes())

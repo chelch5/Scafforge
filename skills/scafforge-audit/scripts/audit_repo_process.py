@@ -458,6 +458,39 @@ def parse_transcript_tool_events(text: str) -> list[TranscriptToolEvent]:
     return events
 
 
+def count_transcript_input_decode_errors(text: str) -> int:
+    lines = text.splitlines()
+    count = 0
+    index = 0
+    while index < len(lines):
+        stripped = lines[index].strip()
+        if not re.match(r"^\*\*Tool:\s*([^*]+)\*\*$", stripped):
+            index += 1
+            continue
+        cursor = index + 1
+        while cursor < len(lines):
+            candidate = lines[cursor].strip()
+            if candidate.startswith("## Assistant ") or candidate.startswith("**Tool:"):
+                break
+            if candidate == "**Input:**":
+                fence_line = cursor + 1
+                if fence_line < len(lines) and lines[fence_line].strip().startswith("```"):
+                    body_start = fence_line + 1
+                    body_end = body_start
+                    while body_end < len(lines) and lines[body_end].strip() != "```":
+                        body_end += 1
+                    body = "\n".join(lines[body_start:body_end]).strip()
+                    if body:
+                        try:
+                            json.loads(body)
+                        except json.JSONDecodeError:
+                            count += 1
+                    cursor = body_end
+            cursor += 1
+        index += 1
+    return count
+
+
 def parse_json_object(text: str) -> dict[str, Any] | None:
     try:
         payload = json.loads(text)
@@ -574,6 +607,21 @@ def parse_invocation_log_events(path: Path) -> list[InvocationLogEvent]:
             )
         )
     return events
+
+
+def count_invocation_log_decode_errors(path: Path) -> int:
+    if not path.exists():
+        return 0
+    count = 0
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            json.loads(line)
+        except json.JSONDecodeError:
+            count += 1
+    return count
 
 
 def is_coordinator_assistant(label: str) -> bool:
@@ -1237,6 +1285,8 @@ def session_transcript_audit_context() -> SessionTranscriptAuditContext:
         matching_assistant_reasoning_line_numbers=matching_assistant_reasoning_line_numbers,
         matching_non_tool_line_numbers=matching_non_tool_line_numbers,
         parse_transcript_tool_events=parse_transcript_tool_events,
+        count_transcript_input_decode_errors=count_transcript_input_decode_errors,
+        count_invocation_log_decode_errors=count_invocation_log_decode_errors,
         parse_json_object=parse_json_object,
         normalize_shell_command=normalize_shell_command,
         extract_transcript_smoke_acceptance_commands=extract_transcript_smoke_acceptance_commands,

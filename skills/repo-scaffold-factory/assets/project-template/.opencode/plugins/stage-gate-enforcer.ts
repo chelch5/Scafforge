@@ -129,6 +129,18 @@ async function ensureTargetTicketWriteLease(ticketId: string) {
   }
 }
 
+function sourceLeaseCoversSplitScopeTargetMutation(args: {
+  sourceTicket: ReturnType<typeof getTicket>
+  targetTicket: ReturnType<typeof getTicket>
+  replacementSourceTicket: ReturnType<typeof getTicket>
+}) {
+  return (
+    args.targetTicket.source_mode === "split_scope"
+    && args.targetTicket.source_ticket_id === args.sourceTicket.id
+    && args.replacementSourceTicket.id === args.sourceTicket.id
+  )
+}
+
 function isWorkflowProcessVerificationClearOnly(args: Record<string, unknown>): boolean {
   return (
     args.pending_process_verification === false &&
@@ -347,10 +359,19 @@ export const StageGateEnforcer: Plugin = async () => {
         const sourceTicket = getTicket(manifest, sourceTicketId)
         const targetTicket = getTicket(manifest, targetTicketId)
         const replacementSourceTicket = replacementSourceTicketId ? getTicket(manifest, replacementSourceTicketId) : sourceTicket
+        const parentLeaseAuthorizesSplitChildMutation = sourceLeaseCoversSplitScopeTargetMutation({
+          sourceTicket,
+          targetTicket,
+          replacementSourceTicket,
+        })
         if (["open", "reopened"].includes(sourceTicket.resolution_state) && sourceTicket.status !== "done") {
           await ensureTargetTicketWriteLease(sourceTicket.id)
         }
-        if (["open", "reopened"].includes(targetTicket.resolution_state) && targetTicket.status !== "done") {
+        if (
+          ["open", "reopened"].includes(targetTicket.resolution_state)
+          && targetTicket.status !== "done"
+          && !parentLeaseAuthorizesSplitChildMutation
+        ) {
           await ensureTargetTicketWriteLease(targetTicket.id)
         }
         if (

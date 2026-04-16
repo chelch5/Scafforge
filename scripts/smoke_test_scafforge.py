@@ -3608,7 +3608,8 @@ def main() -> int:
         ).read_text(encoding="utf-8")
         for expected in (
             "## Code Quality Findings",
-            'finding.code.startswith(("BOOT", "ENV", "EXEC", "REF", "SESSION"))',
+            'elif finding.code.startswith("ENV"):',
+            'if "scafforge-repair" in routes:',
             "package_first_count",
         ):
             if expected not in generated_audit_reporting:
@@ -3680,6 +3681,10 @@ def main() -> int:
         ):
             raise RuntimeError(
                 "Generated stage-gate-enforcer.ts should require a write lease for open ticket_reconcile targets"
+            )
+        if "sourceLeaseCoversSplitScopeTargetMutation" not in generated_stage_gate:
+            raise RuntimeError(
+                "Generated stage-gate-enforcer.ts should allow source-authoritative split child reconciliation without an impossible dual-lease requirement"
             )
         generated_workflow = (
             full_dest / ".opencode" / "lib" / "workflow.ts"
@@ -3755,11 +3760,15 @@ def main() -> int:
                 "Generated ticket_lookup.ts should short-circuit lifecycle guidance to environment_bootstrap when bootstrap is not ready"
             )
         if (
-            "Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly."
+            "Parent setup is complete. Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} for the next executable lane."
             not in generated_ticket_lookup
         ):
             raise RuntimeError(
-                "Generated ticket_lookup.ts should foreground split children without marking the parent blocked"
+                "Generated ticket_lookup.ts should foreground split children only after the parent setup work is complete"
+            )
+        if "parentMustFinishPreImplementationSetup" not in generated_ticket_lookup:
+            raise RuntimeError(
+                "Generated ticket_lookup.ts should keep split parents foregrounded until planning proof and plan approval exist"
             )
         if "dependentContinuationAction" not in generated_ticket_lookup:
             raise RuntimeError(
@@ -3955,6 +3964,20 @@ def main() -> int:
             raise RuntimeError(
                 "Generated team leader prompt should be allowed to invoke ticket_create and ticket_reconcile"
             )
+        if (
+            "do not foreground parallel children ahead of missing parent-owned setup proof"
+            not in generated_team_leader
+        ):
+            raise RuntimeError(
+                "Generated team leader prompt should keep split parents foregrounded until their setup proof is complete"
+            )
+        if (
+            "the parent lease is the authoritative lease in sequential mode"
+            not in generated_team_leader
+        ):
+            raise RuntimeError(
+                "Generated team leader prompt should explain the parent-authoritative split-child reconcile lease rule"
+            )
         generated_ticket_execution = (
             full_dest / ".opencode" / "skills" / "ticket-execution" / "SKILL.md"
         ).read_text(encoding="utf-8")
@@ -3982,6 +4005,23 @@ def main() -> int:
         ):
             raise RuntimeError(
                 "Generated ticket-execution skill should encode the coordinator-owned lease model"
+            )
+        if (
+            "keep the parent foregrounded until that setup is complete before activating a parallel child lane"
+            not in generated_ticket_execution
+        ):
+            raise RuntimeError(
+                "Generated ticket-execution skill should keep split parents foregrounded until parent setup is complete"
+            )
+        generated_workflow_doc = (
+            full_dest / "docs" / "process" / "workflow.md"
+        ).read_text(encoding="utf-8")
+        if (
+            "do not foreground a parallel child ahead of missing parent planning proof or missing plan approval"
+            not in generated_workflow_doc
+        ):
+            raise RuntimeError(
+                "Generated workflow docs should document the parent-first split routing rule"
             )
         generated_ticket_creator = next(
             (full_dest / ".opencode" / "agents").glob("*ticket-creator*.md")
@@ -5392,7 +5432,6 @@ def main() -> int:
             env=fake_blender_env,
         )
         make_stack_skill_non_placeholder(legacy_asset_dest)
-        seed_ready_bootstrap(legacy_asset_dest)
         seed_minimal_godot_project(legacy_asset_dest)
         (legacy_asset_dest / "docs" / "spec" / "CANONICAL-BRIEF.md").write_text(
             "\n".join(
@@ -5450,6 +5489,7 @@ def main() -> int:
             ),
             encoding="utf-8",
         )
+        seed_ready_bootstrap(legacy_asset_dest)
         legacy_audit = run_json(
             [
                 sys.executable,
@@ -5532,7 +5572,6 @@ def main() -> int:
             env=fake_blender_env,
         )
         make_stack_skill_non_placeholder(public_legacy_asset_dest)
-        seed_ready_bootstrap(public_legacy_asset_dest)
         seed_minimal_godot_project(public_legacy_asset_dest)
         (public_legacy_asset_dest / "docs" / "spec" / "CANONICAL-BRIEF.md").write_text(
             "\n".join(
@@ -5576,6 +5615,7 @@ def main() -> int:
             ),
             encoding="utf-8",
         )
+        seed_ready_bootstrap(public_legacy_asset_dest)
         run_json(
             [
                 sys.executable,
@@ -7872,6 +7912,110 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_lookup should require a planning artifact before plan_review on a ready planning ticket"
             )
+        split_parent_lookup_dest = workspace / "executed-split-parent-lookup"
+        shutil.copytree(full_dest, split_parent_lookup_dest)
+        seed_ready_bootstrap(split_parent_lookup_dest)
+        split_parent_manifest_path = split_parent_lookup_dest / "tickets" / "manifest.json"
+        split_parent_workflow_path = (
+            split_parent_lookup_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        split_parent_manifest = json.loads(
+            split_parent_manifest_path.read_text(encoding="utf-8")
+        )
+        split_parent_workflow = json.loads(
+            split_parent_workflow_path.read_text(encoding="utf-8")
+        )
+        split_parent_ticket = next(
+            ticket
+            for ticket in split_parent_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        split_child_ticket_id = "EXEC-SPLIT-001"
+        split_parent_manifest["tickets"].append(
+            {
+                "id": split_child_ticket_id,
+                "title": "Synthetic parallel split child",
+                "wave": 1,
+                "lane": "workflow",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "todo",
+                "depends_on": [],
+                "summary": "Synthetic split child used to verify parent-first routing before plan approval.",
+                "acceptance": ["Parent setup stays foregrounded until proof exists."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "split_scope",
+                "split_kind": "parallel_independent",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        split_parent_ticket["follow_up_ticket_ids"] = [split_child_ticket_id]
+        split_parent_workflow["ticket_state"][split_child_ticket_id] = {
+            "approved_plan": False,
+            "reopen_count": 0,
+            "needs_reverification": False,
+        }
+        split_parent_manifest_path.write_text(
+            json.dumps(split_parent_manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        split_parent_workflow_path.write_text(
+            json.dumps(split_parent_workflow, indent=2) + "\n", encoding="utf-8"
+        )
+        split_parent_lookup = run_generated_tool(
+            split_parent_lookup_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if split_parent_lookup["transition_guidance"]["next_action_tool"] != "artifact_write":
+            raise RuntimeError(
+                "ticket_lookup should keep a split parent foregrounded while its planning artifact is still missing"
+            )
+        if split_parent_lookup["transition_guidance"]["recommended_ticket_update"] is not None:
+            raise RuntimeError(
+                "ticket_lookup should not foreground a parallel split child before the parent planning proof exists"
+            )
+        register_current_ticket_artifact(
+            split_parent_lookup_dest,
+            ticket_id="SETUP-001",
+            kind="plan",
+            stage="planning",
+            relative_path=".opencode/state/plans/setup-001-planning-plan.md",
+            summary="Synthetic plan artifact for split-parent routing regression.",
+            content="# Synthetic Plan\n\nParent planning proof exists.\n",
+        )
+        split_parent_manifest = json.loads(
+            split_parent_manifest_path.read_text(encoding="utf-8")
+        )
+        split_parent_ticket = next(
+            ticket
+            for ticket in split_parent_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        split_parent_ticket["stage"] = "plan_review"
+        split_parent_manifest_path.write_text(
+            json.dumps(split_parent_manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        split_parent_plan_review_lookup = run_generated_tool(
+            split_parent_lookup_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if split_parent_plan_review_lookup["transition_guidance"]["next_action_tool"] != "ticket_update":
+            raise RuntimeError(
+                "ticket_lookup should keep the split parent foregrounded for plan approval before activating a parallel child"
+            )
+        if (
+            split_parent_plan_review_lookup["transition_guidance"]["recommended_ticket_update"]
+            != {"ticket_id": "SETUP-001", "stage": "plan_review", "approved_plan": True, "activate": True}
+        ):
+            raise RuntimeError(
+                "ticket_lookup should recommend plan approval on the parent before foregrounding a parallel split child"
+            )
         prebootstrap_claim_result = run_generated_tool(
             executed_lookup_prebootstrap_dest,
             ".opencode/tools/ticket_claim.ts",
@@ -8951,6 +9095,124 @@ def main() -> int:
                 "content": "# Synthetic Implementation\n",
             },
         )
+        split_reconcile_dest = workspace / "split-child-reconcile-source-lease"
+        shutil.copytree(full_dest, split_reconcile_dest)
+        seed_ready_bootstrap(split_reconcile_dest)
+        split_reconcile_manifest_path = split_reconcile_dest / "tickets" / "manifest.json"
+        split_reconcile_workflow_path = (
+            split_reconcile_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        split_reconcile_manifest = json.loads(
+            split_reconcile_manifest_path.read_text(encoding="utf-8")
+        )
+        split_reconcile_workflow = json.loads(
+            split_reconcile_workflow_path.read_text(encoding="utf-8")
+        )
+        split_reconcile_source = next(
+            ticket
+            for ticket in split_reconcile_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        split_reconcile_child_id = "EXEC-RECON-SPLIT"
+        split_reconcile_manifest["tickets"].append(
+            {
+                "id": split_reconcile_child_id,
+                "title": "Synthetic stale split child",
+                "wave": 1,
+                "lane": "workflow",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "todo",
+                "depends_on": [],
+                "summary": "Synthetic stale split child used to verify parent-authoritative reconcile leases.",
+                "acceptance": ["Parent lease can supersede the open split child."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "split_scope",
+                "split_kind": "parallel_independent",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        split_reconcile_source["follow_up_ticket_ids"] = [split_reconcile_child_id]
+        split_reconcile_workflow["ticket_state"][split_reconcile_child_id] = {
+            "approved_plan": False,
+            "reopen_count": 0,
+            "needs_reverification": False,
+        }
+        split_reconcile_manifest_path.write_text(
+            json.dumps(split_reconcile_manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        split_reconcile_workflow_path.write_text(
+            json.dumps(split_reconcile_workflow, indent=2) + "\n", encoding="utf-8"
+        )
+        register_current_ticket_artifact(
+            split_reconcile_dest,
+            ticket_id="SETUP-001",
+            kind="plan",
+            stage="planning",
+            relative_path=".opencode/state/plans/setup-001-planning-plan.md",
+            summary="Synthetic evidence artifact for split-child reconciliation.",
+            content="# Synthetic Plan\n\nCurrent evidence supports superseding the stale child.\n",
+        )
+        run_generated_tool(
+            split_reconcile_dest,
+            ".opencode/tools/ticket_claim.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "owner_agent": "smoke-split-reconcile",
+                "allowed_paths": [".opencode/state", "tickets"],
+                "write_lock": True,
+            },
+        )
+        split_reconcile_args = {
+            "source_ticket_id": "SETUP-001",
+            "target_ticket_id": split_reconcile_child_id,
+            "replacement_source_ticket_id": "SETUP-001",
+            "replacement_source_mode": "split_scope",
+            "evidence_artifact_path": ".opencode/state/plans/setup-001-planning-plan.md",
+            "reason": "Synthetic stale split child should be superseded under the parent lease.",
+            "supersede_target": True,
+        }
+        run_generated_plugin_before(
+            split_reconcile_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "ticket_reconcile",
+            split_reconcile_args,
+        )
+        split_reconcile_result = run_generated_tool(
+            split_reconcile_dest,
+            ".opencode/tools/ticket_reconcile.ts",
+            split_reconcile_args,
+        )
+        if split_reconcile_result["target_ticket_id"] != split_reconcile_child_id:
+            raise RuntimeError(
+                "ticket_reconcile should still target the split child when the parent lease authorizes the mutation"
+            )
+        split_reconciled_manifest = json.loads(
+            split_reconcile_manifest_path.read_text(encoding="utf-8")
+        )
+        split_reconciled_source = next(
+            ticket
+            for ticket in split_reconciled_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        split_reconciled_child = next(
+            ticket
+            for ticket in split_reconciled_manifest["tickets"]
+            if ticket["id"] == split_reconcile_child_id
+        )
+        if split_reconciled_child["resolution_state"] != "superseded":
+            raise RuntimeError(
+                "ticket_reconcile should allow the parent lease to supersede an open split_scope child in sequential mode"
+            )
+        if split_reconcile_child_id in split_reconciled_source.get("follow_up_ticket_ids", []):
+            raise RuntimeError(
+                "ticket_reconcile should remove a superseded split child from the parent follow_up_ticket_ids when the parent lease authorizes the mutation"
+            )
         wildcard_lease_dest = workspace / "wildcard-write-lease"
         shutil.copytree(full_dest, wildcard_lease_dest)
         seed_ready_bootstrap(wildcard_lease_dest)
@@ -9398,6 +9660,7 @@ def main() -> int:
             encoding="utf-8",
         )
         seed_minimal_godot_project(smoke_from_qa_dest)
+        seed_ready_bootstrap(smoke_from_qa_dest)
         smoke_from_qa_command = (
             f"godot4 --headless --path {smoke_from_qa_dest} --quit"
         )
@@ -9606,9 +9869,9 @@ Overall Result: PASS
             )
         godot_release_guard_dest = workspace / "executed-smoke-test-godot-release-guard"
         shutil.copytree(full_dest, godot_release_guard_dest)
-        seed_ready_bootstrap(godot_release_guard_dest)
         seed_godot_android_target(godot_release_guard_dest)
         seed_minimal_godot_project(godot_release_guard_dest)
+        seed_ready_bootstrap(godot_release_guard_dest)
         manifest_path = godot_release_guard_dest / "tickets" / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["tickets"].append(
@@ -10954,6 +11217,10 @@ Overall Result: PASS
             raise RuntimeError(
                 "Managed repair should replace weak generated finish_acceptance_signals with stronger interactive proof text"
             )
+        if "one primary progression path advancing" not in repaired_weak_finish_brief:
+            raise RuntimeError(
+                "Managed repair should strengthen gameplay-facing finish_acceptance_signals beyond generic interaction proof"
+            )
         repaired_weak_finish_manifest = json.loads(
             (weak_finish_dest / "tickets" / "manifest.json").read_text(encoding="utf-8")
         )
@@ -10974,6 +11241,13 @@ Overall Result: PASS
             raise RuntimeError(
                 "Managed repair should strengthen FINISH-VALIDATE-001 acceptance for interactive repos"
             )
+        if not any(
+            "Gameplay finish proof demonstrates" in item
+            for item in repaired_finish_acceptance
+        ):
+            raise RuntimeError(
+                "Managed repair should strengthen FINISH-VALIDATE-001 acceptance with explicit gameplay proof requirements for game repos"
+            )
         weak_finish_post_repair = run_json(
             [sys.executable, str(AUDIT), str(weak_finish_dest), "--format", "json"],
             ROOT,
@@ -10984,6 +11258,70 @@ Overall Result: PASS
         if "FINISH004" in weak_finish_post_codes:
             raise RuntimeError(
                 "FINISH004 should clear after managed repair upgrades the finish contract and finish-validation ticket"
+            )
+        gameplay_finish_claim_dest = workspace / "gameplay-finish-claim-without-proof"
+        shutil.copytree(weak_finish_dest, gameplay_finish_claim_dest)
+        gameplay_finish_manifest_path = (
+            gameplay_finish_claim_dest / "tickets" / "manifest.json"
+        )
+        gameplay_finish_manifest = json.loads(
+            gameplay_finish_manifest_path.read_text(encoding="utf-8")
+        )
+        gameplay_finish_ticket = next(
+            ticket
+            for ticket in gameplay_finish_manifest.get("tickets", [])
+            if isinstance(ticket, dict) and ticket.get("id") == "FINISH-VALIDATE-001"
+        )
+        gameplay_finish_ticket["artifacts"] = [
+            {
+                "kind": "review",
+                "path": ".opencode/state/artifacts/finish-validate-001-closeout.md",
+                "stage": "closeout",
+                "summary": "Synthetic finish proof that still lacks gameplay specifics.",
+                "created_at": "2026-04-16T00:00:00Z",
+                "trust_state": "current",
+            }
+        ]
+        gameplay_finish_manifest_path.write_text(
+            json.dumps(gameplay_finish_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        (
+            gameplay_finish_claim_dest
+            / ".opencode"
+            / "state"
+            / "artifacts"
+            / "finish-validate-001-closeout.md"
+        ).write_text(
+            "\n".join(
+                [
+                    "# Finish Validation",
+                    "",
+                    "- command: `godot4 --headless --path . --quit`",
+                    "- result: PASS",
+                    "",
+                    "Overall Result: PASS",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        start_here_path = gameplay_finish_claim_dest / "START-HERE.md"
+        start_here_path.write_text(
+            start_here_path.read_text(encoding="utf-8")
+            + "\nProduct is finished and ready for continued development.\n",
+            encoding="utf-8",
+        )
+        gameplay_finish_claim_audit = run_json(
+            [sys.executable, str(AUDIT), str(gameplay_finish_claim_dest), "--format", "json"],
+            ROOT,
+        )
+        gameplay_finish_claim_codes = {
+            finding["code"] for finding in gameplay_finish_claim_audit.get("findings", [])
+        }
+        if "FINISH005" not in gameplay_finish_claim_codes:
+            raise RuntimeError(
+                "Gameplay repos that claim completion without explicit gameplay-proof artifacts should emit FINISH005"
             )
 
         ref_scan_dest = workspace / "reference-scan-exclusion"

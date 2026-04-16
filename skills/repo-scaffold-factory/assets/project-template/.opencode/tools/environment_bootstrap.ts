@@ -7,6 +7,7 @@ import { join } from "node:path"
 import {
 	computeBootstrapFingerprint,
 	defaultBootstrapProofPath,
+	describeBootstrapFingerprintInputs,
 	findExistingRepoVenvExecutable,
 	getTicket,
 	loadArtifactRegistry,
@@ -455,6 +456,7 @@ function isAdvisoryBootstrapFailure(command: CommandSpec, result: CommandResult)
 function renderArtifact(
 	ticketId: string,
 	fingerprint: string,
+	fingerprintInputs: Awaited<ReturnType<typeof describeBootstrapFingerprintInputs>>,
 	detections: StackDetectionResult[],
 	commands: CommandResult[],
 	blockers: BootstrapBlocker[],
@@ -481,8 +483,14 @@ function renderArtifact(
 		? blockers.map((item) => `- ${item.executable}: ${item.reason}${item.install_command ? ` | install_command: ${item.install_command}` : ""}`).join("\n")
 		: "- None"
 	const warningLines = warnings.length > 0 ? warnings.map((item) => `- ${item}`).join("\n") : "- None"
+	const fingerprintInputLines = [
+		`- input_files: ${fingerprintInputs.input_files.join(", ") || "none"}`,
+		...Object.entries(fingerprintInputs.repo_surfaces).map(([key, value]) => `- repo_surface.${key}: ${value ? "present" : "missing"}`),
+		...Object.entries(fingerprintInputs.env).map(([key, value]) => `- env.${key}: ${value}`),
+		...Object.entries(fingerprintInputs.host_paths).map(([key, value]) => `- host_path.${key}: ${value}`),
+	].join("\n")
 
-	return `# Environment Bootstrap\n\n## Ticket\n\n- ${ticketId}\n\n## Overall Result\n\nOverall Result: ${passed ? "PASS" : "FAIL"}\n\n## Environment Fingerprint\n\n- ${fingerprint}\n\n## Stack Detections\n\n${detectionSection}\n\n## Missing Prerequisites\n\n${prerequisites}\n\n## Blockers\n\n${blockerLines}\n\n## Warnings\n\n${warningLines}\n\n## Notes\n\n${note}\n\n## Commands\n\n${commandSections}\n`
+	return `# Environment Bootstrap\n\n## Ticket\n\n- ${ticketId}\n\n## Overall Result\n\nOverall Result: ${passed ? "PASS" : "FAIL"}\n\n## Environment Fingerprint\n\n- ${fingerprint}\n\n## Fingerprint Inputs\n\n${fingerprintInputLines}\n\n## Stack Detections\n\n${detectionSection}\n\n## Missing Prerequisites\n\n${prerequisites}\n\n## Blockers\n\n${blockerLines}\n\n## Warnings\n\n${warningLines}\n\n## Notes\n\n${note}\n\n## Commands\n\n${commandSections}\n`
 }
 
 async function detectPythonCommand(root: string): Promise<string | undefined> {
@@ -982,8 +990,9 @@ export default tool({
 			}
 		}
 
-		const fingerprint = await computeBootstrapFingerprint(root)
-		const blockers = detection.blockers
+			const fingerprintInputs = await describeBootstrapFingerprintInputs(root)
+			const fingerprint = await computeBootstrapFingerprint(root)
+			const blockers = detection.blockers
 		if (missingPrerequisites.size > 0) {
 			passed = false
 		}
@@ -999,7 +1008,7 @@ export default tool({
 							? "Dependency installation and bootstrap verification completed successfully in bootstrap-recovery mode."
 							: "Dependency installation and bootstrap verification completed successfully."
 						: "Bootstrap stopped on the first failing installation or readiness command. Inspect the captured output and fix the prerequisite or dependency error before smoke tests."
-		const body = renderArtifact(ticket.id, fingerprint, detection.detections, results, blockers, warnings, [...missingPrerequisites], passed, note)
+			const body = renderArtifact(ticket.id, fingerprint, fingerprintInputs, detection.detections, results, blockers, warnings, [...missingPrerequisites], passed, note)
 		const canonicalPath = normalizeRepoPath(defaultBootstrapProofPath(ticket.id))
 		await writeText(canonicalPath, body)
 
@@ -1028,8 +1037,9 @@ export default tool({
 				bootstrap_status: workflow.bootstrap.status,
 				recovery_mode: args.recovery_mode === true,
 				proof_artifact: artifact.path,
-				environment_fingerprint: fingerprint,
-				host_surface_classification: hostSurfaceClassification,
+					environment_fingerprint: fingerprint,
+					fingerprint_inputs: fingerprintInputs,
+					host_surface_classification: hostSurfaceClassification,
 				missing_prerequisites: [...missingPrerequisites],
 				blockers,
 				warnings,

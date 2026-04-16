@@ -14,6 +14,7 @@ This ADR freezes the package authority map for the Scafforge reliability re-arch
 | --- | --- | --- |
 | Diagnosis disposition | `scafforge-audit` | Classifies findings, emits the authoritative disposition bundle, and owns follow-up routing decisions. |
 | Repo mutation | Generated runtime workflow layer | Mutates canonical ticket, workflow, artifact, and restart-surface state. Package-side repair and pivot surfaces may invoke it, but they do not redefine it. |
+| Managed repair execution | `scafforge-repair` | Applies safe package-managed repairs, refreshes generated workflow surfaces, and delegates canonical state mutation back through the generated runtime workflow layer. |
 | Pivot-state persistence | `scafforge-pivot` | Owns `.opencode/meta/pivot-state.json` persistence and bounded pivot classification truth. |
 | Restart publication | `handoff-brief` | Publishes derived restart surfaces only after the verified final snapshot is available. |
 | Contract alignment | `agent-prompt-engineering` | Hardens the contract surfaces that keep prompts, workflow docs, and generated behavior aligned to the same state machine. |

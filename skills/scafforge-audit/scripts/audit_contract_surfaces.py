@@ -1037,6 +1037,10 @@ INTERACTIVE_FINISH_PROOF_ACCEPTANCE = (
     "Finish proof includes explicit user-observable interaction evidence (controls/input, visible gameplay state or feedback, "
     "and the brief-specific progression or content surfaces), not just export/install success."
 )
+GAMEPLAY_FINISH_PROOF_ACCEPTANCE = (
+    "Gameplay finish proof demonstrates the current build's core loop starts, one primary progression path advances, "
+    "a fail-state or critical end-state is reachable, and any player-facing state reporting required by the shipped UI is exercised with current evidence."
+)
 WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
     {
         "release-facing milestones must keep the toy-box flow coherent, maintain immediate touch feedback, and ensure any shipped visual or audio content matches the toddler-safe direction recorded in this brief.",
@@ -1088,6 +1092,27 @@ def _consumer_repo_requires_interactive_finish_proof(
     )
 
 
+def _consumer_repo_requires_gameplay_finish_proof(
+    root: Path, ctx: ContractSurfaceAuditContext, brief_text: str
+) -> bool:
+    lowered = " ".join(brief_text.lower().split())
+    if (root / "project.godot").exists():
+        return True
+    provenance_path = root / ".opencode" / "meta" / "bootstrap-provenance.json"
+    provenance = ctx.read_json(provenance_path)
+    if isinstance(provenance, dict):
+        stack = str(provenance.get("stack_label", "")).lower()
+        deliverable = str(provenance.get("deliverable_kind", "")).lower()
+        if any(
+            marker in stack or marker in deliverable
+            for marker in ("godot", "game", "playable", "toddler", "toy")
+        ):
+            return True
+    return any(
+        marker in lowered for marker in ("godot", "game", "playable", "toddler", "toy")
+    )
+
+
 def _ticket_acceptance_lines(ticket: dict[str, Any] | None) -> list[str]:
     if not isinstance(ticket, dict):
         return []
@@ -1096,6 +1121,39 @@ def _ticket_acceptance_lines(ticket: dict[str, Any] | None) -> list[str]:
         for item in ticket.get("acceptance", [])
         if isinstance(item, str) and str(item).strip()
     ]
+
+
+def _current_ticket_artifact_paths(root: Path, ticket: dict[str, Any] | None) -> list[Path]:
+    if not isinstance(ticket, dict):
+        return []
+    paths: list[Path] = []
+    for artifact in ticket.get("artifacts", []):
+        if not isinstance(artifact, dict):
+            continue
+        if str(artifact.get("trust_state", "current")).strip() != "current":
+            continue
+        artifact_path = str(artifact.get("path", "")).strip()
+        if not artifact_path:
+            continue
+        paths.append(root / artifact_path)
+    return paths
+
+
+def _gameplay_finish_artifact_gaps(root: Path, ctx: ContractSurfaceAuditContext, artifact_paths: list[Path]) -> list[str]:
+    combined = "\n".join(ctx.read_text(path).lower() for path in artifact_paths if path.exists())
+    if not combined.strip():
+        return ["Current FINISH-VALIDATE-001 artifacts do not contain readable gameplay proof content."]
+    checks = (
+        ("controls/input", ("controls", "input", "touch", "keyboard", "gamepad")),
+        ("progression", ("progression", "advance", "wave", "level", "objective", "checkpoint", "score", "loop")),
+        ("fail-state or critical end-state", ("fail-state", "failure", "game over", "lose", "death", "victory", "win", "end-state")),
+        ("player-facing state reporting", ("hud", "ui", "score", "wave", "health", "timer", "feedback", "state reporting")),
+    )
+    gaps: list[str] = []
+    for label, markers in checks:
+        if not any(marker in combined for marker in markers):
+            gaps.append(f"Current FINISH-VALIDATE-001 artifacts do not mention {label} proof.")
+    return gaps
 
 
 def _manifest_tickets(root: Path, ctx: ContractSurfaceAuditContext) -> list[dict[str, Any]]:
@@ -1244,6 +1302,14 @@ def audit_product_finish_contract(root: Path, findings: list[Finding], ctx: Cont
             finish_quality_evidence.append(
                 "tickets/manifest.json has FINISH-VALIDATE-001, but its acceptance criteria do not require explicit user-observable interaction evidence."
             )
+        if (
+            _consumer_repo_requires_gameplay_finish_proof(root, ctx, brief_text)
+            and finish_validation_ticket is not None
+            and GAMEPLAY_FINISH_PROOF_ACCEPTANCE not in finish_validation_acceptance
+        ):
+            finish_quality_evidence.append(
+                "tickets/manifest.json has FINISH-VALIDATE-001, but its acceptance criteria do not require explicit gameplay proof for loop, progression, end-state, and player-facing state reporting."
+            )
         if finish_quality_evidence:
             ctx.add_finding(
                 findings,
@@ -1259,6 +1325,43 @@ def audit_product_finish_contract(root: Path, findings: list[Finding], ctx: Cont
                 ),
             )
 
+    repo_claims_completion = _repo_claims_completion(root, ctx)
+    if repo_claims_completion and _consumer_repo_requires_gameplay_finish_proof(root, ctx, brief_text):
+        gameplay_artifact_paths = _current_ticket_artifact_paths(root, finish_validation_ticket)
+        if not gameplay_artifact_paths:
+            ctx.add_finding(
+                findings,
+                Finding(
+                    code="FINISH005",
+                    severity="error",
+                    problem="Gameplay-oriented repo claims completion without a current finish-validation artifact that proves the shipped gameplay loop.",
+                    root_cause="The repo can still look complete from restart state alone because the finish-validation lane does not currently publish a durable artifact showing that gameplay proof actually happened.",
+                    files=[brief_rel, "tickets/manifest.json"],
+                    safer_pattern="Before a gameplay repo claims completion, keep FINISH-VALIDATE-001 current and publish an artifact that records controls/input proof, progression proof, fail-state or end-state proof, and any player-facing state reporting exercised during validation.",
+                    evidence=[
+                        "Repo claims completion or ready state.",
+                        "FINISH-VALIDATE-001 has no current artifact proving gameplay-level finish validation.",
+                    ],
+                    provenance="script",
+                ),
+            )
+        else:
+            gameplay_gaps = _gameplay_finish_artifact_gaps(root, ctx, gameplay_artifact_paths)
+            if gameplay_gaps:
+                ctx.add_finding(
+                    findings,
+                    Finding(
+                        code="FINISH005",
+                        severity="error",
+                        problem="Gameplay-oriented repo claims completion, but the current finish-validation artifact does not prove the shipped gameplay loop in user-facing terms.",
+                        root_cause="The repo recorded finish validation, but the published evidence still stops short of proving that a real gameplay path, end-state, and player-facing state reporting were exercised on the current build.",
+                        files=[brief_rel, "tickets/manifest.json", *[ctx.normalize_path(path, root) for path in gameplay_artifact_paths if path.exists()]],
+                        safer_pattern="Keep FINISH-VALIDATE-001 current with artifact evidence that names controls/input exercised, one primary progression path advanced, a fail-state or critical end-state reached, and the player-facing state reporting checked on the current build.",
+                        evidence=gameplay_gaps[:4],
+                        provenance="script",
+                    ),
+                )
+
     if _finish_contract_allows_placeholders(brief_text):
         return
 
@@ -1266,7 +1369,7 @@ def audit_product_finish_contract(root: Path, findings: list[Finding], ctx: Cont
     if not open_finish:
         return
 
-    if not _repo_claims_completion(root, ctx):
+    if not repo_claims_completion:
         return
 
     ctx.add_finding(

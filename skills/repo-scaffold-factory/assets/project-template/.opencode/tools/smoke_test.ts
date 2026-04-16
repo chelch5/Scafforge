@@ -579,7 +579,8 @@ function isConfigurationErrorOutput(output: string): boolean {
 }
 
 function isGodotFatalDiagnosticOutput(output: string): boolean {
-  return /SCRIPT ERROR:.*(?:not declared in the current scope|not found in base self)/i.test(output)
+  return /SCRIPT ERROR:.*(?:not declared in the current scope|not found in base self|could not parse global class|could not resolve class)/i.test(output)
+    || /Parse Error:\s*(?:Could not parse global class|Could not resolve class)/i.test(output)
     || /Failed to load script "res:\/\//i.test(output)
 }
 
@@ -595,7 +596,7 @@ function classifyCommandFailure(args: {
   if (args.missingExecutable) return "missing_executable"
   if (args.blockedByPermissions) return "permission_restriction"
   if (args.exitCode === 0) {
-    if (isGodotFatalDiagnosticOutput(output)) return "syntax_error"
+    if (isGodotFatalDiagnosticOutput(output) || isSyntaxErrorOutput(output)) return "syntax_error"
     return undefined
   }
   if (isSyntaxErrorOutput(output)) return "syntax_error"

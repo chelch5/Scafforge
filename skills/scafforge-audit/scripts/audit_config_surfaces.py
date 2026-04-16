@@ -14,6 +14,7 @@ Finding codes emitted:
   CONFIG011  blender_agent enabled for a non-Blender asset route
   CONFIG012  blender_agent disabled for a Blender-required asset route
   CONFIG013  asset route metadata drift against the canonical finish contract
+  CONFIG014  package-side audit helper failed to load
 """
 
 from __future__ import annotations
@@ -69,14 +70,55 @@ def _load_module(name: str, path: Path):
     return module
 
 
-ASSET_PIPELINE_INIT = _load_module(
+def _load_module_safe(name: str, path: Path) -> tuple[Any | None, Exception | None]:
+    try:
+        return _load_module(name, path), None
+    except Exception as exc:  # pragma: no cover - surfaced through audit entrypoints
+        return None, exc
+
+
+ASSET_PIPELINE_INIT, ASSET_PIPELINE_INIT_ERROR = _load_module_safe(
     "scafforge_asset_pipeline_init_for_audit",
     ASSET_PIPELINE_INIT_PATH,
 )
-ANDROID_SCAFFOLD = _load_module(
+ANDROID_SCAFFOLD, ANDROID_SCAFFOLD_ERROR = _load_module_safe(
     "scafforge_android_scaffold_for_audit",
     ANDROID_SCAFFOLD_PATH,
 )
+
+
+def _record_module_load_failures(findings: list[Finding]) -> None:
+    for path, error in (
+        (ASSET_PIPELINE_INIT_PATH, ASSET_PIPELINE_INIT_ERROR),
+        (ANDROID_SCAFFOLD_PATH, ANDROID_SCAFFOLD_ERROR),
+    ):
+        if error is None:
+            continue
+        findings.append(Finding(
+            code="CONFIG014",
+            severity="error",
+            problem="scafforge-audit could not load a required package-side helper module.",
+            root_cause="A package-side audit helper is missing or contains a runtime or syntax error, so config-surface diagnosis would otherwise crash before emitting findings.",
+            files=[str(path)],
+            safer_pattern="Catch package-helper load failures, emit an explicit package-owned finding, and stop the affected audit branch cleanly instead of raising during module import.",
+            evidence=[f"{path}: {error}"],
+            remediation_action="package_work",
+            remediation_target=path.name,
+        ))
+
+
+def _repo_declares_godot_android(repo_root: Path) -> bool:
+    if ANDROID_SCAFFOLD is not None:
+        return ANDROID_SCAFFOLD.repo_declares_godot_android(repo_root)
+    brief_text = _read_text(repo_root / "docs" / "spec" / "CANONICAL-BRIEF.md").lower()
+    return (
+        (repo_root / "project.godot").exists()
+        and (
+            (repo_root / "export_presets.cfg").exists()
+            or (repo_root / "android").exists()
+            or "android" in brief_text
+        )
+    )
 
 
 def _strip_jsonc_comments(text: str) -> str:
@@ -174,7 +216,7 @@ def _infer_stack_label(repo_root: Path, provenance: dict[str, Any], brief_text: 
     if stack_label and stack_label != "framework-agnostic":
         return stack_label
     lowered = brief_text.lower()
-    if ANDROID_SCAFFOLD.repo_declares_godot_android(repo_root):
+    if _repo_declares_godot_android(repo_root):
         if any(token in lowered for token in ("3d", "blender", "low-poly", "low poly", ".glb")):
             return "godot-3d-android-game"
         if any(token in lowered for token in ("2d", "sprite", "tilemap", "shader")):
@@ -220,7 +262,9 @@ def _primary_routes_from_pipeline(pipeline: dict[str, Any]) -> dict[str, str]:
 
 
 def _asset_pipeline_findings(root: Path, config: dict[str, Any], findings: list[Finding]) -> None:
-    if not ANDROID_SCAFFOLD.repo_declares_godot_android(root):
+    if ASSET_PIPELINE_INIT is None:
+        return
+    if not _repo_declares_godot_android(root):
         return
 
     stack_label, finish_contract = _effective_finish_contract(root)
@@ -340,6 +384,7 @@ def _asset_pipeline_findings(root: Path, config: dict[str, Any], findings: list[
 
 
 def run_config_surface_audits(root: Path, findings: list[Finding], ctx: ConfigSurfaceAuditContext) -> None:
+    _record_module_load_failures(findings)
     config = _load_opencode_config(root)
     config_file = "opencode.jsonc"
 

@@ -65,6 +65,10 @@ INTERACTIVE_FINISH_PROOF_ACCEPTANCE = (
     "Finish proof includes explicit user-observable interaction evidence (controls/input, visible gameplay state or feedback, "
     "and the brief-specific progression or content surfaces), not just export/install success."
 )
+GAMEPLAY_FINISH_PROOF_ACCEPTANCE = (
+    "Gameplay finish proof demonstrates the current build's core loop starts, one primary progression path advances, "
+    "a fail-state or critical end-state is reachable, and any player-facing state reporting required by the shipped UI is exercised with current evidence."
+)
 WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
     {
         "release-facing milestones must keep the toy-box flow coherent, maintain immediate touch feedback, and ensure any shipped visual or audio content matches the toddler-safe direction recorded in this brief.",
@@ -525,7 +529,8 @@ def recommended_interactive_finish_signals(*, stack_label: str, deliverable_kind
     if any(marker in lowered for marker in ("game", "godot", "playable")):
         return (
             "Release-facing milestones must prove a playable shipped loop on current builds with working controls/input, "
-            "visible gameplay state or progression feedback, and the brief-specific user-facing surfaces beyond export success."
+            "one primary progression path advancing, a fail-state or critical end-state becoming reachable, and visible gameplay "
+            "state or progression feedback beyond export success."
         )
     return (
         "Release-facing milestones must prove the shipped interaction flow works on current builds with responsive input, "
@@ -551,8 +556,20 @@ def normalize_finish_acceptance_signals(
     return finish_acceptance_signals
 
 
+def gameplay_finish_proof_required(
+    *, stack_label: str, deliverable_kind: str, finish_acceptance_signals: str
+) -> bool:
+    lowered = _normalize_finish_contract_value(
+        f"{stack_label} {deliverable_kind} {finish_acceptance_signals}"
+    )
+    return any(marker in lowered for marker in ("game", "godot", "playable", "toddler", "toy"))
+
+
 def build_finish_validation_acceptance(
-    *, finish_acceptance_signals: str, interactive_required: bool
+    *,
+    finish_acceptance_signals: str,
+    interactive_required: bool,
+    gameplay_required: bool,
 ) -> list[str]:
     acceptance = [
         f"Finish proof artifact explicitly maps current evidence to the declared acceptance signals: {finish_acceptance_signals}",
@@ -561,6 +578,8 @@ def build_finish_validation_acceptance(
     ]
     if interactive_required:
         acceptance.insert(1, INTERACTIVE_FINISH_PROOF_ACCEPTANCE)
+    if gameplay_required:
+        acceptance.insert(2 if interactive_required else 1, GAMEPLAY_FINISH_PROOF_ACCEPTANCE)
     return acceptance
 
 
@@ -936,6 +955,11 @@ def ensure_finish_validation_lane(
             "acceptance": build_finish_validation_acceptance(
                 finish_acceptance_signals=finish_acceptance_signals,
                 interactive_required=interactive_finish_proof_required(
+                    stack_label=stack_label,
+                    deliverable_kind=deliverable_kind,
+                    finish_acceptance_signals=finish_acceptance_signals,
+                ),
+                gameplay_required=gameplay_finish_proof_required(
                     stack_label=stack_label,
                     deliverable_kind=deliverable_kind,
                     finish_acceptance_signals=finish_acceptance_signals,

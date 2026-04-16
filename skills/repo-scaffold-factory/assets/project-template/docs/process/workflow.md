@@ -63,8 +63,9 @@ Rules:
 - use `ticket_reverify` to restore trust on a historical ticket after current backlog-verification or follow-up evidence exists; this trust-restoration path is allowed on closed done tickets and on reopened historical tickets when current evidence proves the reopened defect no longer reproduces
 - create migration, remediation, or reverification follow-up tickets only through the guarded `ticket_create` tool and only from current registered evidence
 - use `ticket_create(source_mode=split_scope)` when an open or reopened parent ticket needs planned child decomposition; do not encode open-parent splits as `net_new_scope` or `post_completion_issue`
-- keep split parents open and non-foreground while their child lanes are active; do not mark an earlier ticket blocked just because later split children now carry the work
+- keep split parents open while their child lanes are active, but do not foreground a parallel child ahead of missing parent planning proof or missing plan approval; do not mark an earlier ticket blocked just because later split children now carry the work
 - use `ticket_reconcile` when fresh evidence proves an existing follow-up graph is stale or contradictory; pass the authoritative owner as `source_ticket_id` / `replacement_source_ticket_id` and the stale duplicate or child as `target_ticket_id`; when the stale ticket should disappear entirely, set `supersede_target: true` so reconciliation also closes that target as superseded; do not force no-op closeout artifacts or hand-edit `tickets/manifest.json`
+- when `ticket_reconcile` supersedes or relinks an open `split_scope` child from its current parent, the parent lease is sufficient authority for that mutation in sequential mode; do not require an impossible dual-lease claim on both parent and child
 - treat post-audit and post-repair follow-up as a first-class workflow path when diagnosis or repair work identifies concrete next tickets
 - treat `repair_follow_on.outcome == managed_blocked` as the fail-closed gate; `source_follow_up` and truthful `pending_process_verification` remain visible but do not by themselves stop ordinary active-ticket lifecycle work
 

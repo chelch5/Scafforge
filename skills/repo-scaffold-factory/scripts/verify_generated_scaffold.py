@@ -13,7 +13,7 @@ from android_scaffold import has_managed_android_support_surface, repo_declares_
 
 SHARED_VERIFIER_PATH = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts" / "shared_verifier.py"
 SHARED_TYPES_PATH = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts" / "shared_verifier_types.py"
-TEXT_SUFFIXES = {".md", ".json", ".jsonc", ".ts", ".js", ".txt", ".yaml", ".yml"}
+TEXT_SUFFIXES = {".md", ".json", ".jsonc", ".ts", ".js", ".mjs", ".cjs", ".txt", ".yaml", ".yml", ".cfg"}
 PLACEHOLDER_PATTERN = re.compile(r"__[A-Z0-9_]+__")
 
 

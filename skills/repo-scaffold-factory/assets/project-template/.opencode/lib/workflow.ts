@@ -1,6 +1,8 @@
+import { existsSync } from "node:fs"
 import { appendFile, copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { dirname, join, relative, resolve } from "node:path"
 import { createHash } from "node:crypto"
+import { homedir } from "node:os"
 
 export type OverlapRisk = "low" | "medium" | "high"
 export type ParallelMode = "parallel-lanes" | "sequential"
@@ -331,7 +333,7 @@ const REMEDIATION_REVIEW_COMMAND_BLOCK_PATTERN = /```(?:bash|sh|shell|console|te
 const REMEDIATION_REVIEW_COMMAND_SUMMARY_TABLE_PATTERN = /^\|\s*#\s*\|\s*Command\s*\|\s*Exit Code\s*\|\s*Result\s*\|/im
 const REMEDIATION_REVIEW_OUTPUT_HEADING_PATTERN = /(?:raw(?:\s+command)?\s+output|raw\s+output|command\s+output|raw\s+stdout|raw\s+stderr|stdout|stderr)(?:\s*\([^)]*\))?/i
 const REMEDIATION_REVIEW_INLINE_OUTPUT_PATTERN = /(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:raw(?:\s+command)?\s+output|raw\s+output|command\s+output|raw\s+stdout|raw\s+stderr|stdout|stderr)(?:\s*\([^)]*\))?(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:raw(?:\s+command)?\s+output|raw\s+output|command\s+output|raw\s+stdout|raw\s+stderr|stdout|stderr)(?:\s*\([^)]*\))?(?:\*\*|__)?:)/i
-const REMEDIATION_REVIEW_RESULT_PATTERN = /(?:(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result):(?:\*\*|__)?)\s*(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?|(?:^|\n)#{1,6}\s*(?:overall\s+result|overall\s+verdict|review\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result|blocker\s+or\s+approval\s+signal)\s*(?:\r?\n\s*)+(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?)/i
+const REMEDIATION_REVIEW_RESULT_PATTERN = /(?:(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result):(?:\*\*|__)?)\s*(?:\*\*|__|`|[✅❌✔✖]\s*)*(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?|(?:^|\n)#{1,6}\s*(?:overall\s+result|overall\s+verdict|review\s+verdict|verdict|result|post-fix\s+result|pass\/fail\s+result|blocker\s+or\s+approval\s+signal)\s*(?:\r?\n\s*)+(?:\*\*|__|`|[✅❌✔✖]\s*)*(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?)/i
 const CODE_BLOCK_PATTERN = /```(?:[^\n]*)\n([\s\S]*?)```/g
 
 export function rootPath(): string { return process.cwd() }
@@ -1067,10 +1069,34 @@ type ArtifactMatcher = { kind?: string; stage?: string; trust_state?: ArtifactTr
 type ArtifactRegistrationSpec = { ticket: Ticket; registry: ArtifactRegistry; source_path: string; kind: string; stage: string; summary?: string }
 
 const BOOTSTRAP_INPUT_FILES = [
+  "project.godot", "export_presets.cfg", "opencode.jsonc",
   "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb",
   "pyproject.toml", "requirements.txt", "requirements-dev.txt", "poetry.lock", "Pipfile", "Pipfile.lock", "uv.lock",
   "Cargo.toml", "Cargo.lock", "go.mod", "go.sum", "Makefile", "pytest.ini", "setup.py", "setup.cfg",
+  "android/scafforge-managed.json",
+  ".opencode/meta/asset-pipeline-bootstrap.json",
 ]
+const BOOTSTRAP_ENVIRONMENT_KEYS = [
+  "JAVA_HOME",
+  "ANDROID_HOME",
+  "ANDROID_SDK_ROOT",
+  "BLENDER_MCP_BLENDER_EXECUTABLE",
+] as const
+const BOOTSTRAP_HOST_PATH_CANDIDATES = {
+  android_debug_keystore: [join(homedir(), ".android", "debug.keystore")],
+  godot_export_templates: [join(homedir(), ".local", "share", "godot", "export_templates")],
+  android_sdk_default: [
+    join(homedir(), "Android", "Sdk"),
+    join(homedir(), "Library", "Android", "sdk"),
+    join(homedir(), "AppData", "Local", "Android", "Sdk"),
+  ],
+} as const
+type BootstrapFingerprintInputs = {
+  input_files: string[]
+  repo_surfaces: Record<string, boolean>
+  env: Record<string, string>
+  host_paths: Record<string, string>
+}
 
 function matchesArtifact(artifact: Artifact, options: ArtifactMatcher): boolean {
   if (options.kind && artifact.kind !== options.kind) return false
@@ -1429,9 +1455,37 @@ export async function listBootstrapInputs(root = rootPath()): Promise<string[]> 
   }
   return hits.sort()
 }
+function describeBootstrapHostPaths(): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [label, candidates] of Object.entries(BOOTSTRAP_HOST_PATH_CANDIDATES)) {
+    const existing = candidates.find((candidate) => existsSync(candidate))
+    result[label] = existing ?? "<missing>"
+  }
+  return result
+}
+export async function describeBootstrapFingerprintInputs(root = rootPath()): Promise<BootstrapFingerprintInputs> {
+  const input_files = await listBootstrapInputs(root)
+  return {
+    input_files,
+    repo_surfaces: {
+      project_godot: existsSync(join(root, "project.godot")),
+      export_presets: existsSync(join(root, "export_presets.cfg")),
+      android_support_surface: existsSync(join(root, "android", "scafforge-managed.json")),
+      asset_pipeline_metadata: existsSync(join(root, ".opencode", "meta", "asset-pipeline-bootstrap.json")),
+      opencode_config: existsSync(join(root, "opencode.jsonc")),
+    },
+    env: Object.fromEntries(
+      BOOTSTRAP_ENVIRONMENT_KEYS.map((key) => [key, normalizeNullableString(process.env[key]) ?? "<unset>"]),
+    ),
+    host_paths: describeBootstrapHostPaths(),
+  }
+}
 export async function computeBootstrapFingerprint(root = rootPath()): Promise<string> {
   const hash = createHash("sha256")
-  for (const relative of await listBootstrapInputs(root)) {
+  const fingerprintInputs = await describeBootstrapFingerprintInputs(root)
+  hash.update(JSON.stringify(fingerprintInputs))
+  hash.update("\u0000")
+  for (const relative of fingerprintInputs.input_files) {
     hash.update(relative)
     hash.update("\u0000")
     hash.update(await readFile(join(root, relative)).catch(() => Buffer.from("")))

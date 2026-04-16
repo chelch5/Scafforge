@@ -39,6 +39,16 @@ import {
   validateSmokeTestArtifactEvidence,
 } from "../lib/workflow"
 
+function parentMustFinishPreImplementationSetup(
+  ticket: ReturnType<typeof getTicket>,
+  approvedPlan: boolean,
+) {
+  if (ticket.status === "done") return false
+  if (ticket.stage === "planning") return true
+  if (ticket.stage === "plan_review" && !approvedPlan) return true
+  return false
+}
+
 async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, workflow: Awaited<ReturnType<typeof loadWorkflowState>>) {
   const manifest = await loadManifest()
   const blocker = validateLifecycleStageStatus(ticket.stage, ticket.status)
@@ -115,21 +125,34 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
     }
   }
 
-  // parallel_independent children run alongside the parent — foreground the child so it
-  // advances first.  sequential_dependent children must wait for the parent's own work to
-  // complete, so the parent stays in the foreground and we emit a warning instead.
+  // parallel_independent children can run alongside the parent only after the parent has
+  // completed its own pre-implementation setup. Weak models were repeatedly misrouted when
+  // split children preempted a parent that still lacked a planning artifact or recorded
+  // plan approval, so keep the parent foregrounded until that setup is complete.
+  if (parallelSplitChildren.length > 0 && parentMustFinishPreImplementationSetup(ticket, approvedPlan)) {
+    const foregroundChild = parallelSplitChildren[0]
+    base.warnings.push(
+      `Parallel split child ticket ${foregroundChild.id} is ready, but ${ticket.id} must finish its own ${ticket.stage} obligations before the child becomes the foreground lane.`,
+    )
+  }
+
+  // parallel_independent children run alongside the parent after the parent has completed
+  // its own pre-implementation setup. sequential_dependent children must wait for the
+  // parent's own work to complete, so the parent stays in the foreground and we emit a warning instead.
   if (parallelSplitChildren.length > 0 && ticket.status !== "done") {
     const foregroundChild = parallelSplitChildren[0]
-    return {
-      ...base,
-      next_allowed_stages: [foregroundChild.stage],
-      required_artifacts: [],
-      next_action_kind: "ticket_update",
-      next_action_tool: "ticket_update",
-      delegate_to_agent: null,
-      required_owner: "team-leader",
-        recommended_action: `Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} instead of advancing the parent lane directly.`,
-      recommended_ticket_update: { ticket_id: foregroundChild.id, activate: true },
+    if (!parentMustFinishPreImplementationSetup(ticket, approvedPlan)) {
+      return {
+        ...base,
+        next_allowed_stages: [foregroundChild.stage],
+        required_artifacts: [],
+        next_action_kind: "ticket_update",
+        next_action_tool: "ticket_update",
+        delegate_to_agent: null,
+        required_owner: "team-leader",
+        recommended_action: `Parent setup is complete. Keep ${ticket.id} open as a split parent and foreground child ticket ${foregroundChild.id} for the next executable lane.`,
+        recommended_ticket_update: { ticket_id: foregroundChild.id, activate: true },
+      }
     }
   }
 

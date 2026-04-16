@@ -550,6 +550,54 @@ def audit_smoke_test_contract(root: Path, findings: list[Finding], ctx: Executio
     )
 
 
+def audit_bootstrap_freshness_contract(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
+    workflow_path = root / ".opencode" / "state" / "workflow-state.json"
+    workflow = ctx.read_json(workflow_path)
+    if not isinstance(workflow, dict):
+        return
+    bootstrap = workflow.get("bootstrap")
+    if not isinstance(bootstrap, dict):
+        return
+    fingerprint = str(bootstrap.get("environment_fingerprint", "")).strip()
+    if fingerprint != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855":
+        return
+    repo_surfaces = [
+        path for path in (
+            root / "project.godot",
+            root / "export_presets.cfg",
+            root / "opencode.jsonc",
+            root / ".opencode" / "meta" / "bootstrap-provenance.json",
+        )
+        if path.exists()
+    ]
+    if not repo_surfaces:
+        return
+    evidence = [
+        f"{ctx.normalize_path(workflow_path, root)} records bootstrap.environment_fingerprint = {fingerprint}.",
+        "The recorded fingerprint is the empty-hash sentinel, which means bootstrap freshness was computed from no meaningful inputs.",
+    ]
+    proof_artifact = bootstrap.get("proof_artifact")
+    if isinstance(proof_artifact, str) and proof_artifact.strip():
+        evidence.append(f"Latest bootstrap proof artifact: {proof_artifact.strip()}.")
+    evidence.extend(
+        f"Repo surface present despite empty bootstrap fingerprint: {ctx.normalize_path(path, root)}"
+        for path in repo_surfaces[:4]
+    )
+    ctx.add_finding(
+        findings,
+        Finding(
+            code="BOOT003",
+            severity="error",
+            problem="The generated bootstrap freshness contract cannot detect host drift for this repo.",
+            root_cause="The recorded bootstrap fingerprint is the empty-hash sentinel even though the repo exposes meaningful bootstrap surfaces. That means the generated workflow was hashing an incomplete input set and can leave bootstrap status stale after moving machines or fixing host prerequisites.",
+            files=[ctx.normalize_path(workflow_path, root), *[ctx.normalize_path(path, root) for path in repo_surfaces[:3]]],
+            safer_pattern="Hash stack-sensitive repo surfaces plus host-side prerequisite signals so bootstrap becomes stale when the machine setup changes, then rerun environment_bootstrap after package repair installs the stronger freshness model.",
+            evidence=evidence,
+            provenance="script",
+        ),
+    )
+
+
 def audit_smoke_test_override_contract(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
     tool_path = root / ".opencode" / "tools" / "smoke_test.ts"
     if not tool_path.exists():
@@ -1740,6 +1788,7 @@ def audit_reference_integrity(root: Path, findings: list[Finding], ctx: Executio
 def run_execution_surface_audits(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
     audit_bootstrap_command_layout_mismatch(root, findings, ctx)
     audit_bootstrap_deadlock(root, findings, ctx)
+    audit_bootstrap_freshness_contract(root, findings, ctx)
     audit_smoke_test_contract(root, findings, ctx)
     audit_smoke_test_override_contract(root, findings, ctx)
     audit_smoke_test_acceptance_contract(root, findings, ctx)

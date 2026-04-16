@@ -1346,9 +1346,10 @@ def repair_integration(workspace: Path) -> None:
     seed_godot_target(android_dest)
     make_stack_skill_non_placeholder(android_dest)
     seed_ready_bootstrap(android_dest)
+    original_project_godot = (android_dest / "project.godot").read_text(encoding="utf-8")
     source_snapshots = {
         relative: (android_dest / relative).read_text(encoding="utf-8")
-        for relative in ("project.godot", "scripts/main.gd", "scenes/main.tscn")
+        for relative in ("scripts/main.gd", "scenes/main.tscn")
     }
     (android_dest / "export_presets.cfg").unlink(missing_ok=True)
     shutil.rmtree(android_dest / "android", ignore_errors=True)
@@ -1371,6 +1372,15 @@ def repair_integration(workspace: Path) -> None:
         raise RuntimeError(
             "Repair integration should restore all managed Android export surfaces. "
             f"Missing: {', '.join(missing_repair_surfaces)}"
+        )
+    repaired_project_godot = (android_dest / "project.godot").read_text(encoding="utf-8")
+    if "textures/vram_compression/import_etc2_astc=true" not in repaired_project_godot:
+        raise RuntimeError(
+            "Repair integration should restore the Godot Android ETC2 setting in project.godot."
+        )
+    if repaired_project_godot == original_project_godot:
+        raise RuntimeError(
+            "Repair integration should materially update project.godot when the Android ETC2 setting is missing."
         )
     for relative, original in source_snapshots.items():
         current = (android_dest / relative).read_text(encoding="utf-8")

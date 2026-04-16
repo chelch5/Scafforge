@@ -117,18 +117,8 @@ function buildWorkerPrompt({ prompt, sharedContext, index, total }) {
     return blocks.join("\n\n");
 }
 
-function getOpencodeInvocation(args) {
-    if (process.platform === "win32") {
-        return {
-            command: "cmd.exe",
-            args: ["/d", "/s", "/c", "opencode", ...args],
-        };
-    }
-
-    return {
-        command: "opencode",
-        args,
-    };
+function getOpencodeCommand() {
+    return process.platform === "win32" ? "opencode.cmd" : "opencode";
 }
 
 async function runWorker({
@@ -166,11 +156,11 @@ async function runWorker({
 
     opencodeArgs.push(workerPrompt);
 
-    const { command, args } = getOpencodeInvocation(opencodeArgs);
+    const command = getOpencodeCommand();
     const startedAt = Date.now();
 
     try {
-        const { stdout, stderr } = await execFileAsync(command, args, {
+        const { stdout, stderr } = await execFileAsync(command, opencodeArgs, {
             cwd,
             timeout: timeoutSeconds * 1000,
             maxBuffer: DEFAULT_MAX_BUFFER,

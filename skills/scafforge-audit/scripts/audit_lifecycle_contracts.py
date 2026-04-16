@@ -593,7 +593,7 @@ def audit_remediation_review_evidence(
         re.IGNORECASE,
     )
     result_pattern = re.compile(
-        r"(?:(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result):(?:\*\*|__)?)\s*(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?|(?:^|\n)#{1,6}\s*(?:overall\s+result|overall\s+verdict|review\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result|blocker\s+or\s+approval\s+signal)\s*(?:\r?\n\s*)+(?:\*\*|__|`)?(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?)",
+        r"(?:(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result)(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:overall\s+result|overall\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result):(?:\*\*|__)?)\s*(?:\*\*|__|`|[✅❌✔✖]\s*)*(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?|(?:^|\n)#{1,6}\s*(?:overall\s+result|overall\s+verdict|review\s+verdict|verdict|result|post-fix\s+result|pass/fail\s+result|blocker\s+or\s+approval\s+signal)\s*(?:\r?\n\s*)+(?:\*\*|__|`|[✅❌✔✖]\s*)*(?:PASS|PASSES|FAIL|FAILED|BLOCKED|ERROR|APPROVED|REJECT)(?:\*\*|__|`)?)",
         re.IGNORECASE,
     )
     code_block_pattern = re.compile(r"```(?:[^\n]*)\n([\s\S]*?)```", re.MULTILINE)

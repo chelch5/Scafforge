@@ -19,6 +19,8 @@ class SessionTranscriptAuditContext:
     matching_assistant_reasoning_line_numbers: Callable[[str, tuple[str, ...]], list[tuple[int, str]]]
     matching_non_tool_line_numbers: Callable[[str, tuple[str, ...]], list[tuple[int, str]]]
     parse_transcript_tool_events: Callable[[str], list[Any]]
+    count_transcript_input_decode_errors: Callable[[str], int]
+    count_invocation_log_decode_errors: Callable[[Path], int]
     parse_json_object: Callable[[str], dict[str, Any] | None]
     normalize_shell_command: Callable[[str], str]
     extract_transcript_smoke_acceptance_commands: Callable[[str], list[str]]
@@ -437,7 +439,38 @@ def audit_session_operator_trap(root: Path, findings: list[Finding], logs: list[
         )
 
 
+def audit_session_decode_failures(root: Path, findings: list[Finding], logs: list[Path], ctx: SessionTranscriptAuditContext) -> None:
+    for path in logs:
+        text = ctx.read_text(path)
+        if not text:
+            continue
+        transcript_decode_errors = ctx.count_transcript_input_decode_errors(text)
+        invocation_decode_errors = ctx.count_invocation_log_decode_errors(path) if path.suffix == ".jsonl" else 0
+        total = transcript_decode_errors + invocation_decode_errors
+        if total <= 0:
+            continue
+        evidence: list[str] = []
+        if transcript_decode_errors:
+            evidence.append(f"Transcript tool-input JSON decode failures: {transcript_decode_errors}")
+        if invocation_decode_errors:
+            evidence.append(f"Invocation-log JSONL decode failures: {invocation_decode_errors}")
+        ctx.add_finding(
+            findings,
+            Finding(
+                code="SESSION007",
+                severity="warning",
+                problem="The supplied transcript evidence contains malformed JSON blocks that audit previously ignored silently.",
+                root_cause="When transcript tool inputs or invocation-log lines are malformed JSON, audit drops them and can misread chronology or omit tool-call evidence.",
+                files=[ctx.normalize_path(path, root)],
+                safer_pattern="Track transcript and invocation-log decode failures explicitly so diagnosis can distinguish corrupted evidence from absent evidence.",
+                evidence=evidence,
+                provenance="script",
+            ),
+        )
+
+
 def run_session_transcript_audits(root: Path, findings: list[Finding], logs: list[Path], ctx: SessionTranscriptAuditContext) -> None:
+    audit_session_decode_failures(root, findings, logs, ctx)
     audit_session_chronology(root, findings, logs, ctx)
     audit_session_transition_thrash(root, findings, logs, ctx)
     audit_session_workaround_search(root, findings, logs, ctx)

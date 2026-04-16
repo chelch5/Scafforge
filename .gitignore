@@ -31,6 +31,12 @@ build/
 # Temp
 *.tmp
 *.bak
+*.log
+rollout-*.jsonl
+active-logs/
+active-plans/agent-logs/
+livetesting/*/.godot/
+active-plans/codexplan1604.md.bak
 
 # Godot
 godot-lib.aar

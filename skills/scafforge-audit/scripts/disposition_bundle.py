@@ -31,13 +31,13 @@ def disposition_class_for_finding(finding: Finding) -> str:
     severity = getattr(finding, "severity", "")
     if severity == "info":
         return "advisory"
+    if code.startswith("ENV"):
+        return "manual_prerequisite_blocker"
     if code.startswith(("EXEC", "REF")):
         return "source_follow_up"
     if code == "WFLOW008":
         return "process_state_only"
-    if code.startswith(("ENV", "BOOT", "CYCLE", "SESSION", "SKILL", "MODEL")):
-        return "manual_prerequisite_blocker"
-    if code.startswith("CONFIG"):
+    if code.startswith(("BOOT", "CYCLE", "SESSION", "SKILL", "MODEL", "CONFIG")):
         return "managed_blocker"
     if code.startswith("WFLOW"):
         return "managed_blocker"

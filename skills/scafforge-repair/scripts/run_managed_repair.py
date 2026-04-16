@@ -66,6 +66,42 @@ CURRENT_PROCESS_VERSION = 7
 RECENT_LEGACY_PROCESS_VERSION = 6
 LEGACY_MIGRATION_STAGE = "legacy-contract-migration"
 LEGACY_COMPATIBILITY_SHIM_SCOPE = "package-internal"
+_PUBLISH_IGNORE_NAMES = {".git", "node_modules", "__pycache__", ".codex"}
+
+
+def _should_skip_publish_entry(path: Path) -> bool:
+    return path.name in _PUBLISH_IGNORE_NAMES or path.name.startswith(".venv")
+
+
+def _restore_repo_from_publish_backup(backup_root: Path, repo_root: Path) -> None:
+    for entry in repo_root.iterdir():
+        if _should_skip_publish_entry(entry):
+            continue
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    for entry in backup_root.iterdir():
+        target = repo_root / entry.name
+        if entry.is_dir():
+            shutil.copytree(entry, target)
+        else:
+            shutil.copy2(entry, target)
+
+
+def publish_candidate_root(candidate_root: Path, repo_root: Path) -> None:
+    publish_backup_parent = Path(tempfile.mkdtemp(prefix="scafforge-repair-publish-backup-"))
+    publish_backup_root = publish_backup_parent / "repo"
+    ignore = shutil.ignore_patterns(".git", ".venv*", "node_modules", "__pycache__", ".codex")
+    try:
+        shutil.copytree(repo_root, publish_backup_root, dirs_exist_ok=True, ignore=ignore)
+        shutil.copytree(candidate_root, repo_root, dirs_exist_ok=True, ignore=ignore)
+    except Exception:
+        if publish_backup_root.exists():
+            _restore_repo_from_publish_backup(publish_backup_root, repo_root)
+        raise
+    finally:
+        shutil.rmtree(publish_backup_parent, ignore_errors=True)
 
 
 def _is_godot_android_repo(repo_root: Path) -> bool:
@@ -1583,10 +1619,7 @@ def main() -> int:
             verification_passed=verification_status["verification_passed"],
         )
 
-        shutil.copytree(
-            candidate_root, repo_root, dirs_exist_ok=True,
-            ignore=shutil.ignore_patterns(".git", ".venv*", "node_modules", "__pycache__", ".codex"),
-        )
+        publish_candidate_root(candidate_root, repo_root)
 
     published_logs = verification_logs(repo_root, args.supporting_log, repair_basis)
     verification_status["supporting_logs"] = [str(path) for path in published_logs]

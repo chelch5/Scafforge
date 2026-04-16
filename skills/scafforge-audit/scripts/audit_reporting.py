@@ -298,6 +298,57 @@ def package_has_verdict_parser_fix(ctx: AuditReportingContext) -> bool:
     return parser_supports_extended_verdict_labels and "WFLOW026" in lifecycle_audit
 
 
+def package_has_bootstrap_freshness_fix(ctx: AuditReportingContext) -> bool:
+    workflow_lib = read_text(
+        ctx.package_root
+        / "skills"
+        / "repo-scaffold-factory"
+        / "assets"
+        / "project-template"
+        / ".opencode"
+        / "lib"
+        / "workflow.ts"
+    )
+    return (
+        "BOOTSTRAP_ENVIRONMENT_KEYS" in workflow_lib
+        and "describeBootstrapFingerprintInputs" in workflow_lib
+        and "host_paths" in workflow_lib
+    )
+
+
+def package_has_godot_smoke_fix(ctx: AuditReportingContext) -> bool:
+    smoke_tool = read_text(
+        ctx.package_root
+        / "skills"
+        / "repo-scaffold-factory"
+        / "assets"
+        / "project-template"
+        / ".opencode"
+        / "tools"
+        / "smoke_test.ts"
+    )
+    return (
+        "Could not parse global class" in smoke_tool
+        and "Could not resolve class" in smoke_tool
+        and "isGodotFatalDiagnosticOutput(output) || isSyntaxErrorOutput(output)" in smoke_tool
+    )
+
+
+def package_has_remediation_verdict_decoration_fix(ctx: AuditReportingContext) -> bool:
+    workflow_lib = read_text(
+        ctx.package_root
+        / "skills"
+        / "repo-scaffold-factory"
+        / "assets"
+        / "project-template"
+        / ".opencode"
+        / "lib"
+        / "workflow.ts"
+    )
+    lifecycle_audit = read_text(ctx.package_root / "skills" / "scafforge-audit" / "scripts" / "audit_lifecycle_contracts.py")
+    return "✅" in workflow_lib and "✅" in lifecycle_audit
+
+
 def package_has_split_scope_deadlock_fix(ctx: AuditReportingContext) -> bool:
     workflow_lib = read_text(
         ctx.package_root
@@ -325,6 +376,9 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
     wflow024_package_fix_available = package_has_wflow024_fix(ctx)
     target_completion_fix_available = package_has_target_completion_fix(ctx)
     verdict_parser_fix_available = package_has_verdict_parser_fix(ctx)
+    bootstrap_freshness_fix_available = package_has_bootstrap_freshness_fix(ctx)
+    godot_smoke_fix_available = package_has_godot_smoke_fix(ctx)
+    remediation_decoration_fix_available = package_has_remediation_verdict_decoration_fix(ctx)
     split_scope_deadlock_fix_available = package_has_split_scope_deadlock_fix(ctx)
     grouped_follow_up: dict[str, list[Finding]] = {}
     remediation_pool, existing_ids = _load_existing_remediation_ticket_pool(root)
@@ -333,7 +387,34 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
         if finding.code in {"BOOT001", "BOOT002"}:
             route = "scafforge-repair"
             repair_class = "safe Scafforge package change"
-        elif finding.code.startswith(("BOOT", "ENV", "EXEC", "REF", "SESSION")):
+        elif finding.code == "BOOT003":
+            if bootstrap_freshness_fix_available:
+                route = "scafforge-repair"
+                repair_class = "safe Scafforge package change"
+            else:
+                route = "manual-prerequisite"
+                repair_class = "Scafforge package work required before the next subject-repo repair run"
+        elif finding.code.startswith("ENV"):
+            route = "manual-prerequisite"
+            repair_class = "Host prerequisite or operator environment fix required before the next subject-repo run"
+        elif finding.code == "EXEC-GODOT-006":
+            if godot_smoke_fix_available:
+                route = "scafforge-repair"
+                repair_class = "safe Scafforge package change"
+            else:
+                route = "manual-prerequisite"
+                repair_class = "Scafforge package work required before the next subject-repo repair run"
+        elif finding.code == "EXEC-REMED-001":
+            if remediation_decoration_fix_available:
+                route = "scafforge-repair"
+                repair_class = "safe Scafforge package change"
+            else:
+                route = "ticket-pack-builder"
+                repair_class = "generated-repo remediation ticket"
+        elif finding.code.startswith(("SESSION", "SKILL", "MODEL")):
+            route = "scafforge-repair"
+            repair_class = "safe Scafforge package change"
+        elif finding.code.startswith(("EXEC", "REF")):
             route = "ticket-pack-builder"
             repair_class = "generated-repo remediation ticket"
         elif finding.code == "WFLOW024":
@@ -446,9 +527,12 @@ def recommended_next_step(findings: list[Finding], recommendations: list[dict[st
         return "host_intervention_required"
     if package_work_required_first(recommendations):
         return "scafforge_package_work"
-    if any(not finding.code.startswith(("BOOT", "ENV", "EXEC", "REF", "SESSION")) for finding in findings):
+    routes = {str(item.get("route", "")).strip() for item in recommendations if isinstance(item, dict)}
+    if "manual-prerequisite" in routes:
+        return "host_intervention_required"
+    if "scafforge-repair" in routes:
         return "subject_repo_repair"
-    if findings:
+    if "ticket-pack-builder" in routes or findings:
         return "subject_repo_source_follow_up"
     return "done"
 
