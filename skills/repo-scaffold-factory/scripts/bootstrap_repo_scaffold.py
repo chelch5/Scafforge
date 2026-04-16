@@ -74,6 +74,18 @@ WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
 ASSET_PIPELINE_INIT_PATH = (
     Path(__file__).resolve().parents[2] / "asset-pipeline" / "scripts" / "init_asset_pipeline.py"
 )
+ASSET_DESCRIPTION_REFERENCE_PATH = (
+    Path(__file__).resolve().parents[2] / "asset-pipeline" / "references" / "asset-description-skill.md"
+)
+BLENDER_WORKFLOW_REFERENCE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "project-skill-bootstrap"
+    / "references"
+    / "blender-mcp-workflow-reference.md"
+)
+BLENDER_AGENT_REFERENCE_PATH = (
+    Path(__file__).resolve().parents[2] / "asset-pipeline" / "agents" / "blender-asset-creator.md"
+)
 
 
 def slugify(value: str) -> str:
@@ -253,6 +265,197 @@ def write_file(source: Path, target: Path, replacements: dict[str, str], force: 
         target.write_text(render_text(text, replacements), encoding="utf-8")
     else:
         shutil.copy2(source, target)
+
+
+def _write_generated_text(path: Path, content: str, *, force: bool) -> bool:
+    if path.exists() and not force:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return True
+
+
+def _read_json_dict(path: Path) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _strip_frontmatter(text: str) -> str:
+    if not text.startswith("---\n"):
+        return text.strip()
+    _, _, remainder = text.partition("\n---\n")
+    return remainder.strip() if remainder else text.strip()
+
+
+def _insert_after_once(text: str, anchor: str, insertion: str) -> str:
+    if insertion.strip() in text or anchor not in text:
+        return text
+    return text.replace(anchor, f"{anchor}\n{insertion}", 1)
+
+
+def _append_bullet_once(text: str, heading: str, bullet: str) -> str:
+    if bullet in text or heading not in text:
+        return text
+    return text.replace(heading, f"{heading}\n{bullet}", 1)
+
+
+def ensure_blender_route_operating_surfaces(
+    dest_root: Path,
+    *,
+    agent_prefix: str,
+    full_implementer_model: str,
+    force: bool,
+) -> list[Path]:
+    metadata = _read_json_dict(dest_root / ".opencode" / "meta" / "asset-pipeline-bootstrap.json")
+    if not isinstance(metadata, dict) or metadata.get("requires_blender_mcp") is not True:
+        return []
+
+    created: list[Path] = []
+    required_skills = metadata.get("required_skills")
+    if not isinstance(required_skills, list) or not required_skills:
+        required_skills = ["asset-description", "blender-mcp-workflow"]
+    required_agents = metadata.get("required_agents")
+    if not isinstance(required_agents, list) or not required_agents:
+        required_agents = ["blender-asset-creator"]
+
+    skills_root = dest_root / ".opencode" / "skills"
+    if "asset-description" in required_skills:
+        asset_description_path = skills_root / "asset-description" / "SKILL.md"
+        asset_description_text = ASSET_DESCRIPTION_REFERENCE_PATH.read_text(encoding="utf-8").strip() + "\n"
+        if _write_generated_text(asset_description_path, asset_description_text, force=force):
+            created.append(asset_description_path)
+
+    if "blender-mcp-workflow" in required_skills:
+        blender_workflow_path = skills_root / "blender-mcp-workflow" / "SKILL.md"
+        blender_workflow_body = BLENDER_WORKFLOW_REFERENCE_PATH.read_text(encoding="utf-8").strip()
+        blender_workflow_text = (
+            "---\n"
+            "name: blender-mcp-workflow\n"
+            "description: Guide agents through the repo's managed Blender-MCP asset workflow, including saved-blend chaining and audit-log verification.\n"
+            "---\n\n"
+            f"{blender_workflow_body}\n"
+        )
+        if _write_generated_text(blender_workflow_path, blender_workflow_text, force=force):
+            created.append(blender_workflow_path)
+
+    if "blender-asset-creator" in required_agents:
+        agent_path = dest_root / ".opencode" / "agents" / f"{agent_prefix}-blender-asset-creator.md"
+        agent_body = _strip_frontmatter(BLENDER_AGENT_REFERENCE_PATH.read_text(encoding="utf-8"))
+        agent_text = (
+            "---\n"
+            "description: Hidden Blender-MCP asset specialist for repo-scoped 3D asset generation\n"
+            f"model: {full_implementer_model}\n"
+            "mode: subagent\n"
+            "hidden: true\n"
+            "temperature: 1.0\n"
+            "top_p: 0.95\n"
+            "top_k: 40\n"
+            "tools:\n"
+            "  write: true\n"
+            "  edit: true\n"
+            "  bash: true\n"
+            "permission:\n"
+            "  environment_bootstrap: allow\n"
+            "  skill_ping: allow\n"
+            "  skill:\n"
+            "    \"*\": deny\n"
+            "    \"project-context\": allow\n"
+            "    \"repo-navigation\": allow\n"
+            "    \"workflow-observability\": allow\n"
+            "    \"asset-description\": allow\n"
+            "    \"blender-mcp-workflow\": allow\n"
+            "  task:\n"
+            "    \"*\": deny\n"
+            "  bash:\n"
+            "    \"*\": deny\n"
+            "    \"pwd\": allow\n"
+            "    \"ls *\": allow\n"
+            "    \"find *\": allow\n"
+            "    \"rg *\": allow\n"
+            "    \"grep *\": allow\n"
+            "    \"cat *\": allow\n"
+            "    \"head *\": allow\n"
+            "    \"tail *\": allow\n"
+            "    \"test -f *\": allow\n"
+            "    \"test -d *\": allow\n"
+            "    \"[ -f *\": allow\n"
+            "    \"[ -d *\": allow\n"
+            "    \"mkdir *\": allow\n"
+            "    \"cp *\": allow\n"
+            "    \"mv *\": allow\n"
+            "    \"python3 *\": allow\n"
+            "    \"uv *\": allow\n"
+            "    \"blender *\": allow\n"
+            "    \"git status*\": allow\n"
+            "    \"git diff*\": allow\n"
+            "    \"rm *\": deny\n"
+            "    \"git reset *\": deny\n"
+            "    \"git clean *\": deny\n"
+            "    \"git push *\": deny\n"
+            "---\n\n"
+            f"{agent_body}\n"
+        )
+        if _write_generated_text(agent_path, agent_text, force=force):
+            created.append(agent_path)
+
+        team_leader_path = dest_root / ".opencode" / "agents" / f"{agent_prefix}-team-leader.md"
+        if team_leader_path.exists():
+            team_leader_text = team_leader_path.read_text(encoding="utf-8")
+            team_leader_text = _insert_after_once(
+                team_leader_text,
+                f'    "{agent_prefix}-implementer": allow',
+                f'    "{agent_prefix}-blender-asset-creator": allow',
+            )
+            team_leader_text = _append_bullet_once(
+                team_leader_text,
+                "- `isolation-guidance` for deciding when risky work needs a safer lane",
+                "- `asset-description` when a ticket needs a concrete 3D asset brief before Blender work begins\n- `blender-mcp-workflow` when a ticket routes through the managed `blender_agent` MCP and must preserve saved-blend chaining",
+            )
+            team_leader_text = _insert_after_once(
+                team_leader_text,
+                "- implementation: `__AGENT_PREFIX__-lane-executor` or `__AGENT_PREFIX__-implementer` owns the implementation artifact for the claimed lane",
+                f"- Blender assets: `{agent_prefix}-blender-asset-creator` owns Blender-MCP asset-generation tickets and works only from repo-local briefs, managed MCP wiring, and audit-backed saved-blend chaining evidence",
+            )
+            team_leader_path.write_text(team_leader_text, encoding="utf-8")
+
+        delegation_path = dest_root / "docs" / "AGENT-DELEGATION.md"
+        if delegation_path.exists():
+            delegation_body = delegation_path.read_text(encoding="utf-8")
+            delegation_body = _append_bullet_once(
+                delegation_body,
+                "- implementation lane: `__AGENT_PREFIX__-lane-executor` and `__AGENT_PREFIX__-implementer`",
+                f"- Blender asset lane: `{agent_prefix}-blender-asset-creator`",
+            )
+            delegation_body = _insert_after_once(
+                delegation_body,
+                "4. `__AGENT_PREFIX__-lane-executor` or `__AGENT_PREFIX__-implementer` performs the approved implementation lane",
+                f"4a. `{agent_prefix}-blender-asset-creator` executes Blender-routed asset tickets through the managed `blender_agent` MCP using repo-local briefs and chained saved `.blend` proofs",
+            )
+            delegation_path.write_text(delegation_body, encoding="utf-8")
+
+        catalog_path = dest_root / "docs" / "process" / "agent-catalog.md"
+        if catalog_path.exists():
+            catalog_body = catalog_path.read_text(encoding="utf-8")
+            catalog_body = _append_bullet_once(
+                catalog_body,
+                "- `__AGENT_PREFIX__-ticket-creator`",
+                f"- `{agent_prefix}-blender-asset-creator`",
+            )
+            catalog_body = _append_bullet_once(
+                catalog_body,
+                "- post-migration, remediation, or reverification follow-up tickets are created only from current registered evidence through the guarded ticket flow",
+                f"- when the asset pipeline requires Blender-MCP, `{agent_prefix}-blender-asset-creator` owns repo-scoped 3D asset generation via the managed `blender_agent` MCP, the local `asset-description` / `blender-mcp-workflow` skills, and audit-backed saved-blend chaining",
+            )
+            catalog_path.write_text(catalog_body, encoding="utf-8")
+
+    return created
 
 
 def next_ticket_wave(tickets: list[dict[str, object]]) -> int:
@@ -1109,6 +1312,14 @@ def main() -> int:
             content_source_plan=args.content_source_plan,
             licensing_or_provenance_constraints=args.licensing_or_provenance_constraints,
             finish_acceptance_signals=finish_acceptance_signals,
+            force=args.force,
+        )
+    )
+    created.extend(
+        ensure_blender_route_operating_surfaces(
+            dest_root,
+            agent_prefix=agent_prefix,
+            full_implementer_model=replacements["__FULL_IMPLEMENTER_MODEL__"],
             force=args.force,
         )
     )

@@ -69,7 +69,7 @@ For CLI/library projects:
 
 For game or asset-heavy projects:
 - Read `.opencode/meta/asset-pipeline-bootstrap.json` if it exists before finalizing the agent set.
-- If the seeded routes include `blender-mcp`, add a dedicated `blender-asset-creator` implementer/subagent scoped to Blender-MCP work.
+- If the metadata says `required_agents` includes `blender-asset-creator` or the seeded routes include `blender-mcp`, add a dedicated `blender-asset-creator` implementer/subagent scoped to Blender-MCP work.
 - If the seeded routes include `free-open`, consider an `asset-sourcer` specialist for license-aware sourcing and import prep.
 - If the repo relies on Godot-native finish work, ensure at least one implementer prompt explicitly owns theme/VFX/import polish under the repo's asset pipeline.
 
@@ -100,6 +100,10 @@ For EVERY agent, rewrite the generic prompt to be project-specific:
 - **Task allowlists**: reference the actual agents that exist (including any new ones)
 - **Bash allowlists**: add project-specific commands (e.g., `cargo test*` for Rust, `flutter test*` for Flutter)
 - When asset-pipeline metadata exists, delegation briefs must mention the seeded asset surfaces and route-specific ownership instead of generic "art/content" wording.
+- When Blender is a required route, the `blender-asset-creator` prompt must explicitly:
+  - allow `asset-description` and `blender-mcp-workflow`
+  - route Blender work through the managed `blender_agent` MCP entry in `opencode.jsonc`
+  - name `assets/briefs/` as input, `assets/models/` as output, and `.blender-mcp/audit/` as the first-chain proof surface
 
 **Inject stack-specific implementation notes:**
 - Rewrite the implementer template's `Stack-specific notes` block so it no longer contains scaffold placeholder text.

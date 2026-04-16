@@ -328,9 +328,15 @@ def _bootstrap_metadata(pipeline: dict[str, object]) -> dict[str, object]:
         for category, choice in routes.items()
         if isinstance(choice, dict) and isinstance(choice.get("primary"), str)
     }
+    required_agents: list[str] = []
+    required_skills: list[str] = []
+    required_mcp_servers: list[str] = []
     suggested_agents: list[str] = []
     suggested_skills: list[str] = []
     if "blender-mcp-generated" in primary_routes.values():
+        required_agents.append("blender-asset-creator")
+        required_skills.extend(["asset-description", "blender-mcp-workflow"])
+        required_mcp_servers.append("blender_agent")
         suggested_agents.append("blender-asset-creator")
         suggested_skills.extend(["asset-description", "blender-mcp-workflow"])
     if "third-party-open-licensed" in primary_routes.values():
@@ -352,6 +358,9 @@ def _bootstrap_metadata(pipeline: dict[str, object]) -> dict[str, object]:
         "route_families": pipeline.get("route_families", []),
         "brief_targets": pipeline.get("brief_targets", []),
         "requires_blender_mcp": route_map_requires_blender(primary_routes),
+        "required_agents": sorted(set(required_agents)),
+        "required_skills": sorted(set(required_skills)),
+        "required_mcp_servers": sorted(set(required_mcp_servers)),
         "suggested_agents": suggested_agents,
         "suggested_skills": sorted(set(suggested_skills)),
         "provenance_requirements": pipeline.get("provenance_requirements", {}),

@@ -62,6 +62,8 @@ Use the blender-agent MCP server to generate 3D assets via AI-orchestrated Blend
    - **Critical persistence contract**: Blender mutating calls are stateless. Every mutating call must provide `output_blend`, must inspect the returned `persistence.saved_blend`, and must pass that exact saved path back as `input_blend` on the next mutating call.
    - Never pass `input_blend: null` or `output_blend: null` on a mutating call.
    - If a response says the work was ephemeral, `output_blend` was omitted, or `persistence.saved_blend` is missing, stop and retry that step correctly before continuing.
+   - Require a first-chain proof early in the ticket: after `project_initialize`, run one chained mutating call and confirm `.blender-mcp/audit/*.jsonl` recorded non-null `input_blend` / `output_blend` on the matching `job_start` before treating the MCP surface as trustworthy.
+   - If a historical ticket claims "the bridge did not forward input/output paths," check the `.blender-mcp/audit/*.jsonl` evidence first. A null path in the audit log usually means the tool call itself omitted the field; do not escalate that to a bridge bug until a correctly chained retry reproduces it.
    - Recommended chain:
      - `project_initialize(output_blend=tmp/<asset>-01.blend)` → set up Blender project
      - `mesh_edit_batch(input_blend=<saved>, output_blend=tmp/<asset>-02.blend)` or `scene_batch_edit(...)` → create geometry
@@ -126,6 +128,10 @@ That script reads `.opencode/meta/bootstrap-provenance.json` when present, then 
 - `.opencode/meta/asset-pipeline-bootstrap.json`
 
 Treat `.opencode/meta/asset-pipeline-bootstrap.json` as the machine-readable handoff for `project-skill-bootstrap` and `opencode-team-bootstrap`.
+When Route C is selected, that metadata must mark Blender operating surfaces as required, not merely suggested:
+- `required_agents` includes `blender-asset-creator`
+- `required_skills` includes `asset-description` and `blender-mcp-workflow`
+- `required_mcp_servers` includes `blender_agent`
 Treat `opencode.jsonc` Blender-MCP enablement as route-driven: non-Blender routes should keep `blender_agent` disabled even if Blender is installed on the current host.
 
 ### 2. Classify Asset Requirements
@@ -218,7 +224,10 @@ Add to the team's agent configuration:
 - A dedicated `blender-asset-creator` subagent
 - Scoped to blender-agent MCP tools only
 - Uses the asset-description skill for brief interpretation
+- Uses the repo-local `blender-mcp-workflow` skill as the operating contract for stateless `input_blend` / `output_blend` chaining
 - Has access to `assets/briefs/` for input and `assets/models/` for output
+- Must call the configured `blender_agent` MCP server from `opencode.jsonc`; do not invent an alternate server command inside downstream agent prompts when the repo already ships the MCP wiring
+- Must verify the first saved-blend chain against `.blender-mcp/audit/*.jsonl` before concluding that Blender-MCP is healthy or broken
 - Mirror that choice into `.opencode/meta/asset-pipeline-bootstrap.json` if you refine the route map after initialization.
 
 ## Outputs
@@ -227,7 +236,7 @@ Add to the team's agent configuration:
 - `assets/PROVENANCE.md` — Asset provenance tracking (initialized)
 - `assets/briefs/*.md` — Asset description documents (if route C)
 - Asset directory structure created, including previews/workfiles/licenses/import-report capture surfaces
-- `.opencode/meta/asset-pipeline-bootstrap.json` — machine-readable route + agent/skill hints for later bootstrap stages
+- `.opencode/meta/asset-pipeline-bootstrap.json` — machine-readable route + required/suggested agent, skill, and MCP hints for later bootstrap stages
 - Tickets created for asset acquisition work
 - Blender-MCP subagent configured (if route C)
 

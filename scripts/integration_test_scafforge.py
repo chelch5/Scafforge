@@ -1045,11 +1045,53 @@ def greenfield_integration(workspace: Path) -> None:
     bootstrap_meta = read_json(asset_pipeline_dest / ".opencode" / "meta" / "asset-pipeline-bootstrap.json")
     if not isinstance(bootstrap_meta, dict):
         raise RuntimeError("Asset-pipeline integration expected asset bootstrap metadata to exist.")
+    required_agents = bootstrap_meta.get("required_agents")
+    if not isinstance(required_agents, list) or "blender-asset-creator" not in required_agents:
+        raise RuntimeError(
+            "Asset-pipeline integration should require a blender asset subagent when the seeded routes include blender-mcp-generated."
+        )
+    required_skills = bootstrap_meta.get("required_skills")
+    if not isinstance(required_skills, list) or sorted(required_skills) != ["asset-description", "blender-mcp-workflow"]:
+        raise RuntimeError(
+            "Asset-pipeline integration should require the Blender local workflow skills when the seeded routes include blender-mcp-generated."
+        )
+    required_mcp_servers = bootstrap_meta.get("required_mcp_servers")
+    if not isinstance(required_mcp_servers, list) or required_mcp_servers != ["blender_agent"]:
+        raise RuntimeError(
+            "Asset-pipeline integration should require the managed blender_agent MCP server when the seeded routes include blender-mcp-generated."
+        )
     suggested_agents = bootstrap_meta.get("suggested_agents")
     if not isinstance(suggested_agents, list) or "blender-asset-creator" not in suggested_agents:
         raise RuntimeError(
             "Asset-pipeline integration should suggest a blender asset subagent when the seeded routes include blender-mcp-generated."
         )
+    blender_skill_path = asset_pipeline_dest / ".opencode" / "skills" / "blender-mcp-workflow" / "SKILL.md"
+    if not blender_skill_path.exists():
+        raise RuntimeError(
+            "Asset-pipeline integration should materialize the repo-local blender-mcp-workflow skill when Blender-MCP is required."
+        )
+    blender_skill_text = blender_skill_path.read_text(encoding="utf-8")
+    for required_snippet in ("stateless", "input_blend", "output_blend", "persistence.saved_blend", "blender_agent"):
+        if required_snippet not in blender_skill_text:
+            raise RuntimeError(
+                "Asset-pipeline integration should render blender-mcp-workflow with the managed MCP and saved-blend chaining contract."
+            )
+    asset_description_path = asset_pipeline_dest / ".opencode" / "skills" / "asset-description" / "SKILL.md"
+    if not asset_description_path.exists():
+        raise RuntimeError(
+            "Asset-pipeline integration should materialize the repo-local asset-description skill when Blender-MCP is required."
+        )
+    blender_agent_path = asset_pipeline_dest / ".opencode" / "agents" / "asset-pipeline-probe-blender-asset-creator.md"
+    if not blender_agent_path.exists():
+        raise RuntimeError(
+            "Asset-pipeline integration should render a dedicated blender asset subagent when Blender-MCP is required."
+        )
+    blender_agent_text = blender_agent_path.read_text(encoding="utf-8")
+    for required_snippet in ("asset-description", "blender-mcp-workflow", "blender_agent", "assets/briefs", "assets/models", ".blender-mcp/audit"):
+        if required_snippet not in blender_agent_text:
+            raise RuntimeError(
+                "Asset-pipeline integration should wire the blender asset subagent to the repo-local skills, managed MCP entry, and audit-backed asset paths."
+            )
     opencode_config = load_opencode_config(asset_pipeline_dest)
     blender_agent = opencode_config.get("mcp", {}).get("blender_agent", {})
     if not isinstance(blender_agent, dict) or blender_agent.get("enabled") is not True:

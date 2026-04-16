@@ -150,6 +150,23 @@ GODOT_BASE_METHOD_DISALLOWED_EXTENDS: dict[str, frozenset[str]] = {
     "queue_redraw": frozenset({"CanvasLayer", "Node"}),
     "get_viewport_rect": frozenset({"CanvasLayer", "Node"}),
 }
+BLENDER_MUTATING_TOOLS: frozenset[str] = frozenset({
+    "project_initialize",
+    "addon_configure",
+    "scene_batch_edit",
+    "modifier_stack_edit",
+    "mesh_edit_batch",
+    "uv_workflow",
+    "material_pbr_build",
+    "node_graph_build",
+    "bake_maps",
+    "armature_animation",
+    "simulation_cache",
+    "asset_publish",
+    "import_asset",
+    "export_asset",
+    "blender_python",
+})
 
 
 def iter_source_files(root: Path, suffixes: tuple[str, ...]) -> list[Path]:
@@ -946,6 +963,133 @@ def _collect_first_error_lines(output: str) -> list[str]:
     return interesting[:5] or lines[:5]
 
 
+def _repo_requires_blender_mcp(root: Path, ctx: ExecutionSurfaceAuditContext) -> bool:
+    metadata = ctx.read_json(root / ".opencode" / "meta" / "asset-pipeline-bootstrap.json")
+    if isinstance(metadata, dict) and metadata.get("requires_blender_mcp") is True:
+        return True
+    pipeline = ctx.read_json(root / "assets" / "pipeline.json")
+    if isinstance(pipeline, dict):
+        routes = pipeline.get("routes")
+        if isinstance(routes, dict):
+            for value in routes.values():
+                candidates: list[str] = []
+                if isinstance(value, str):
+                    candidates.append(value)
+                elif isinstance(value, dict):
+                    for key in ("primary", "fallback"):
+                        candidate = value.get(key)
+                        if isinstance(candidate, str):
+                            candidates.append(candidate)
+                if any("blender" in candidate.lower() for candidate in candidates):
+                    return True
+    brief = ctx.read_text(root / "docs" / "spec" / "CANONICAL-BRIEF.md").lower()
+    return "blender-agent" in brief or "blender-mcp" in brief
+
+
+def _iter_blender_audit_records(
+    root: Path, ctx: ExecutionSurfaceAuditContext
+) -> list[tuple[Path, int, dict[str, Any]]]:
+    audit_root = root / ".blender-mcp" / "audit"
+    if not audit_root.exists():
+        return []
+    records: list[tuple[Path, int, dict[str, Any]]] = []
+    for path in sorted(audit_root.glob("*.jsonl")):
+        text = ctx.read_text(path)
+        for line_number, raw_line in enumerate(text.splitlines(), start=1):
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            try:
+                payload = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                records.append((path, line_number, payload))
+    return records
+
+
+def audit_blender_mcp_execution(
+    root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext
+) -> None:
+    if not _repo_requires_blender_mcp(root, ctx):
+        return
+    audit_records = _iter_blender_audit_records(root, ctx)
+    metadata_path = root / ".opencode" / "meta" / "asset-pipeline-bootstrap.json"
+    pipeline_path = root / "assets" / "pipeline.json"
+    if not audit_records:
+        _add_execution_finding(
+            findings,
+            ctx,
+            code="AUDIT-SKIP-BLENDER",
+            severity="warning",
+            problem="Blender-MCP route declared but no Blender execution audit log evidence exists.",
+            root_cause="The repo depends on Blender-MCP for asset work, but the audit cannot validate whether the stateless chaining contract was used because `.blender-mcp/audit/*.jsonl` is missing.",
+            files=[path for path in (metadata_path, pipeline_path) if path.exists()],
+            safer_pattern="When a repo routes assets through blender-agent, keep `.blender-mcp/audit/*.jsonl` as evidence and verify one saved-blend chain before treating later Blender failures as bridge defects.",
+            evidence=[
+                f"requires_blender_mcp = {_repo_requires_blender_mcp(root, ctx)}",
+                "No files matched .blender-mcp/audit/*.jsonl",
+            ],
+            root=root,
+        )
+        return
+
+    last_saved_output: str | None = None
+    mutating_job_count = 0
+    contract_breaches: list[str] = []
+    evidence_files: list[Path] = [path for path in (metadata_path, pipeline_path) if path.exists()]
+
+    for audit_path, line_number, payload in audit_records:
+        event_type = str(payload.get("event_type", "")).strip()
+        tool_name = str(payload.get("tool_name", "")).strip()
+        if tool_name not in BLENDER_MUTATING_TOOLS:
+            continue
+        evidence_files.append(audit_path)
+        if event_type == "job_complete":
+            if payload.get("success") is True and isinstance(payload.get("output_blend"), str) and payload.get("output_blend"):
+                last_saved_output = str(payload["output_blend"])
+            continue
+        if event_type != "job_start":
+            continue
+        mutating_job_count += 1
+        input_blend = payload.get("input_blend")
+        output_blend = payload.get("output_blend")
+        rendered_location = f"{ctx.normalize_path(audit_path, root)}:{line_number}"
+        if tool_name == "project_initialize":
+            if not isinstance(output_blend, str) or not output_blend:
+                contract_breaches.append(
+                    f"{rendered_location}: project_initialize started without output_blend."
+                )
+            continue
+        if not isinstance(output_blend, str) or not output_blend:
+            contract_breaches.append(
+                f"{rendered_location}: {tool_name} started without output_blend."
+            )
+        if last_saved_output and (not isinstance(input_blend, str) or not input_blend):
+            contract_breaches.append(
+                f"{rendered_location}: {tool_name} started with input_blend=null after prior saved blend {last_saved_output}."
+            )
+
+    if mutating_job_count == 0 or not contract_breaches:
+        return
+
+    _add_execution_finding(
+        findings,
+        ctx,
+        code="EXEC-BLENDER-001",
+        severity="error",
+        problem="Recorded Blender-MCP mutating calls violated the stateless saved-blend chaining contract.",
+        root_cause="The repo routes assets through blender-agent, but the audit log shows mutating jobs started with null `input_blend` or `output_blend`. Any later conclusion that the Blender bridge itself is broken is untrustworthy until the same step is retried with an explicit saved-blend chain.",
+        files=list(dict.fromkeys(evidence_files)),
+        safer_pattern="Before escalating a Blender-MCP defect, prove one correct chain: `project_initialize(output_blend=...)`, then a mutating follow-up that reuses the returned `persistence.saved_blend` as `input_blend`, and verify `.blender-mcp/audit/*.jsonl` records non-null `input_blend` / `output_blend` on the matching `job_start`.",
+        evidence=[
+            f"mutating_job_count = {mutating_job_count}",
+            *contract_breaches[:7],
+        ],
+        root=root,
+    )
+
+
 def _latest_current_stage_artifact(ticket: dict[str, Any], stage: str) -> dict[str, Any] | None:
     artifacts = ticket.get("artifacts")
     if not isinstance(artifacts, list):
@@ -1600,6 +1744,7 @@ def run_execution_surface_audits(root: Path, findings: list[Finding], ctx: Execu
     audit_smoke_test_override_contract(root, findings, ctx)
     audit_smoke_test_acceptance_contract(root, findings, ctx)
     audit_environment_prerequisites(root, findings, ctx)
+    audit_blender_mcp_execution(root, findings, ctx)
     audit_python_execution(root, findings, ctx)
     audit_node_execution(root, findings, ctx)
     audit_rust_execution(root, findings, ctx)

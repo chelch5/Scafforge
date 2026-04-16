@@ -816,6 +816,63 @@ def audit_placeholder_local_skills(root: Path, findings: list[Finding], ctx: Con
     )
 
 
+def audit_blender_route_operating_surfaces(root: Path, findings: list[Finding], ctx: ContractSurfaceAuditContext) -> None:
+    metadata = ctx.read_json(root / ".opencode" / "meta" / "asset-pipeline-bootstrap.json")
+    if not isinstance(metadata, dict) or metadata.get("requires_blender_mcp") is not True:
+        return
+
+    files: list[str] = []
+    evidence: list[str] = []
+    skills_dir = root / ".opencode" / "skills"
+    agents_dir = root / ".opencode" / "agents"
+
+    required_skills = metadata.get("required_skills")
+    if not isinstance(required_skills, list) or not required_skills:
+        required_skills = ["asset-description", "blender-mcp-workflow"]
+    for skill_name in required_skills:
+        if not isinstance(skill_name, str) or not skill_name.strip():
+            continue
+        skill_path = skills_dir / skill_name / "SKILL.md"
+        if not skill_path.exists():
+            files.append(ctx.normalize_path(skill_path, root))
+            evidence.append(f"Missing required Blender route skill: {ctx.normalize_path(skill_path, root)}")
+
+    required_agents = metadata.get("required_agents")
+    if not isinstance(required_agents, list) or not required_agents:
+        required_agents = ["blender-asset-creator"]
+    for agent_name in required_agents:
+        if not isinstance(agent_name, str) or not agent_name.strip():
+            continue
+        matches = sorted(agents_dir.glob(f"*{agent_name}*.md")) if agents_dir.exists() else []
+        if not matches:
+            expected = ctx.normalize_path(agents_dir / f"{agent_name}.md", root)
+            files.append(expected)
+            evidence.append(f"Missing required Blender route agent: {expected}")
+            continue
+        combined = "\n".join(ctx.read_text(path) for path in matches)
+        for snippet in ("blender_agent", "assets/briefs", "assets/models", ".blender-mcp/audit"):
+            if snippet not in combined:
+                files.append(ctx.normalize_path(matches[0], root))
+                evidence.append(
+                    f"{ctx.normalize_path(matches[0], root)} is missing required Blender route snippet: {snippet}"
+                )
+
+    if files:
+        ctx.add_finding(
+            findings,
+            Finding(
+                code="SKILL002",
+                severity="warning",
+                problem="The repo requires Blender-MCP for its asset route but is missing mandatory Blender operating surfaces.",
+                root_cause="The managed repo metadata requires Blender work, but the repo-local agent and skill pack did not fully materialize the mandatory Blender contract surfaces.",
+                files=sorted(set(files)),
+                safer_pattern="When asset-pipeline metadata requires Blender-MCP, keep `asset-description`, `blender-mcp-workflow`, and a dedicated `blender-asset-creator` in sync with the managed `blender_agent` MCP entry and the repo's asset/audit paths.",
+                evidence=evidence,
+                provenance="script",
+            ),
+        )
+
+
 def audit_model_profile_drift(root: Path, findings: list[Finding], ctx: ContractSurfaceAuditContext) -> None:
     provenance_path = root / ".opencode" / "meta" / "bootstrap-provenance.json"
     provenance = ctx.read_json(provenance_path)
@@ -1255,5 +1312,6 @@ def run_contract_surface_audits(root: Path, findings: list[Finding], ctx: Contra
     audit_over_scoped_commands(root, findings, ctx)
     audit_eager_skill_loading(root, findings, ctx)
     audit_placeholder_local_skills(root, findings, ctx)
+    audit_blender_route_operating_surfaces(root, findings, ctx)
     audit_model_profile_drift(root, findings, ctx)
     audit_product_finish_contract(root, findings, ctx)

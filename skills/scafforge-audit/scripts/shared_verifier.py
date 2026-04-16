@@ -107,6 +107,46 @@ def _placeholder_skill_hits(root: Path) -> list[str]:
     return hits
 
 
+def _blender_route_contract_hits(root: Path) -> list[str]:
+    metadata, _ = _read_json(root / ".opencode" / "meta" / "asset-pipeline-bootstrap.json")
+    if not isinstance(metadata, dict) or metadata.get("requires_blender_mcp") is not True:
+        return []
+
+    hits: list[str] = []
+    skills_root = root / ".opencode" / "skills"
+    agents_root = root / ".opencode" / "agents"
+    required_skills = metadata.get("required_skills")
+    if not isinstance(required_skills, list) or not required_skills:
+        required_skills = ["asset-description", "blender-mcp-workflow"]
+    for skill_name in required_skills:
+        if not isinstance(skill_name, str) or not skill_name.strip():
+            continue
+        skill_path = skills_root / skill_name / "SKILL.md"
+        if not skill_path.exists():
+            hits.append(_normalize(skill_path, root))
+
+    required_agents = metadata.get("required_agents")
+    if not isinstance(required_agents, list) or not required_agents:
+        required_agents = ["blender-asset-creator"]
+    for agent_name in required_agents:
+        if not isinstance(agent_name, str) or not agent_name.strip():
+            continue
+        matches = sorted(agents_root.glob(f"*{agent_name}*.md")) if agents_root.exists() else []
+        if not matches:
+            hits.append(_normalize(agents_root / f"{agent_name}.md", root))
+            continue
+        combined = "\n".join(_read_text(path) for path in matches)
+        for snippet in ("blender_agent", "assets/briefs", "assets/models", ".blender-mcp/audit"):
+            if snippet not in combined:
+                hits.append(f"{_normalize(matches[0], root)} :: missing `{snippet}`")
+
+    config_path = root / "opencode.jsonc"
+    config_text = _read_text(config_path)
+    if config_text and "blender_agent" not in config_text:
+        hits.append(_normalize(config_path, root))
+    return hits
+
+
 def _contains_all(text: str, required_snippets: tuple[str, ...]) -> bool:
     return all(snippet in text for snippet in required_snippets)
 
@@ -464,6 +504,19 @@ def verify_greenfield_continuation(root: Path) -> list[Finding]:
                 files=placeholder_hits,
                 safer_pattern="Run project-skill-bootstrap until scaffold placeholder text and stale synthesized workflow guidance are removed from repo-local skills before treating greenfield generation as complete.",
                 evidence=[f"stale or placeholder skills: {', '.join(placeholder_hits)}"],
+            )
+        )
+
+    blender_route_hits = _blender_route_contract_hits(root)
+    if blender_route_hits:
+        findings.append(
+            _finding(
+                code="VERIFY017",
+                problem="The generated repo declares a Blender-MCP asset route but does not expose the required Blender operating surfaces at handoff time.",
+                root_cause="A Blender-routed repo is not immediately continuable when the repo-local skill pack, specialist agent layer, or managed MCP wiring omits the mandatory Blender contract surfaces.",
+                files=sorted({hit.split(" :: ", 1)[0] for hit in blender_route_hits}),
+                safer_pattern="When `.opencode/meta/asset-pipeline-bootstrap.json` requires Blender-MCP, generate `asset-description`, `blender-mcp-workflow`, a dedicated `blender-asset-creator`, and route that agent through the managed `blender_agent` MCP with audit-log-aware chaining guidance.",
+                evidence=blender_route_hits,
             )
         )
 
