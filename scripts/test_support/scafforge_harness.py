@@ -109,6 +109,12 @@ BOOTSTRAP_HOST_PATH_CANDIDATES = {
         str(Path.home() / "Library" / "Android" / "sdk"),
         str(Path.home() / "AppData" / "Local" / "Android" / "Sdk"),
     ),
+    "java_home_default": (
+        "/usr/lib/jvm/default-java",
+        "/usr/lib/jvm/java-21-openjdk-amd64",
+        "/usr/lib/jvm/java-17-openjdk-amd64",
+        "/usr/lib/jvm/java-11-openjdk-amd64",
+    ),
 }
 
 
@@ -296,6 +302,36 @@ def plugin_runner_lines() -> list[str]:
 
 
 def compute_bootstrap_fingerprint(dest: Path) -> str:
+    def infer_android_sdk_path() -> str | None:
+        explicit = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+        if explicit and Path(explicit).exists():
+            return explicit
+        for candidate in BOOTSTRAP_HOST_PATH_CANDIDATES["android_sdk_default"]:
+            if Path(candidate).exists():
+                return candidate
+        return None
+
+    def infer_java_home() -> str | None:
+        explicit = os.environ.get("JAVA_HOME")
+        if explicit and Path(explicit).exists():
+            return explicit
+        java_bin = shutil.which("java")
+        if java_bin:
+            java_home = Path(os.path.realpath(java_bin)).parent.parent
+            if java_home.exists():
+                return str(java_home)
+        for candidate in BOOTSTRAP_HOST_PATH_CANDIDATES["java_home_default"]:
+            if Path(candidate).exists():
+                return candidate
+        return None
+
+    def normalized_bootstrap_env(key: str) -> str:
+        if key == "JAVA_HOME":
+            return infer_java_home() or "<unset>"
+        if key in {"ANDROID_HOME", "ANDROID_SDK_ROOT"}:
+            return infer_android_sdk_path() or "<unset>"
+        return os.environ.get(key) or "<unset>"
+
     digest = hashlib.sha256()
     input_files = sorted(path for path in BOOTSTRAP_INPUT_FILES if (dest / path).is_file())
     fingerprint_inputs = {
@@ -308,7 +344,7 @@ def compute_bootstrap_fingerprint(dest: Path) -> str:
             "opencode_config": (dest / "opencode.jsonc").exists(),
         },
         "env": {
-            key: (os.environ.get(key) or "<unset>")
+            key: normalized_bootstrap_env(key)
             for key in BOOTSTRAP_ENVIRONMENT_KEYS
         },
         "host_paths": {
@@ -316,6 +352,7 @@ def compute_bootstrap_fingerprint(dest: Path) -> str:
             for label, candidates in BOOTSTRAP_HOST_PATH_CANDIDATES.items()
         },
     }
+    fingerprint_inputs["host_paths"]["java_home_inferred"] = infer_java_home() or "<missing>"
     digest.update(
         json.dumps(fingerprint_inputs, separators=(",", ":")).encode("utf-8")
     )

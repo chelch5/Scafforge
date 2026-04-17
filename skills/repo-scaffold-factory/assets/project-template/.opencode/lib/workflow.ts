@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs"
+import { existsSync, realpathSync } from "node:fs"
 import { appendFile, copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises"
-import { dirname, join, relative, resolve } from "node:path"
+import { delimiter, dirname, join, relative, resolve } from "node:path"
 import { createHash } from "node:crypto"
 import { homedir } from "node:os"
 
@@ -323,9 +323,9 @@ export async function findExistingRepoVenvExecutable(root: string, executable: s
 }
 
 const EXECUTION_EVIDENCE_PATTERNS = [
-  /```(?:bash|sh|shell|console|text)?[\s\S]*?(?:npm|pnpm|yarn|bun|pytest|cargo|go test|go vet|python(?:3)? -m|node(?:\s|$)|tsc(?:\s|$)|make(?:\s|$)|exit code|passed|failed)/i,
-  /(?:^|\n)(?:\$ |>|command: ).*(?:npm|pnpm|yarn|bun|pytest|cargo|go test|go vet|python(?:3)? -m|node|tsc|make)/i,
-  /\b(?:exit[_ -]?code|pass(?:ed)?|fail(?:ed)?|ok)\b/i,
+  /```(?:bash|sh|shell|console|text)?[\s\S]*?(?:godot(?:4)?|npm|pnpm|yarn|bun|pytest|cargo|go test|go vet|python(?:3)? -m|node(?:\s|$)|tsc(?:\s|$)|make(?:\s|$)|gradle|\.\/gradlew|adb|unzip|exit code|passed|failed)/i,
+  /(?:^|\n)(?:\$ |>|command: ).*(?:godot(?:4)?|npm|pnpm|yarn|bun|pytest|cargo|go test|go vet|python(?:3)? -m|node|tsc|make|gradle|\.\/gradlew|adb|unzip)/i,
+  /\b(?:exit(?:[_ -]?code)?|result|pass(?:ed|es)?|fail(?:ed|s)?|ok)\b/i,
 ]
 const INSPECTION_ONLY_PATTERNS = [/code inspection/i, /inspection only/i]
 const REMEDIATION_REVIEW_COMMAND_PATTERN = /(?:^|\n)(?:-\s*)?(?:(?:\*\*|__)?(?:exact\s+command\s+run|command|command run|verbatim commands?)?(?:\*\*|__)?\s*:|(?:\*\*|__)?(?:exact\s+command\s+run|command|command run|verbatim commands?)(?:\*\*|__)?)\s*(?:`[^`]+`|```[\s\S]*?```)?/i
@@ -1090,6 +1090,12 @@ const BOOTSTRAP_HOST_PATH_CANDIDATES = {
     join(homedir(), "Library", "Android", "sdk"),
     join(homedir(), "AppData", "Local", "Android", "Sdk"),
   ],
+  java_home_default: [
+    join("/usr", "lib", "jvm", "default-java"),
+    join("/usr", "lib", "jvm", "java-21-openjdk-amd64"),
+    join("/usr", "lib", "jvm", "java-17-openjdk-amd64"),
+    join("/usr", "lib", "jvm", "java-11-openjdk-amd64"),
+  ],
 } as const
 type BootstrapFingerprintInputs = {
   input_files: string[]
@@ -1234,7 +1240,8 @@ const SMOKE_PASS_RESULT_PATTERN = /Overall Result:\s*PASS\b/i
 const SMOKE_FAILURE_CLASSIFICATION_PATTERN = /^- failure_classification:\s*([a-z_]+)\s*$/gim
 const SMOKE_EXIT_CODE_PATTERN = /^- exit_code:\s*(-?\d+)\s*$/gim
 const SMOKE_GODOT_ERROR_PATTERN = /(?:SCRIPT ERROR:\s*)?Parse Error:|ERROR:\s*Failed to load script|syntax error|parse error|failed to load script|not declared in the current scope|not found in base self|unexpected token|missing language argument|unterminated|unmatched quote/i
-const SMOKE_PASS_SAFE_FAILURE_CLASSIFICATIONS = new Set(["none", "null", "undefined", "n/a"])
+const SMOKE_PASS_SAFE_FAILURE_CLASSIFICATIONS = new Set(["none", "null", "undefined", "n/a", "tooling_parse_warning"])
+const SMOKE_GODOT_CLASSNAME_RELOAD_WARNING_PATTERN = /Could not parse global class|Could not resolve class|GDScript::reload/i
 export function smokeArtifactPassContradictionReason(content: string): string | null {
   const hasPassingVerdict = isPassingArtifactVerdict(extractArtifactVerdict(content).verdict) || SMOKE_PASS_RESULT_PATTERN.test(content)
   if (!hasPassingVerdict) return null
@@ -1249,6 +1256,12 @@ export function smokeArtifactPassContradictionReason(content: string): string | 
     if (Number.isFinite(exitCode) && exitCode !== 0) {
       return `command block records non-zero exit_code ${exitCode}`
     }
+  }
+  if (
+    /failure_classification:\s*tooling_parse_warning/i.test(content)
+    && SMOKE_GODOT_CLASSNAME_RELOAD_WARNING_PATTERN.test(content)
+  ) {
+    return null
   }
   const contradictionLine = content.split(/\r?\n/).find((line) => SMOKE_GODOT_ERROR_PATTERN.test(line))
   return contradictionLine ? `command output records ${contradictionLine.trim()}` : null
@@ -1268,14 +1281,15 @@ function remediationReviewMissingEvidence(content: string): string[] {
   const hasInlineOutput = REMEDIATION_REVIEW_INLINE_OUTPUT_PATTERN.test(content)
   const hasOutput = REMEDIATION_REVIEW_OUTPUT_HEADING_PATTERN.test(content) && (outputBlocks.some(Boolean) || hasInlineOutput)
   if (!hasOutput) missing.push("raw command output")
-  if (!REMEDIATION_REVIEW_RESULT_PATTERN.test(content)) missing.push("explicit PASS/FAIL result")
+  const verdictInfo = extractArtifactVerdict(content)
+  if (!verdictInfo.verdict && !REMEDIATION_REVIEW_RESULT_PATTERN.test(content)) missing.push("explicit PASS/FAIL result")
   return missing
 }
 export async function validateImplementationArtifactEvidence(ticket: Ticket, root = rootPath()): Promise<string | null> {
   const artifact = latestArtifact(ticket, { stage: "implementation", trust_state: "current" })
   if (!artifact) return "Cannot move to review before an implementation artifact exists."
   const content = await readArtifactContent(artifact, root)
-  return hasExecutionEvidence(content) ? null : "Implementation artifact must include compile, syntax, or import-check command output before review."
+  return hasExecutionEvidence(content) ? null : "Implementation artifact must include concrete command output (for example compile, syntax, import-check, headless, or export proof) before review."
 }
 export async function validateReviewArtifactEvidence(ticket: Ticket, root = rootPath()): Promise<string | null> {
   const artifact = latestReviewArtifact(ticket)
@@ -1349,12 +1363,26 @@ export function openParallelSplitChildren(manifest: Manifest, ticketId: string):
 
 // Ordered list of lifecycle stages used for stale-stage comparison.
 const ORDERED_LIFECYCLE_STAGES = ["planning", "plan_review", "implementation", "review", "qa", "smoke-test", "closeout"] as const
+const STALE_STAGE_ARTIFACT_PREREQUISITES: Partial<Record<typeof ORDERED_LIFECYCLE_STAGES[number], typeof ORDERED_LIFECYCLE_STAGES[number]>> = {
+  review: "implementation",
+  qa: "review",
+  "smoke-test": "qa",
+  closeout: "smoke-test",
+}
 
 export type StaleStageReconciliation = {
   stale: boolean
   manifest_stage: string
   evidenced_stage: string | null
   recovery_action: string | null
+}
+
+function artifactCanEvidenceStage(ticket: Ticket, candidateStage: typeof ORDERED_LIFECYCLE_STAGES[number]): boolean {
+  const artifact = latestArtifact(ticket, { stage: candidateStage, trust_state: "current" })
+  if (!artifact) return false
+  const prerequisite = STALE_STAGE_ARTIFACT_PREREQUISITES[candidateStage]
+  if (!prerequisite) return true
+  return artifactCanEvidenceStage(ticket, prerequisite)
 }
 
 /**
@@ -1372,8 +1400,7 @@ export function reconcileStaleStageIfNeeded(ticket: Ticket): StaleStageReconcili
   let highestEvidencedStage: string | null = null
   for (let i = ORDERED_LIFECYCLE_STAGES.length - 1; i >= 0; i--) {
     const candidateStage = ORDERED_LIFECYCLE_STAGES[i]
-    const artifact = latestArtifact(ticket, { stage: candidateStage, trust_state: "current" })
-    if (artifact) {
+    if (artifactCanEvidenceStage(ticket, candidateStage)) {
       highestEvidencedStage = candidateStage
       break
     }
@@ -1461,7 +1488,44 @@ function describeBootstrapHostPaths(): Record<string, string> {
     const existing = candidates.find((candidate) => existsSync(candidate))
     result[label] = existing ?? "<missing>"
   }
+  result.java_home_inferred = discoverBootstrapJavaHome() ?? "<missing>"
   return result
+}
+function discoverBootstrapAndroidSdkPath(): string | null {
+  const explicit = normalizeNullableString(process.env.ANDROID_HOME) ?? normalizeNullableString(process.env.ANDROID_SDK_ROOT)
+  if (explicit && existsSync(explicit)) return explicit
+  for (const candidate of BOOTSTRAP_HOST_PATH_CANDIDATES.android_sdk_default) {
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+function discoverBootstrapJavaHome(): string | null {
+  const explicit = normalizeNullableString(process.env.JAVA_HOME)
+  if (explicit && existsSync(explicit)) return explicit
+  const pathValue = normalizeNullableString(process.env.PATH)
+  if (pathValue) {
+    const executableName = process.platform === "win32" ? "java.exe" : "java"
+    for (const segment of pathValue.split(delimiter)) {
+      const trimmed = segment.trim()
+      if (!trimmed) continue
+      const candidate = join(trimmed, executableName)
+      if (!existsSync(candidate)) continue
+      try {
+        const resolved = realpathSync(candidate)
+        const javaHome = dirname(dirname(resolved))
+        if (existsSync(join(javaHome, "bin"))) return javaHome
+      } catch {
+        continue
+      }
+    }
+  }
+  const fallback = BOOTSTRAP_HOST_PATH_CANDIDATES.java_home_default.find((candidate) => existsSync(candidate))
+  return fallback ?? null
+}
+function normalizeBootstrapEnvironmentValue(key: typeof BOOTSTRAP_ENVIRONMENT_KEYS[number]): string {
+  if (key === "JAVA_HOME") return discoverBootstrapJavaHome() ?? "<unset>"
+  if (key === "ANDROID_HOME" || key === "ANDROID_SDK_ROOT") return discoverBootstrapAndroidSdkPath() ?? "<unset>"
+  return normalizeNullableString(process.env[key]) ?? "<unset>"
 }
 export async function describeBootstrapFingerprintInputs(root = rootPath()): Promise<BootstrapFingerprintInputs> {
   const input_files = await listBootstrapInputs(root)
@@ -1475,7 +1539,7 @@ export async function describeBootstrapFingerprintInputs(root = rootPath()): Pro
       opencode_config: existsSync(join(root, "opencode.jsonc")),
     },
     env: Object.fromEntries(
-      BOOTSTRAP_ENVIRONMENT_KEYS.map((key) => [key, normalizeNullableString(process.env[key]) ?? "<unset>"]),
+      BOOTSTRAP_ENVIRONMENT_KEYS.map((key) => [key, normalizeBootstrapEnvironmentValue(key)]),
     ),
     host_paths: describeBootstrapHostPaths(),
   }

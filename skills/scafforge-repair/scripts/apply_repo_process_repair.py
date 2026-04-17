@@ -17,7 +17,12 @@ RUNTIME_SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scafforge-pivot" / "
 if str(RUNTIME_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_SCRIPT_DIR))
 
-from audit_repo_process import load_latest_previous_diagnosis, manifest_supporting_logs, supporting_log_paths
+from audit_repo_process import (
+    load_latest_previous_diagnosis,
+    load_latest_previous_diagnosis_with_supporting_logs,
+    manifest_supporting_logs,
+    supporting_log_paths,
+)
 from regenerate_restart_surfaces import regenerate_restart_surfaces
 from shared_verifier import audit_repo
 from shared_generated_tool_runtime import run_generated_tool
@@ -1555,13 +1560,19 @@ def verification_logs(
     repair_basis: tuple[Path, dict[str, Any]] | None,
 ) -> list[Path]:
     logs = supporting_log_paths(repo_root, explicit_logs)
-    if repair_basis is None:
-        return logs
+    manifests: list[dict[str, Any]] = []
+    if repair_basis is not None:
+        _, manifest = repair_basis
+        manifests.append(manifest)
+    inherited_transcript_basis = load_latest_previous_diagnosis_with_supporting_logs(repo_root)
+    if inherited_transcript_basis is not None:
+        _, inherited_manifest = inherited_transcript_basis
+        manifests.append(inherited_manifest)
 
-    _, manifest = repair_basis
-    for path in supporting_log_paths(repo_root, manifest_supporting_logs(manifest)):
-        if path not in logs:
-            logs.append(path)
+    for manifest in manifests:
+        for path in supporting_log_paths(repo_root, manifest_supporting_logs(manifest)):
+            if path not in logs:
+                logs.append(path)
     return logs
 
 
@@ -1572,10 +1583,11 @@ def repair_basis_requires_causal_replay(
 ) -> bool:
     if supporting_log_paths(repo_root, explicit_logs):
         return True
-    if repair_basis is None:
-        return False
-    _, manifest = repair_basis
-    return bool(manifest_supporting_logs(manifest))
+    if repair_basis is not None:
+        _, manifest = repair_basis
+        if manifest_supporting_logs(manifest):
+            return True
+    return load_latest_previous_diagnosis_with_supporting_logs(repo_root) is not None
 
 
 def load_pending_process_verification(repo_root: Path) -> bool:

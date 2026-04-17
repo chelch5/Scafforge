@@ -1197,9 +1197,24 @@ def _repo_claims_completion(root: Path, ctx: ContractSurfaceAuditContext) -> boo
     start_here_path = root / "START-HERE.md"
     workflow_path = root / ".opencode" / "state" / "workflow-state.json"
     if start_here_path.exists():
-        text = ctx.read_text(start_here_path).lower()
-        if any(phrase in text for phrase in ("ready for continued development", "product is finished", "release-ready", "all tickets done")):
-            return True
+        for raw_line in ctx.read_text(start_here_path).splitlines():
+            line = raw_line.strip().lower()
+            if not line:
+                continue
+            if line.startswith("- handoff_status:"):
+                handoff_status = line.split(":", 1)[1].strip()
+                if handoff_status in {"ready for continued development", "release-ready"}:
+                    return True
+                continue
+            if line in {
+                "ready for continued development",
+                "product is finished",
+                "product is finished and ready for continued development.",
+                "product is finished and ready for continued development",
+                "release-ready",
+                "all tickets done",
+            }:
+                return True
     workflow = ctx.read_json(workflow_path)
     if isinstance(workflow, dict):
         active = workflow.get("active_ticket")

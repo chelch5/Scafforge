@@ -1,9 +1,9 @@
 import { tool } from "@opencode-ai/plugin"
 import { spawn } from "node:child_process"
-import { existsSync, readdirSync } from "node:fs"
+import { existsSync, readdirSync, realpathSync } from "node:fs"
 import { access, readFile, readdir } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { delimiter, dirname, join } from "node:path"
 import {
 	computeBootstrapFingerprint,
 	defaultBootstrapProofPath,
@@ -165,6 +165,37 @@ async function discoverAndroidSdkPath(): Promise<string | null> {
 		join(home, "AppData", "Local", "Android", "Sdk"),
 	]) {
 		if (await exists(candidate)) return candidate
+	}
+	return null
+}
+
+async function discoverJavaHome(): Promise<string | null> {
+	const envValue = process.env.JAVA_HOME
+	if (envValue && await exists(envValue)) return envValue
+	const pathValue = process.env.PATH || ""
+	const executableNames = process.platform === "win32" ? ["java.exe", "java"] : ["java"]
+	for (const segment of pathValue.split(delimiter)) {
+		const trimmed = segment.trim()
+		if (!trimmed) continue
+		for (const executableName of executableNames) {
+			const candidate = join(trimmed, executableName)
+			if (!(await exists(candidate))) continue
+			try {
+				const resolved = realpathSync(candidate)
+				const javaHome = dirname(dirname(resolved))
+				if (await exists(join(javaHome, "bin"))) return javaHome
+			} catch {
+				continue
+			}
+		}
+	}
+	for (const fallback of [
+		join("/usr", "lib", "jvm", "default-java"),
+		join("/usr", "lib", "jvm", "java-21-openjdk-amd64"),
+		join("/usr", "lib", "jvm", "java-17-openjdk-amd64"),
+		join("/usr", "lib", "jvm", "java-11-openjdk-amd64"),
+	]) {
+		if (await exists(fallback)) return fallback
 	}
 	return null
 }
@@ -682,18 +713,21 @@ async function detectGodotBootstrap(root: string): Promise<StackDetectionResult>
 		} else {
 			detection.version_info.android_sdk_path = androidSdkPath
 		}
+		const javaHome = await discoverJavaHome()
 		if (!(await firstAvailableExecutable(["java"], ["-version"]))) {
 			detection.blockers.push(createBlocker("java", "Required for Android export support in Godot.", null))
-		} else if (!process.env.JAVA_HOME) {
-			// java is in PATH but JAVA_HOME is not set — Godot's Android Gradle build requires JAVA_HOME,
-			// not just a java binary in PATH. Without it the export fails with "A valid Java SDK path is
-			// required in Editor Settings." Derive a candidate path from the binary and surface it as a blocker.
+		} else if (!javaHome) {
 			detection.blockers.push(createBlocker(
 				"JAVA_HOME",
 				"JAVA_HOME is not set. Godot's Android Gradle build requires JAVA_HOME (not just java in PATH). " +
 				"Run: export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java)))) && echo $JAVA_HOME",
 				"export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))"
 			))
+		} else {
+			detection.version_info.java_home = javaHome
+			if (!process.env.JAVA_HOME) {
+				detection.warnings.push(`JAVA_HOME is not set explicitly; inferred ${javaHome} from the available Java runtime.`)
+			}
 		}
 		if (!(await firstAvailableExecutable(["javac"], ["-version"]))) detection.blockers.push(createBlocker("javac", "Required for Android export support in Godot.", null))
 		if (!(await hasGodotExportTemplatesInstalled())) detection.blockers.push(createBlocker("godot-export-templates", "Required for Godot Android debug APK export.", null))
@@ -739,7 +773,9 @@ async function detectJavaAndroidBootstrap(root: string): Promise<StackDetectionR
 	const sourceCompatibility = combinedBuildText.match(/sourceCompatibility\s*=\s*['"]?([^'"\n]+)/)?.[1]
 	if (sourceCompatibility) detection.version_info.source_compatibility = sourceCompatibility
 	const isAndroid = /com\.android\.(application|library)|android\s*\{/.test(combinedBuildText) || existsSync(join(root, "AndroidManifest.xml"))
+	const javaHome = await discoverJavaHome()
 	if (!(await firstAvailableExecutable(["java"], ["-version"]))) detection.blockers.push(createBlocker("java", `Required by ${indicatorFiles.join(", ")}.`, null))
+	else if (javaHome) detection.version_info.java_home = javaHome
 	if (!(await firstAvailableExecutable(["javac"], ["-version"]))) detection.blockers.push(createBlocker("javac", `Required by ${indicatorFiles.join(", ")}.`, null))
 	if (existsSync(join(root, "gradlew"))) detection.commands.push({ label: "gradle wrapper version", argv: ["./gradlew", "--version"], reason: "Verify the project Gradle wrapper is available." })
 	else if (indicatorFiles.some((file) => file.startsWith("build.gradle"))) {
@@ -750,9 +786,14 @@ async function detectJavaAndroidBootstrap(root: string): Promise<StackDetectionR
 		if (await commandExists("mvn")) detection.commands.push({ label: "maven version", argv: ["mvn", "--version"], reason: "Verify Maven is available for pom.xml projects." })
 		else detection.blockers.push(createBlocker("maven", "Required by pom.xml.", null))
 	}
-	if (isAndroid && !process.env.ANDROID_HOME && !process.env.ANDROID_SDK_ROOT) {
-		detection.missing_env_vars.push("ANDROID_HOME/ANDROID_SDK_ROOT")
-		detection.blockers.push(createBlocker("android-sdk", "Required by Android Gradle configuration.", "sdkmanager --install 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0'"))
+	if (isAndroid) {
+		const androidSdkPath = await discoverAndroidSdkPath()
+		if (androidSdkPath) {
+			detection.version_info.android_sdk_path = androidSdkPath
+		} else {
+			detection.missing_env_vars.push("ANDROID_HOME/ANDROID_SDK_ROOT")
+			detection.blockers.push(createBlocker("android-sdk", "Required by Android Gradle configuration.", "sdkmanager --install 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0'"))
+		}
 	}
 	return finalizeDetection(detection)
 }

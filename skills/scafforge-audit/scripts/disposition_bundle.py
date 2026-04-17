@@ -72,6 +72,8 @@ def disposition_class_for_finding(finding: Finding, repo_root: str | Path | None
     severity = getattr(finding, "severity", "")
     if severity == "info":
         return "advisory"
+    if code.startswith("SESSION"):
+        return "advisory"
     if code.startswith("ENV"):
         return "manual_prerequisite_blocker"
     if code in PACKAGE_MANAGED_EXEC_CODES:

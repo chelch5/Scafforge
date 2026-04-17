@@ -42,6 +42,7 @@ from test_support.scafforge_harness import (
     VERIFY_GENERATED,
     compute_bootstrap_fingerprint,
     load_python_module,
+    node_command,
     package_commit,
     prepare_generated_tool_runtime,
     run,
@@ -951,6 +952,69 @@ def seed_glitch_style_remediation_review(
     )
 
 
+def seed_table_heading_remediation_review(dest: Path) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    ticket = manifest["tickets"][0]
+    ticket["stage"] = "review"
+    ticket["status"] = "review"
+    ticket["lane"] = "remediation"
+    ticket["finding_source"] = "EXEC-GODOT-010"
+    manifest["active_ticket"] = ticket["id"]
+    workflow["active_ticket"] = ticket["id"]
+    workflow["stage"] = "review"
+    workflow["status"] = "review"
+    workflow["ticket_state"].setdefault(
+        ticket["id"],
+        {"approved_plan": True, "reopen_count": 0, "needs_reverification": False},
+    )["approved_plan"] = True
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    register_current_ticket_artifact(
+        dest,
+        ticket_id=ticket["id"],
+        kind="review",
+        stage="review",
+        relative_path=".opencode/state/reviews/setup-001-review.md",
+        summary="Synthetic remediation review artifact with PASS table rows and heading-style overall result.",
+        content=(
+            "# Code Review for SETUP-001\n\n"
+            "## Finding\n"
+            "EXEC-GODOT-010 no longer reproduces.\n\n"
+            "## Verdict\n\n"
+            "| AC | Description | Result |\n"
+            "|----|-------------|--------|\n"
+            "| AC1 | Grep confirms the fix landed | **PASS** |\n"
+            "| AC2 | Headless Godot load exits 0 | **PASS** |\n\n"
+            "## Evidence\n\n"
+            "### AC1: Grep verification\n\n"
+            "**Command:**\n"
+            "```text\n"
+            "grep -rn \"start_wave\" --include=\"*.gd\" scripts/\n"
+            "```\n\n"
+            "**Raw output:**\n"
+            "```text\n"
+            "scripts/wave_spawner.gd:36:func start_wave() -> void:\n"
+            "scripts/main.gd:6:\twave_spawner.start_wave()\n"
+            "```\n\n"
+            "### AC2: Headless verification\n\n"
+            "**Command:**\n"
+            "```text\n"
+            "godot4 --headless --path . --quit 2>&1; echo \"EXIT_CODE=$?\"\n"
+            "```\n\n"
+            "**Raw output:**\n"
+            "```text\n"
+            "Godot Engine v4.6.1.stable.official.14d19694e - https://godotengine.org\n"
+            "EXIT_CODE=0\n"
+            "```\n\n"
+            "## Overall Result: PASS\n\n"
+            "Both acceptance criteria verified PASS. Recommend advancement to QA.\n"
+        ),
+    )
+
+
 def seed_inline_exact_remediation_review(
     dest: Path, result_line: str = "Result: PASS"
 ) -> None:
@@ -1343,6 +1407,28 @@ def seed_finish_claim_with_open_finish_ticket(dest: Path) -> None:
     start_here_path.write_text(
         start_here_path.read_text(encoding="utf-8")
         + "\nready for continued development\n",
+        encoding="utf-8",
+    )
+
+
+def seed_finish_warning_without_completion_claim(dest: Path) -> None:
+    seed_finish_claim_with_open_finish_ticket(dest)
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    workflow["active_ticket"] = "VISUAL-001"
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    start_here_path = dest / "START-HERE.md"
+    start_here_path.write_text(
+        "\n".join(
+            [
+                "# START HERE",
+                "",
+                "- handoff_status: bootstrap recovery required",
+                "",
+                "Resolve the post-repair audit findings, then rerun scafforge-audit before treating the repo as ready for continued development.",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
 
@@ -6588,18 +6674,18 @@ def main() -> int:
         inherited_basis_logs = inherited_basis_payload["execution_record"][
             "verification_status"
         ]["supporting_logs"]
-        if any(str(transcript_basis_log) == item for item in inherited_basis_logs):
+        if not any(str(transcript_basis_log) == item for item in inherited_basis_logs):
             raise RuntimeError(
-                "Public managed repair runner should not inherit transcript logs from an older diagnosis when the selected repair basis is the newer log-less pack"
+                "Public managed repair runner should inherit transcript logs from the latest earlier diagnosis when the selected repair basis is a newer log-less pack"
             )
         if (
             inherited_basis_payload["execution_record"]["verification_status"][
                 "verification_basis"
             ]
-            != "current_state_only"
+            != "transcript_backed"
         ):
             raise RuntimeError(
-                "Public managed repair runner should classify verification against the latest log-less diagnosis basis as current_state_only"
+                "Public managed repair runner should preserve transcript_backed verification when an earlier diagnosis still carries the causal replay logs"
             )
 
         explicit_basis_repair = subprocess.run(
@@ -8599,6 +8685,140 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_update should move an approved ticket into implementation"
             )
+        implementation_godot_evidence_dest = (
+            workspace / "executed-implementation-godot-evidence"
+        )
+        shutil.copytree(full_dest, implementation_godot_evidence_dest)
+        seed_ready_bootstrap(implementation_godot_evidence_dest)
+        register_current_ticket_artifact(
+            implementation_godot_evidence_dest,
+            ticket_id="SETUP-001",
+            kind="plan",
+            stage="planning",
+            relative_path=".opencode/state/artifacts/history/setup-001/planning/setup-001-plan.md",
+            summary="Synthetic planning artifact for Godot execution-evidence coverage.",
+            content="# Plan\n\nCommand: rg --files\n\nPlan approved for implementation.\n",
+        )
+        run_generated_tool(
+            implementation_godot_evidence_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "plan_review", "activate": True},
+        )
+        run_generated_tool(
+            implementation_godot_evidence_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "approved_plan": True, "activate": True},
+        )
+        run_generated_tool(
+            implementation_godot_evidence_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "implementation", "activate": True},
+        )
+        register_current_ticket_artifact(
+            implementation_godot_evidence_dest,
+            ticket_id="SETUP-001",
+            kind="implementation",
+            stage="implementation",
+            relative_path=".opencode/state/implementations/setup-001-implementation.md",
+            summary="Synthetic implementation artifact with Godot headless and export command evidence.",
+            content=(
+                "# Implementation — SETUP-001\n\n"
+                "## Command 1 — Godot headless load\n"
+                "```text\n"
+                "godot4 --headless --path . --quit\n"
+                "```\n"
+                "**Raw output:**\n"
+                "```text\n"
+                "Godot Engine v4.6.1.stable.official.14d1944e - https://godotengine.org\n"
+                "EXIT: 0\n"
+                "```\n\n"
+                "## Command 2 — Android debug APK export\n"
+                "```text\n"
+                "godot4 --headless --path . --export-debug \"Android Debug\" build/android/test-debug.apk\n"
+                "```\n"
+                "**Raw output:**\n"
+                "```text\n"
+                "Godot Engine v4.6.1.stable.official.14d1944e - https://godotengine.org\n"
+                "[ DONE ] export\n"
+                "RESULT: PASS\n"
+                "```\n"
+            ),
+        )
+        implementation_godot_update = run_generated_tool(
+            implementation_godot_evidence_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "review", "activate": True},
+        )
+        if implementation_godot_update["updated_ticket"]["stage"] != "review":
+            raise RuntimeError(
+                "ticket_update should allow implementation-to-review transitions when the implementation artifact records Godot headless and export command output"
+            )
+        stale_review_recovery_dest = workspace / "executed-plan-review-stale-review-artifact"
+        shutil.copytree(full_dest, stale_review_recovery_dest)
+        seed_ready_bootstrap(stale_review_recovery_dest)
+        stale_review_manifest_path = stale_review_recovery_dest / "tickets" / "manifest.json"
+        stale_review_workflow_path = (
+            stale_review_recovery_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        stale_review_manifest = json.loads(
+            stale_review_manifest_path.read_text(encoding="utf-8")
+        )
+        stale_review_workflow = json.loads(
+            stale_review_workflow_path.read_text(encoding="utf-8")
+        )
+        stale_review_ticket = stale_review_manifest["tickets"][0]
+        stale_review_ticket["stage"] = "plan_review"
+        stale_review_ticket["status"] = "plan_review"
+        stale_review_manifest["active_ticket"] = stale_review_ticket["id"]
+        stale_review_workflow["active_ticket"] = stale_review_ticket["id"]
+        stale_review_workflow["stage"] = "plan_review"
+        stale_review_workflow["status"] = "plan_review"
+        stale_review_workflow["ticket_state"].setdefault(
+            stale_review_ticket["id"],
+            {"approved_plan": True, "reopen_count": 0, "needs_reverification": False},
+        )["approved_plan"] = True
+        stale_review_manifest_path.write_text(
+            json.dumps(stale_review_manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        stale_review_workflow_path.write_text(
+            json.dumps(stale_review_workflow, indent=2) + "\n", encoding="utf-8"
+        )
+        register_current_ticket_artifact(
+            stale_review_recovery_dest,
+            ticket_id=stale_review_ticket["id"],
+            kind="plan",
+            stage="planning",
+            relative_path=".opencode/state/artifacts/history/setup-001/planning/setup-001-plan.md",
+            summary="Synthetic planning artifact for stale-stage recovery coverage.",
+            content="# Plan\n\nCommand: rg --files\n\nApproved implementation plan.\n",
+        )
+        register_current_ticket_artifact(
+            stale_review_recovery_dest,
+            ticket_id=stale_review_ticket["id"],
+            kind="review",
+            stage="review",
+            relative_path=".opencode/state/reviews/setup-001-review-review.md",
+            summary="Synthetic stray review artifact without implementation evidence.",
+            content="# Review\n\nVerdict: PASS\n\nThis artifact should not justify skipping implementation.\n",
+        )
+        stale_review_lookup = run_generated_tool(
+            stale_review_recovery_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if stale_review_lookup["transition_guidance"].get("recovery_action"):
+            raise RuntimeError(
+                "ticket_lookup should not treat a stray review artifact as stale-stage recovery evidence when no current implementation artifact exists"
+            )
+        if (
+            stale_review_lookup["transition_guidance"]["recommended_ticket_update"][
+                "stage"
+            ]
+            != "implementation"
+        ):
+            raise RuntimeError(
+                "ticket_lookup should keep approved plan_review tickets pointed at implementation when later-stage artifacts lack the required prerequisite chain"
+            )
         review_fail_dest = workspace / "executed-review-fail-guidance"
         shutil.copytree(full_dest, review_fail_dest)
         seed_ready_bootstrap(review_fail_dest)
@@ -8834,6 +9054,30 @@ def main() -> int:
         if overall_result_update["updated_ticket"]["stage"] != "qa":
             raise RuntimeError(
                 "ticket_update should allow review-to-QA transitions when a remediation review artifact records `Overall Result: **PASS**` with fenced command and output evidence"
+            )
+        heading_overall_result_remediation_dest = (
+            workspace / "executed-review-remediation-heading-overall-result"
+        )
+        shutil.copytree(full_dest, heading_overall_result_remediation_dest)
+        seed_ready_bootstrap(heading_overall_result_remediation_dest)
+        seed_table_heading_remediation_review(heading_overall_result_remediation_dest)
+        heading_overall_result_lookup = run_generated_tool(
+            heading_overall_result_remediation_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if heading_overall_result_lookup["transition_guidance"]["review_verdict"] != "PASS":
+            raise RuntimeError(
+                "ticket_lookup should extract PASS verdicts from remediation review artifacts that use PASS table rows plus a `## Overall Result: PASS` heading"
+            )
+        heading_overall_result_update = run_generated_tool(
+            heading_overall_result_remediation_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "qa", "activate": True},
+        )
+        if heading_overall_result_update["updated_ticket"]["stage"] != "qa":
+            raise RuntimeError(
+                "ticket_update should allow review-to-QA transitions when a remediation review artifact uses PASS table rows and a `## Overall Result: PASS` heading"
             )
         verdict_heading_remediation_dest = workspace / "executed-review-remediation-verdict-heading"
         shutil.copytree(full_dest, verdict_heading_remediation_dest)
@@ -9823,6 +10067,66 @@ def main() -> int:
             raise RuntimeError(
                 "environment_bootstrap should warn about missing Android export presets when the canonical brief declares a Godot Android target even before export_presets.cfg exists"
             )
+        host_android_sdk = next(
+            (
+                candidate
+                for candidate in (
+                    os.environ.get("ANDROID_HOME"),
+                    os.environ.get("ANDROID_SDK_ROOT"),
+                    str(Path.home() / "Android" / "Sdk"),
+                    str(Path.home() / "Library" / "Android" / "sdk"),
+                    str(Path.home() / "AppData" / "Local" / "Android" / "Sdk"),
+                )
+                if candidate and Path(candidate).exists()
+            ),
+            None,
+        )
+        if shutil.which("java") and host_android_sdk:
+            inferred_env_android_dest = workspace / "executed-environment-bootstrap-android-inferred-env"
+            shutil.copytree(full_dest, inferred_env_android_dest)
+            seed_godot_android_target(inferred_env_android_dest)
+            seed_minimal_godot_project(inferred_env_android_dest)
+            explicit_bootstrap_fingerprint = compute_bootstrap_fingerprint(
+                inferred_env_android_dest
+            )
+            original_bootstrap_env = {
+                key: os.environ.get(key)
+                for key in ("JAVA_HOME", "ANDROID_HOME", "ANDROID_SDK_ROOT")
+            }
+            try:
+                for key in original_bootstrap_env:
+                    os.environ.pop(key, None)
+                inferred_bootstrap_fingerprint = compute_bootstrap_fingerprint(
+                    inferred_env_android_dest
+                )
+                inferred_android_result = run_generated_tool(
+                    inferred_env_android_dest,
+                    ".opencode/tools/environment_bootstrap.ts",
+                    {"ticket_id": "SETUP-001"},
+                )
+            finally:
+                for key, value in original_bootstrap_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+            if inferred_bootstrap_fingerprint != explicit_bootstrap_fingerprint:
+                raise RuntimeError(
+                    "Bootstrap fingerprints should stay stable when JAVA_HOME/ANDROID_* are omitted but can be inferred from host paths"
+                )
+            inferred_blockers = {
+                blocker["executable"]
+                for blocker in inferred_android_result.get("blockers", [])
+                if isinstance(blocker, dict) and isinstance(blocker.get("executable"), str)
+            }
+            if "JAVA_HOME" in inferred_blockers:
+                raise RuntimeError(
+                    "environment_bootstrap should infer JAVA_HOME from the available Java runtime instead of blocking on an unset env var"
+                )
+            if "android-sdk" in inferred_blockers:
+                raise RuntimeError(
+                    "environment_bootstrap should infer the Android SDK path from standard host locations instead of requiring explicit ANDROID_* vars"
+                )
 
         executed_smoke_test_dest = workspace / "executed-smoke-test"
         shutil.copytree(full_dest, executed_smoke_test_dest)
@@ -10104,6 +10408,96 @@ Overall Result: PASS
         ):
             raise RuntimeError(
                 "smoke_test should persist fatal stderr diagnostics in a failing smoke artifact"
+            )
+        executed_smoke_reload_warning_dest = (
+            workspace / "executed-smoke-test-godot-reload-warning"
+        )
+        shutil.copytree(full_dest, executed_smoke_reload_warning_dest)
+        seed_ready_bootstrap(executed_smoke_reload_warning_dest)
+        register_current_ticket_artifact(
+            executed_smoke_reload_warning_dest,
+            ticket_id="SETUP-001",
+            kind="qa",
+            stage="qa",
+            relative_path=".opencode/state/artifacts/setup-001-qa-reload-warning.md",
+            summary="Synthetic QA artifact for Godot class reload warning smoke coverage.",
+            content="# QA\n\nCommand: godot4 --headless --path . --quit\n\nQA evidence is current.\n",
+        )
+        write_executable(
+            executed_smoke_reload_warning_dest / "scripts" / "mock_reload_warning.py",
+            "\n".join(
+                [
+                    "#!/usr/bin/env python3",
+                    "import sys",
+                    'sys.stderr.write(\'SCRIPT ERROR: Parse Error: Could not parse global class \"EnemyBase\" from \"res://scripts/enemy_base.gd\".\\n\')',
+                    'sys.stderr.write(\'          at: GDScript::reload (res://scripts/wave_spawner.gd:77)\\n\')',
+                    'sys.stderr.write(\'SCRIPT ERROR: Parse Error: Could not resolve class \"EnemyBrown\", because of a parser error.\\n\')',
+                    'sys.stderr.write(\'          at: GDScript::reload (res://scripts/wave_spawner.gd:79)\\n\')',
+                    'sys.stderr.write(\'ERROR: Failed to load script \"res://scripts/wave_spawner.gd\" with error \"Parse error\".\\n\')',
+                    "sys.exit(0)",
+                ]
+            )
+            + "\n",
+        )
+        smoke_reload_warning_result = run_generated_tool(
+            executed_smoke_reload_warning_dest,
+            ".opencode/tools/smoke_test.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "command_override": ["python3 scripts/mock_reload_warning.py"],
+            },
+        )
+        if smoke_reload_warning_result["passed"] is not True:
+            raise RuntimeError(
+                "smoke_test should treat exit-0 Godot class reload parse output as a non-blocking tooling warning"
+            )
+        if (
+            smoke_reload_warning_result["commands"][0]["failure_classification"]
+            != "tooling_parse_warning"
+        ):
+            raise RuntimeError(
+                "smoke_test should classify exit-0 Godot class reload parse output as tooling_parse_warning"
+            )
+        smoke_reload_warning_artifact = executed_smoke_reload_warning_dest / str(
+            smoke_reload_warning_result["smoke_test_artifact"]
+        )
+        smoke_reload_warning_artifact_body = smoke_reload_warning_artifact.read_text(
+            encoding="utf-8"
+        )
+        if "Overall Result: PASS" not in smoke_reload_warning_artifact_body:
+            raise RuntimeError(
+                "smoke_test should persist a passing artifact for the Godot class reload tooling warning path"
+            )
+        workflow_warning_check = subprocess.run(
+            [
+                *node_command(),
+                "--input-type=module",
+                "--eval",
+                (
+                    "import { pathToFileURL } from 'node:url';"
+                    "const repo = process.argv[1];"
+                    "const artifactPath = process.argv[2];"
+                    "const workflow = await import(pathToFileURL(repo + '/.opencode/lib/workflow.ts').href);"
+                    "const content = await (await import('node:fs/promises')).readFile(artifactPath, 'utf-8');"
+                    "const contradiction = workflow.smokeArtifactPassContradictionReason(content);"
+                    "console.log(contradiction === null ? 'null' : contradiction);"
+                ),
+                str(executed_smoke_reload_warning_dest),
+                str(smoke_reload_warning_artifact),
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if workflow_warning_check.returncode != 0:
+            raise RuntimeError(
+                "Unable to verify the workflow smoke contradiction parser for tooling_parse_warning artifacts:\n"
+                + workflow_warning_check.stderr
+            )
+        if workflow_warning_check.stdout.strip() != "null":
+            raise RuntimeError(
+                "workflow.ts should not treat tooling_parse_warning Godot reload artifacts as pass contradictions"
             )
 
         executed_godot_export_stderr_dest = (
@@ -11442,6 +11836,22 @@ Overall Result: PASS
             raise RuntimeError(
                 "Consumer-facing repos that claim ready state while finish-owning tickets remain open should emit FINISH002"
             )
+        finish_warning_dest = workspace / "finish-warning-not-claim"
+        shutil.copytree(full_dest, finish_warning_dest)
+        make_stack_skill_non_placeholder(finish_warning_dest)
+        seed_finish_warning_without_completion_claim(finish_warning_dest)
+        finish_warning_audit = run_json(
+            [sys.executable, str(AUDIT), str(finish_warning_dest), "--format", "json"],
+            ROOT,
+        )
+        finish_warning_codes = {
+            finding["code"] for finding in finish_warning_audit.get("findings", [])
+        }
+        for unexpected_code in ("FINISH002", "FINISH005"):
+            if unexpected_code in finish_warning_codes:
+                raise RuntimeError(
+                    "Standard warning text about rerunning audit before treating the repo as ready should not count as a completion claim"
+                )
 
         incomplete_finish_dest = workspace / "incomplete-finish-contract"
         shutil.copytree(full_dest, incomplete_finish_dest)
@@ -14296,6 +14706,30 @@ Overall Result: PASS
                 ):
                     raise RuntimeError(
                         "Disposition bundle should reuse the shared evidence-grade helper for advisory findings"
+                    )
+                session_bundle = disposition_bundle_module.build_disposition_bundle(
+                    [
+                        SimpleNamespace(
+                            code="SESSION003",
+                            severity="error",
+                            files=["session.log"],
+                            evidence=["synthetic transcript evidence"],
+                            provenance="transcript",
+                        )
+                    ],
+                    [],
+                    generated_at="2026-04-16T00:00:00Z",
+                    repo_root=str(temp_root),
+                    audit_package_commit=package_commit(),
+                )
+                session_entry = session_bundle["findings"][0]
+                if session_entry["disposition_class"] != "advisory":
+                    raise RuntimeError(
+                        "Disposition bundle should classify transcript-only SESSION findings as advisory so they do not reopen managed repair dead ends"
+                    )
+                if {item["code"] for item in session_bundle["shadow_mode_deltas"]} != {"SESSION003"}:
+                    raise RuntimeError(
+                        "Disposition bundle should surface SESSION advisory downgrades in shadow-mode output"
                     )
                 if "Blender-MCP" not in audit_reporting_module.prevention_action(
                     SimpleNamespace(code="SKILL003")

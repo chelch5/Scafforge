@@ -1672,7 +1672,15 @@ def main() -> int:
         introduced_blocking_codes = introduced_blocking_regression_codes(verification_status)
         if args.skip_verify:
             blocking_reasons.append("Post-repair verification was skipped; rerun scafforge-audit before handoff.")
-        elif basis_requires_causal_replay and not final_verification["logs"]:
+        elif (
+            basis_requires_causal_replay
+            and not final_verification["logs"]
+            and not (
+                verification_status.get("source_follow_up_codes")
+                or verification_status.get("manual_prerequisite_codes")
+                or verification_status.get("process_state_codes")
+            )
+        ):
             blocking_reasons.append("Post-repair verification did not inherit the transcript-backed repair basis; rerun the public repair runner with the causal transcript evidence before handoff.")
         elif introduced_blocking_codes:
             blocking_reasons.append(

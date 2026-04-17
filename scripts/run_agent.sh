@@ -163,6 +163,71 @@ resolve_repo_path() {
   return 1
 }
 
+infer_java_home() {
+  local explicit="${JAVA_HOME:-}"
+  if [[ -n "$explicit" && -d "$explicit" ]]; then
+    printf '%s\n' "$explicit"
+    return 0
+  fi
+  if command -v java >/dev/null 2>&1; then
+    local java_bin java_home
+    java_bin="$(readlink -f "$(command -v java)" 2>/dev/null || command -v java)"
+    java_home="$(dirname "$(dirname "$java_bin")")"
+    if [[ -d "$java_home" ]]; then
+      printf '%s\n' "$java_home"
+      return 0
+    fi
+  fi
+  local candidate
+  for candidate in \
+    /usr/lib/jvm/default-java \
+    /usr/lib/jvm/java-21-openjdk-amd64 \
+    /usr/lib/jvm/java-17-openjdk-amd64 \
+    /usr/lib/jvm/java-11-openjdk-amd64
+  do
+    if [[ -d "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+infer_android_sdk_path() {
+  local explicit="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+  if [[ -n "$explicit" && -d "$explicit" ]]; then
+    printf '%s\n' "$explicit"
+    return 0
+  fi
+  local candidate
+  for candidate in \
+    "${HOME}/Android/Sdk" \
+    "${HOME}/Library/Android/sdk" \
+    "${HOME}/AppData/Local/Android/Sdk"
+  do
+    if [[ -d "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+normalize_host_tooling_env() {
+  local inferred_java_home="" inferred_android_sdk=""
+  if inferred_java_home="$(infer_java_home 2>/dev/null)"; then
+    export JAVA_HOME="${JAVA_HOME:-$inferred_java_home}"
+  fi
+  if inferred_android_sdk="$(infer_android_sdk_path 2>/dev/null)"; then
+    export ANDROID_HOME="${ANDROID_HOME:-$inferred_android_sdk}"
+    export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$inferred_android_sdk}}"
+  elif [[ -n "${ANDROID_HOME:-}" && -z "${ANDROID_SDK_ROOT:-}" ]]; then
+    export ANDROID_SDK_ROOT="$ANDROID_HOME"
+  elif [[ -n "${ANDROID_SDK_ROOT:-}" && -z "${ANDROID_HOME:-}" ]]; then
+    export ANDROID_HOME="$ANDROID_SDK_ROOT"
+  fi
+}
+
 # Parse args
 REPO=""
 MODE="opencode"  # opencode | audit | repair
@@ -196,6 +261,7 @@ REPO_PARENT_DIR="$(dirname "$REPO_PATH")"
 AGENT="${AGENT_NAMES[$REPO]}"
 TIMESTAMP="$(date +%Y-%m-%dT%H-%M-%S)"
 LOG_FILE="${LOG_DIR}/${REPO}-${MODE}-${TIMESTAMP}.log"
+normalize_host_tooling_env
 
 case "$EXEC_PROVIDER" in
   auto|codex|kilo|copilot) ;;
@@ -419,6 +485,8 @@ If you encounter a blocker you cannot resolve after 3 attempts, stop and report 
   echo "Repo:    ${REPO} (${REPO_PATH})"
   echo "Agent:   ${AGENT}"
   echo "Model:   ${MODEL}"
+  echo "JAVA_HOME:${JAVA_HOME:-<unset>}"
+  echo "ANDROID_HOME:${ANDROID_HOME:-<unset>}"
   echo "Logs:    ${LOG_DIR}"
 
 elif [[ "$MODE" == "audit" ]]; then
@@ -442,6 +510,8 @@ Use command-backed evidence only and avoid improvised package-root wrappers."
   echo "Codex:   ${CODEX_MODEL} reasoning=${CODEX_REASONING}"
   echo "Kilo:    ${KILO_MODELS[0]} -> ${KILO_MODELS[1]} variant=${KILO_VARIANT}"
   echo "Copilot: ${COPILOT_MODEL} reasoning=${COPILOT_REASONING}"
+  echo "JAVA_HOME:${JAVA_HOME:-<unset>}"
+  echo "ANDROID_HOME:${ANDROID_HOME:-<unset>}"
   echo "Logs:    ${LOG_DIR}"
 
 elif [[ "$MODE" == "repair" ]]; then
@@ -470,6 +540,8 @@ Do not hand-edit downstream product code directly."
   echo "Codex:   ${CODEX_MODEL} reasoning=${CODEX_REASONING}"
   echo "Kilo:    ${KILO_MODELS[0]} -> ${KILO_MODELS[1]} variant=${KILO_VARIANT}"
   echo "Copilot: ${COPILOT_MODEL} reasoning=${COPILOT_REASONING}"
+  echo "JAVA_HOME:${JAVA_HOME:-<unset>}"
+  echo "ANDROID_HOME:${ANDROID_HOME:-<unset>}"
   echo "Logs:    ${LOG_DIR}"
 
 else
