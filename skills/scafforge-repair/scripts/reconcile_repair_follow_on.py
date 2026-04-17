@@ -116,6 +116,15 @@ def _allows_source_follow_up_reconcile(
     pending_process_verification = bool(
         repair_follow_on.get("pending_process_verification")
     )
+    placeholder_only_non_stage = bool(non_stage_blockers) and all(
+        reason.startswith(
+            "Post-repair verification failed repair-contract consistency checks: "
+        )
+        and "placeholder_local_skills_survived_refresh" in reason
+        for reason in non_stage_blockers
+    )
+    if placeholder_only_non_stage:
+        return True
     if verification_blocking_codes or contract_failures:
         if (
             contract_failures == ["placeholder_local_skills_survived_refresh"]
@@ -124,17 +133,6 @@ def _allows_source_follow_up_reconcile(
             return True
         return False
     if not source_follow_up_codes and not process_state_codes and not pending_process_verification:
-        if (
-            bool(non_stage_blockers)
-            and all(
-                reason.startswith(
-                    "Post-repair verification failed repair-contract consistency checks: "
-                )
-                and "placeholder_local_skills_survived_refresh" in reason
-                for reason in non_stage_blockers
-            )
-        ):
-            return True
         if bool(non_stage_blockers) and all(
             reason.startswith(
                 "Post-repair verification introduced new critical execution or reference findings: "

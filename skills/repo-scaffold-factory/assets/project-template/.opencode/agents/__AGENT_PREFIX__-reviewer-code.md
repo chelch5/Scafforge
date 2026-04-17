@@ -16,10 +16,7 @@ permission:
   artifact_write: allow
   artifact_register: allow
   skill:
-    "*": deny
-    "project-context": allow
-    "ticket-execution": allow
-    "review-audit-bridge": allow
+    "*": allow
   task:
     "*": deny
     "__AGENT_PREFIX__-utility-summarize": allow
@@ -84,7 +81,9 @@ Rules:
 - if the implementation artifact or diff context is missing, return a blocker instead of inferring correctness
 - do not end with a summary-only response when findings or an approval signal are required
 - when the ticket is a remediation ticket and carries `finding_source`, you must rerun the original failing command or the canonical acceptance command for the repaired surface before approving; do not approve on prose alone when the original check is re-runnable
+- when reviewing a reopened ticket whose historical acceptance was invalidated, compare the current canonical acceptance in `tickets/manifest.json` / `tickets/<id>.md` with the acceptance reasoning used by the plan and implementation artifacts; reject if the review is relying on criteria that are not reflected in canonical ticket truth
 - embed the following in the review artifact for every remediation review: the exact command run, the raw command output (truncated to relevant lines if needed), and the explicit pass/fail result of that command
 - for remediation reviews, include one standalone canonical verdict line exactly in the form `Overall Result: PASS`, `Overall Result: FAIL`, or `Overall Result: BLOCKED` so downstream gates can parse the result deterministically
 - if the remediation command cannot run due to missing host prerequisites, record that as a blocker and do not approve; do not substitute a prose assertion of fixed behavior for runnable command evidence
 - when a remediation ticket cites `.opencode/state/artifacts/history/...`, treat that path as read-only evidence of the original defect; require the fix to land on current writable repo surfaces or current remediation artifacts instead of demanding a history rewrite
+- when implementation work uses Blender MCP, reject any bridge-defect claim that still shows mutating `job_start` records with null `input_blend` or `output_blend`; that is invocation misuse until a correctly chained retry proves otherwise

@@ -54,6 +54,8 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
   const manifest = await loadManifest()
   const blocker = validateLifecycleStageStatus(ticket.stage, ticket.status)
   const approvedPlan = isPlanApprovedForTicket(workflow, ticket.id)
+  const ticketState = getTicketWorkflowState(workflow, ticket.id)
+  const needsAcceptanceRefresh = ticketState.needs_acceptance_refresh === true
   const processVerification = getProcessVerificationState(manifest, workflow, ticket.id)
   const needsProcessVerification = processVerification.current_ticket_requires_verification
   const ticketNeedsReconciliation = ticketNeedsHistoricalReconciliation(ticket)
@@ -74,6 +76,7 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
     current_stage: ticket.stage,
     current_status: ticket.status,
     approved_plan: approvedPlan,
+    acceptance_refresh_required: needsAcceptanceRefresh,
     pending_process_verification: processVerification.pending,
     current_state_blocker: blocker,
     next_allowed_stages: [] as string[],
@@ -92,6 +95,12 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
     review_verdict: null as string | null,
     qa_verdict: null as string | null,
     verdict_unclear: false,
+  }
+
+  if (needsAcceptanceRefresh) {
+    base.warnings.push(
+      `Canonical acceptance for ${ticket.id} must be refreshed or re-affirmed through ticket_update before downstream review and closeout should be treated as truthful.`,
+    )
   }
 
   if (bootstrapStatus !== "ready") {
@@ -297,6 +306,20 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
           current_state_blocker: implementationBlocker,
         }
       }
+      if (needsAcceptanceRefresh) {
+        return {
+          ...base,
+          next_allowed_stages: ["implementation"],
+          required_artifacts: ["implementation", "canonical acceptance refresh"],
+          next_action_kind: "ticket_update",
+          next_action_tool: "ticket_update",
+          delegate_to_agent: null,
+          required_owner: "team-leader",
+          recommended_action: "Refresh or re-affirm the ticket's canonical acceptance criteria through ticket_update(acceptance=[...]) before entering review so the manifest and ticket markdown match the reopened ticket's actual acceptance contract.",
+          recommended_ticket_update: { ticket_id: ticket.id, activate: true },
+          current_state_blocker: "Canonical acceptance still needs explicit refresh before review.",
+        }
+      }
       return {
         ...base,
         next_allowed_stages: ["review"],
@@ -310,6 +333,20 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
       }
     }
     case "review":
+      if (needsAcceptanceRefresh) {
+        return {
+          ...base,
+          next_allowed_stages: ["review"],
+          required_artifacts: ["canonical acceptance refresh"],
+          next_action_kind: "ticket_update",
+          next_action_tool: "ticket_update",
+          delegate_to_agent: null,
+          required_owner: "team-leader",
+          recommended_action: "Refresh or re-affirm the ticket's canonical acceptance criteria through ticket_update before relying on review approval.",
+          recommended_ticket_update: { ticket_id: ticket.id, activate: true },
+          current_state_blocker: "Canonical acceptance still needs explicit refresh before review can advance.",
+        }
+      }
       if (!hasReviewArtifact(ticket)) {
         return {
           ...base,
@@ -395,6 +432,20 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
         review_verdict: reviewVerdict,
       }
     case "qa": {
+      if (needsAcceptanceRefresh) {
+        return {
+          ...base,
+          next_allowed_stages: ["qa"],
+          required_artifacts: ["canonical acceptance refresh"],
+          next_action_kind: "ticket_update",
+          next_action_tool: "ticket_update",
+          delegate_to_agent: null,
+          required_owner: "team-leader",
+          recommended_action: "Refresh or re-affirm the ticket's canonical acceptance criteria through ticket_update before relying on QA approval.",
+          recommended_ticket_update: { ticket_id: ticket.id, activate: true },
+          current_state_blocker: "Canonical acceptance still needs explicit refresh before QA can advance.",
+        }
+      }
       const qaBlocker = await validateQaArtifactEvidence(ticket)
       if (qaBlocker) {
         return {
@@ -460,6 +511,20 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
       }
     }
     case "smoke-test": {
+      if (needsAcceptanceRefresh) {
+        return {
+          ...base,
+          next_allowed_stages: ["smoke-test"],
+          required_artifacts: ["canonical acceptance refresh"],
+          next_action_kind: "ticket_update",
+          next_action_tool: "ticket_update",
+          delegate_to_agent: null,
+          required_owner: "team-leader",
+          recommended_action: "Refresh or re-affirm the ticket's canonical acceptance criteria through ticket_update before relying on smoke-test closeout.",
+          recommended_ticket_update: { ticket_id: ticket.id, activate: true },
+          current_state_blocker: "Canonical acceptance still needs explicit refresh before closeout.",
+        }
+      }
       const smokeBlocker = await validateSmokeTestArtifactEvidence(ticket)
       if (smokeBlocker) {
         return {
@@ -490,6 +555,20 @@ async function buildTransitionGuidance(ticket: ReturnType<typeof getTicket>, wor
       }
     }
     case "closeout":
+      if (ticket.status === "done" && needsAcceptanceRefresh) {
+        return {
+          ...base,
+          next_allowed_stages: ["closeout"],
+          required_artifacts: ["canonical acceptance refresh"],
+          next_action_kind: "ticket_update",
+          next_action_tool: "ticket_update",
+          delegate_to_agent: null,
+          required_owner: "team-leader",
+          recommended_action: "Ticket is already closed, but canonical acceptance refresh is still pending. Refresh or re-affirm the ticket's canonical acceptance criteria through ticket_update(acceptance=[...]) before relying on historical trust restoration, restart publication, or handoff.",
+          recommended_ticket_update: { ticket_id: ticket.id, activate: true },
+          current_state_blocker: "Canonical acceptance still needs explicit refresh before the closed ticket can be treated as truthful.",
+        }
+      }
       if (ticket.status === "done" && ticketNeedsReconciliation) {
         return {
           ...base,

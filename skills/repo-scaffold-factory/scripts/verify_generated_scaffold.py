@@ -147,7 +147,11 @@ def agent_reference_findings(repo_root: Path) -> list[object]:
             nested = re.match(r'^    "?([^":]+)"?: allow$', raw_line)
             if top_level:
                 name = top_level.group(1)
-                if name not in {"webfetch"} and name not in tools:
+                if (
+                    name not in {"webfetch"}
+                    and not name.startswith("blender_agent_")
+                    and name not in tools
+                ):
                     missing.append(f"tool:{name}")
             elif nested and section == "skill":
                 name = nested.group(1)

@@ -1,24 +1,29 @@
 import { tool } from "@opencode-ai/plugin"
 import {
+  defaultArtifactPath,
   describeAllowedStatusesForStage,
   ensureRequiredFile,
   extractArtifactVerdict,
   getTicket,
+  getTicketWorkflowState,
   hasArtifact,
   hasPendingRepairFollowOn,
   hasReviewArtifact,
   isAllowedFollowOnTicket,
   isPlanApprovedForTicket,
   isBlockingArtifactVerdict,
+  loadArtifactRegistry,
   loadManifest,
   loadWorkflowState,
   latestArtifact,
   latestReviewArtifact,
   markArtifactsHistorical,
   markTicketDone,
+  normalizeRepoPath,
   nextRepairFollowOnStage,
   repairFollowOnBlockingReason,
   readArtifactContent,
+  registerArtifactSnapshot,
   resolveRequestedTicketProgress,
   saveWorkflowBundle,
   setPlanApprovedForTicket,
@@ -31,16 +36,41 @@ import {
   validateQaArtifactEvidence,
   validateSmokeTestArtifactEvidence,
   workflowStatePath,
+  writeText,
   rootPath,
 } from "../lib/workflow"
 
+function renderAcceptanceRefreshArtifact(args: {
+  ticketId: string
+  previousAcceptance: string[]
+  currentAcceptance: string[]
+}): string {
+  const previous = args.previousAcceptance.length > 0 ? args.previousAcceptance.map((item) => `- ${item}`).join("\n") : "- None"
+  const current = args.currentAcceptance.length > 0 ? args.currentAcceptance.map((item) => `- ${item}`).join("\n") : "- None"
+  return `# Ticket Acceptance Refresh
+
+## Ticket
+
+- ticket_id: ${args.ticketId}
+
+## Previous Acceptance
+
+${previous}
+
+## Current Acceptance
+
+${current}
+`
+}
+
 export default tool({
-  description: "Update ticket stage, status, summary, and active ticket state.",
+  description: "Update ticket stage, status, summary, canonical acceptance, and active ticket state.",
   args: {
     ticket_id: tool.schema.string().describe("Ticket id to update."),
     stage: tool.schema.string().describe("Optional new stage value.").optional(),
     status: tool.schema.string().describe("Optional new status value.").optional(),
     summary: tool.schema.string().describe("Optional replacement summary.").optional(),
+    acceptance: tool.schema.array(tool.schema.string()).describe("Optional replacement or re-affirmed canonical acceptance criteria.").optional(),
     activate: tool.schema.boolean().describe("Whether to set this ticket as the active ticket.").optional(),
     approved_plan: tool.schema.boolean().describe("Whether this ticket's plan is approved in workflow-state.").optional(),
     pending_process_verification: tool.schema.boolean().describe("Whether post-migration backlog verification is still pending.").optional(),
@@ -67,10 +97,17 @@ export default tool({
       throw new Error("Cannot modify pending_process_verification while repair follow-on is incomplete. Complete the required repair stages before clearing global verification state.")
     }
     const ticket = getTicket(manifest, args.ticket_id)
+    const ticketState = getTicketWorkflowState(workflow, ticket.id)
     const wasDone = ticket.status === "done"
     const requested = resolveRequestedTicketProgress(ticket, { stage: args.stage, status: args.status })
     const targetStage = requested.stage
     const targetStatus = requested.status
+    const normalizedAcceptance = Array.isArray(args.acceptance)
+      ? args.acceptance.map((item) => item.trim()).filter(Boolean)
+      : null
+    if (Array.isArray(args.acceptance) && normalizedAcceptance.length !== args.acceptance.length) {
+      throw new Error("acceptance items must be non-empty strings.")
+    }
 
     const lifecycleBlocker = validateLifecycleStageStatus(targetStage, targetStatus)
     if (lifecycleBlocker) {
@@ -181,6 +218,16 @@ export default tool({
       }
     }
 
+    if (
+      ticketState.needs_acceptance_refresh === true
+      && ["review", "qa", "smoke-test", "closeout"].includes(targetStage)
+      && !normalizedAcceptance
+    ) {
+      throw new Error(
+        `Ticket ${ticket.id} still needs canonical acceptance refresh before it can advance to ${targetStage}. Re-run ticket_update with acceptance=[...] to refresh or re-affirm the canonical acceptance criteria first.`,
+      )
+    }
+
     if (args.activate && ticket.source_mode === "split_scope" && ticket.split_kind === "sequential_dependent" && ticket.source_ticket_id) {
       const sourceTicket = getTicket(manifest, ticket.source_ticket_id)
       if (sourceTicket.status !== "done") {
@@ -197,6 +244,32 @@ export default tool({
       ticket.status = targetStatus
     }
     if (args.summary) ticket.summary = args.summary
+    const previousAcceptance = [...ticket.acceptance]
+    let registry: Awaited<ReturnType<typeof loadArtifactRegistry>> | undefined = undefined
+    if (normalizedAcceptance) {
+      ticket.acceptance = normalizedAcceptance
+      delete ticketState.needs_acceptance_refresh
+      registry = await loadArtifactRegistry()
+      const canonicalPath = normalizeRepoPath(defaultArtifactPath(ticket.id, "planning", "acceptance-refresh"))
+      await writeText(
+        canonicalPath,
+        renderAcceptanceRefreshArtifact({
+          ticketId: ticket.id,
+          previousAcceptance,
+          currentAcceptance: normalizedAcceptance,
+        }),
+      )
+      await registerArtifactSnapshot({
+        ticket,
+        registry,
+        source_path: canonicalPath,
+        kind: "acceptance-refresh",
+        stage: "planning",
+        summary: previousAcceptance.join("\n") === normalizedAcceptance.join("\n")
+          ? `Canonical acceptance re-affirmed for ${ticket.id}.`
+          : `Canonical acceptance refreshed for ${ticket.id}.`,
+      })
+    }
     if (args.activate) manifest.active_ticket = ticket.id
     if (targetStage === "implementation" && ticket.verification_state !== "invalidated") {
       ticket.verification_state = "suspect"
@@ -219,7 +292,7 @@ export default tool({
       workflow.pending_process_verification = args.pending_process_verification
     }
 
-    await saveWorkflowBundle({ workflow, manifest, skipGraphValidation: true })
+    await saveWorkflowBundle({ workflow, manifest, registry, skipGraphValidation: true })
 
     return JSON.stringify(
       {

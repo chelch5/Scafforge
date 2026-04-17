@@ -1550,6 +1550,11 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reverify.ts",
+        "still needs canonical acceptance refresh",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_reverify.ts",
         "ticket_reverify requires evidence_artifact_path or verification_content.",
     )
     require_contains(
@@ -1704,6 +1709,11 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     )
     require_contains(
         findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "never use it to bypass a pending canonical acceptance refresh",
+    )
+    require_contains(
+        findings,
         TEMPLATE_ROOT / ".opencode" / "skills" / "ticket-execution" / "SKILL.md",
         "keep the parent foregrounded until that setup is complete before activating a parallel child lane",
     )
@@ -1731,6 +1741,71 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
         findings,
         TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-lane-executor.md",
         "ticket_release: allow",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "if the repo exposes `__AGENT_PREFIX__-blender-asset-creator` and the ticket's primary deliverable is a Blender-generated asset or other managed `blender_agent` output, delegate implementation to that Blender specialist instead of the generic implementer or lane executor",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "to `__AGENT_PREFIX__-blender-asset-creator`: include the claimed ticket id, the asset brief path, expected asset output paths, allowed paths, the implementation artifact path, and the `.blender-mcp/audit` path it must cite when proving saved-blend chaining or any remaining bridge defect",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "if the worker label or subagent selection resolves to `__AGENT_PREFIX__-implementer` or `__AGENT_PREFIX__-lane-executor`, stop and reroute before any Blender MCP call",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "do not call `blender_agent_*` tools yourself to diagnose or retry a Blender-routed implementation failure; require `__AGENT_PREFIX__-blender-asset-creator` to own the retried implementation and its artifact evidence",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-lane-executor.md",
+        '"*": allow',
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-implementer.md",
+        "blender_agent_project_initialize: deny",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-lane-executor.md",
+        "blender_agent_project_initialize: deny",
+    )
+    require_contains(
+        findings,
+        ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "bootstrap_repo_scaffold.py",
+        '"  artifact_write: allow\\n"',
+    )
+    require_contains(
+        findings,
+        ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "bootstrap_repo_scaffold.py",
+        '"  blender_agent_project_initialize: allow\\n"',
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-implementer.md",
+        "if the repo exposes a dedicated `__AGENT_PREFIX__-blender-asset-creator` and the ticket's primary deliverable is a Blender-generated asset or other managed `blender_agent` output, stop and return a blocker that routes the lane back through that specialist instead of implementing it yourself",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-lane-executor.md",
+        "when the repo exposes a `blender-mcp-workflow` skill or asset-pipeline bootstrap metadata, load that skill before using Blender MCP tools",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-lane-executor.md",
+        "if the repo exposes a dedicated `__AGENT_PREFIX__-blender-asset-creator` and the ticket's primary deliverable is a Blender-generated asset or other managed `blender_agent` output, stop and return a blocker that routes the lane back through that specialist instead of implementing it yourself",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-lane-executor.md",
+        "for mutating Blender MCP calls, always provide `output_blend`, then feed the returned `persistence.saved_blend` back as `input_blend` on the next mutating call",
     )
     require_absent(
         findings,
@@ -1896,6 +1971,16 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "after a planning artifact lands, do not stop at `plan_review`: run the plan-review specialist, inspect the decision, and keep advancing in the same run",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "when the plan-review artifact decision is APPROVED or `ticket_lookup.transition_guidance.recommended_ticket_update` names the `approved_plan=true` approval step, execute that exact `ticket_update` while the ticket remains in `plan_review` before you consider implementation or stopping",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
         "do not restart long Goal / Instructions / Discoveries / Accomplished / Next Steps recap blocks after routine progress; if you are not reporting a blocker, keep progress narration to one or two short lines",
     )
     require_contains(
@@ -1922,6 +2007,16 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
         findings,
         ROOT / "scripts" / "run_agent.sh",
         "After delegating a specialist task, wait for the result, confirm the expected artifact or failure, then rerun ticket_lookup and continue in the same run.",
+    )
+    require_contains(
+        findings,
+        ROOT / "scripts" / "run_agent.sh",
+        "After a planning artifact is written, do not stop at plan_review: run plan review, and if the guidance or review result says approve the plan, execute the exact ticket_update that records approved_plan=true before stopping or delegating implementation.",
+    )
+    require_contains(
+        findings,
+        ROOT / "scripts" / "run_agent.sh",
+        "When ticket_lookup.transition_guidance.recommended_ticket_update is present after a fresh ticket_lookup, treat that exact update as the required next action unless a concrete blocker prevents it.",
     )
     require_contains(
         findings,

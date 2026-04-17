@@ -191,8 +191,10 @@ def prevention_action(finding: Finding) -> str:
         return "Give historical reconciliation one legal evidence-backed path so superseded invalidated tickets can be repaired without depending on impossible direct-artifact or closeout assumptions."
     if finding.code == "WFLOW025":
         return "Extend the target-completion contract so declared Godot Android repos always get canonical `ANDROID-001` and `RELEASE-001` backlog ownership instead of leaving Android delivery buried in generic polish work."
+    if finding.code == "WFLOW033":
+        return "When `issue_intake` invalidates a ticket because the accepted contract is wrong or imprecise, require `ticket_update(acceptance=[...])`, persist an acceptance-refresh artifact, and treat missing canonical refresh as repo-owned follow-up once the installed workflow supports it."
     if finding.code == "WFLOW026":
-        return "Teach the shared artifact verdict extractor to accept markdown-emphasized labels, compact `## QA PASS` / `## Review APPROVE` headings, and plain `**Overall**: PASS` labels, then route ticket_lookup and ticket_update through that single parser."
+        return "Teach the shared artifact verdict extractor to accept markdown-emphasized labels, compact `## QA PASS` / `## Review APPROVE` headings, `## Decision` headings with the verdict on the next line, and plain `**Overall**: PASS` labels, then route ticket_lookup and ticket_update through that single parser."
     if finding.code == "WFLOW027":
         return "Return verification metadata from restart-surface tools so callers can confirm what handoff and snapshot publication actually wrote."
     if finding.code == "WFLOW028":
@@ -273,6 +275,40 @@ def package_has_target_completion_fix(ctx: AuditReportingContext) -> bool:
     )
 
 
+def package_has_acceptance_refresh_fix(ctx: AuditReportingContext) -> bool:
+    package = ctx.package_root
+    workflow_lib = read_text(package / "skills" / "repo-scaffold-factory" / "assets" / "project-template" / ".opencode" / "lib" / "workflow.ts")
+    issue_intake = read_text(package / "skills" / "repo-scaffold-factory" / "assets" / "project-template" / ".opencode" / "tools" / "issue_intake.ts")
+    ticket_update = read_text(package / "skills" / "repo-scaffold-factory" / "assets" / "project-template" / ".opencode" / "tools" / "ticket_update.ts")
+    team_leader = read_text(package / "skills" / "repo-scaffold-factory" / "assets" / "project-template" / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md")
+    contract_surfaces = read_text(package / "skills" / "scafforge-audit" / "scripts" / "audit_contract_surfaces.py")
+    return (
+        "needs_acceptance_refresh" in workflow_lib
+        and "acceptanceRefreshRequired" in issue_intake
+        and "needs_acceptance_refresh" in issue_intake
+        and 'kind: "acceptance-refresh"' in ticket_update
+        and "needs_acceptance_refresh" in ticket_update
+        and "ticket_update(acceptance=[...])" in team_leader
+        and 'code="WFLOW033"' in contract_surfaces
+    )
+
+
+def repo_has_acceptance_refresh_fix(root: Path) -> bool:
+    workflow_lib = read_text(root / ".opencode" / "lib" / "workflow.ts")
+    issue_intake = read_text(root / ".opencode" / "tools" / "issue_intake.ts")
+    ticket_update = read_text(root / ".opencode" / "tools" / "ticket_update.ts")
+    team_leader_candidates = list((root / ".opencode" / "agents").glob("*team-leader.md"))
+    team_leader = read_text(team_leader_candidates[0]) if team_leader_candidates else ""
+    return (
+        "needs_acceptance_refresh" in workflow_lib
+        and "acceptanceRefreshRequired" in issue_intake
+        and "needs_acceptance_refresh" in issue_intake
+        and 'kind: "acceptance-refresh"' in ticket_update
+        and "needs_acceptance_refresh" in ticket_update
+        and "ticket_update(acceptance=[...])" in team_leader
+    )
+
+
 def package_has_verdict_parser_fix(ctx: AuditReportingContext) -> bool:
     workflow_lib = read_text(
         ctx.package_root
@@ -294,7 +330,8 @@ def package_has_verdict_parser_fix(ctx: AuditReportingContext) -> bool:
         and "overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?" in normalized_workflow_lib
         and "qa\\s+(?:result|verdict)" in normalized_workflow_lib
         and "review\\s+(?:result|verdict)" in normalized_workflow_lib
-        and "blocker\\s+or\\s+approval\\s+signal" in normalized_workflow_lib
+        and "blocker\\s+or\\s+approval\\s+signal|approval\\s+signal|decision|verdict|result"
+        in normalized_workflow_lib
         and "(?:(?:qa|review))\\s+(pass|fail|reject|approved?|blocked?|blocker)\\b" in normalized_workflow_lib
     )
     return parser_supports_extended_verdict_labels and "WFLOW026" in lifecycle_audit
@@ -377,6 +414,8 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
     recommendations: list[dict[str, Any]] = []
     wflow024_package_fix_available = package_has_wflow024_fix(ctx)
     target_completion_fix_available = package_has_target_completion_fix(ctx)
+    acceptance_refresh_fix_available = package_has_acceptance_refresh_fix(ctx)
+    repo_acceptance_refresh_fix_available = repo_has_acceptance_refresh_fix(root)
     verdict_parser_fix_available = package_has_verdict_parser_fix(ctx)
     bootstrap_freshness_fix_available = package_has_bootstrap_freshness_fix(ctx)
     godot_smoke_fix_available = package_has_godot_smoke_fix(ctx)
@@ -407,12 +446,8 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
                 route = "manual-prerequisite"
                 repair_class = "Scafforge package work required before the next subject-repo repair run"
         elif finding.code == "EXEC-REMED-001":
-            if remediation_decoration_fix_available:
-                route = "scafforge-repair"
-                repair_class = "safe Scafforge package change"
-            else:
-                route = "ticket-pack-builder"
-                repair_class = "generated-repo remediation ticket"
+            route = "ticket-pack-builder"
+            repair_class = "generated-repo remediation ticket"
         elif finding.code.startswith(("SESSION", "SKILL", "MODEL")):
             route = "scafforge-repair"
             repair_class = "safe Scafforge package change"
@@ -428,6 +463,16 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
                 repair_class = "Scafforge package work required before the next subject-repo repair run"
         elif finding.code == "WFLOW025":
             if target_completion_fix_available:
+                route = "scafforge-repair"
+                repair_class = "safe Scafforge package change"
+            else:
+                route = "manual-prerequisite"
+                repair_class = "Scafforge package work required before the next subject-repo repair run"
+        elif finding.code == "WFLOW033":
+            if repo_acceptance_refresh_fix_available:
+                route = "ticket-pack-builder"
+                repair_class = "generated-repo remediation ticket"
+            elif acceptance_refresh_fix_available:
                 route = "scafforge-repair"
                 repair_class = "safe Scafforge package change"
             else:

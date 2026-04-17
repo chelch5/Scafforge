@@ -3447,11 +3447,50 @@ def main() -> int:
             "Stack-specific notes:",
             "SCAFFORGE:STACK_SPECIFIC_IMPLEMENTATION_NOTES START",
             "modify workflow-state, manifest, or restart-surface files unless the approved ticket explicitly targets those managed surfaces",
+            '"*": allow',
+            "blender_agent_project_initialize: deny",
+            "if the repo exposes a dedicated",
+            "when the repo exposes a `blender-mcp-workflow` skill or asset-pipeline bootstrap metadata, load that skill before using Blender MCP tools",
+            "do not call a Blender bridge defect unless a correctly chained retry still fails",
         ):
             if expected not in implementer_prompt:
                 raise RuntimeError(
                     f"Generated implementer prompt is missing required hardening section: {expected}"
                 )
+
+        lane_executor_prompt = next(
+            (full_dest / ".opencode" / "agents").glob("*lane-executor*.md")
+        ).read_text(encoding="utf-8")
+        for expected in (
+            '"*": allow',
+            "blender_agent_project_initialize: deny",
+            "if the repo exposes a dedicated",
+            "when the repo exposes a `blender-mcp-workflow` skill or asset-pipeline bootstrap metadata, load that skill before using Blender MCP tools",
+            "for mutating Blender MCP calls, always provide `output_blend`, then feed the returned `persistence.saved_blend` back as `input_blend` on the next mutating call",
+            "do not call a Blender bridge defect unless a correctly chained retry still fails",
+        ):
+            if expected not in lane_executor_prompt:
+                raise RuntimeError(
+                    f"Generated lane-executor prompt is missing required Blender-MCP hardening: {expected}"
+                )
+
+        blender_agent_prompts = list(
+            (full_dest / ".opencode" / "agents").glob("*blender-asset-creator*.md")
+        )
+        if blender_agent_prompts:
+            blender_agent_prompt = blender_agent_prompts[0].read_text(encoding="utf-8")
+            for expected in (
+                "ticket_lookup: allow",
+                "artifact_write: allow",
+                "artifact_register: allow",
+                "context_snapshot: allow",
+                "blender_agent_project_initialize: allow",
+                "blender_agent_scene_batch_edit: allow",
+            ):
+                if expected not in blender_agent_prompt:
+                    raise RuntimeError(
+                        f"Generated blender asset creator prompt is missing required implementation ownership or Blender tool permission: {expected}"
+                    )
 
         tester_qa_prompt = next(
             (full_dest / ".opencode" / "agents").glob("*tester-qa*.md")
@@ -3924,6 +3963,37 @@ def main() -> int:
             raise RuntimeError(
                 "reviewer-code agent template should require remediation command output evidence"
             )
+        if (
+            "reject any bridge-defect claim that still shows mutating `job_start` records with null `input_blend` or `output_blend`"
+            not in reviewer_prompt_template
+        ):
+            raise RuntimeError(
+                "reviewer-code agent template should reject Blender bridge claims that still lack chain-proof audit evidence"
+            )
+        backlog_verifier_template = (
+            ROOT
+            / "skills"
+            / "repo-scaffold-factory"
+            / "assets"
+            / "project-template"
+            / ".opencode"
+            / "agents"
+            / "__AGENT_PREFIX__-backlog-verifier.md"
+        ).read_text(encoding="utf-8")
+        if (
+            "return the registered current artifact path from `artifact_register`, not just the writable `.opencode/state/reviews/...` source path"
+            not in backlog_verifier_template
+        ):
+            raise RuntimeError(
+                "backlog-verifier template should return the registered current artifact path after successful registration"
+            )
+        if (
+            "team leader can call `ticket_reverify(verification_content=...)`"
+            not in backlog_verifier_template
+        ):
+            raise RuntimeError(
+                "backlog-verifier template should document the closed-ticket ticket_reverify fallback instead of asking the coordinator to register review artifacts"
+            )
         team_leader_template = (
             ROOT
             / "skills"
@@ -3979,6 +4049,20 @@ def main() -> int:
         ):
             raise RuntimeError(
                 "team-leader agent template should suppress repeated recap blocks during routine progress"
+            )
+        if (
+            "call `ticket_reverify` with `verification_content`"
+            not in team_leader_template
+        ):
+            raise RuntimeError(
+                "team-leader agent template should route closed-ticket backlog-verification fallback through ticket_reverify verification_content"
+            )
+        if (
+            "non-null `input_blend` / `output_blend` on the matching `job_start`"
+            not in team_leader_template
+        ):
+            raise RuntimeError(
+                "team-leader agent template should require Blender chain proof before escalating a bridge defect"
             )
         generated_audit_reporting = (
             ROOT
@@ -4194,6 +4278,10 @@ def main() -> int:
             raise RuntimeError(
                 "Generated ticket_reverify.ts should gate trust restoration through the shared historical-ticket eligibility helper"
             )
+        if "still needs canonical acceptance refresh" not in generated_ticket_reverify:
+            raise RuntimeError(
+                "Generated ticket_reverify.ts should reject trust restoration while canonical acceptance refresh is still pending"
+            )
         if (
             "ticket_reverify requires evidence_artifact_path or verification_content."
             not in generated_ticket_reverify
@@ -4358,6 +4446,20 @@ def main() -> int:
         ):
             raise RuntimeError(
                 "Generated team leader prompt should explain the parent-authoritative split-child reconcile lease rule"
+            )
+        if (
+            "call `ticket_reverify` with `verification_content`"
+            not in generated_team_leader
+        ):
+            raise RuntimeError(
+                "Generated team leader prompt should route closed-ticket backlog verification fallback through ticket_reverify verification_content"
+            )
+        if (
+            "non-null `input_blend` / `output_blend` on the matching `job_start`"
+            not in generated_team_leader
+        ):
+            raise RuntimeError(
+                "Generated team leader prompt should require Blender chain proof before escalating a bridge defect"
             )
         generated_ticket_execution = (
             full_dest / ".opencode" / "skills" / "ticket-execution" / "SKILL.md"
@@ -5827,6 +5929,31 @@ def main() -> int:
             raise RuntimeError(
                 "A Blender-required repo with missing Blender operating surfaces should emit SKILL003"
             )
+        run_managed_repair_module = load_python_module(
+            PUBLIC_REPAIR, "scafforge_smoke_run_managed_repair_blender_follow_on"
+        )
+        blender_follow_on_stages = {
+            item["stage"]
+            for item in run_managed_repair_module.derive_required_follow_on_stages(
+                blender_required_dest,
+                [
+                    SimpleNamespace(
+                        code="SKILL003",
+                        files=[".opencode/agents/blender-asset-creator.md"],
+                    )
+                ],
+                [],
+                False,
+            )
+        }
+        if "opencode-team-bootstrap" not in blender_follow_on_stages:
+            raise RuntimeError(
+                "SKILL003 should require opencode-team-bootstrap so repair refreshes Blender agent surfaces"
+            )
+        if "agent-prompt-engineering" in blender_follow_on_stages:
+            raise RuntimeError(
+                "SKILL003 alone should not force agent-prompt-engineering when prompt-specific drift was not detected"
+            )
 
         legacy_asset_dest = workspace / "legacy-asset-repair"
         run(
@@ -7273,6 +7400,65 @@ def main() -> int:
                 "ticket_reverify should clear needs_reverification after restoring a reopened historical ticket"
             )
 
+        source_path_reverification_dest = (
+            workspace / "closed-ticket-source-path-reverification"
+        )
+        shutil.copytree(full_dest, source_path_reverification_dest)
+        seed_closed_ticket_needing_explicit_reverification(
+            source_path_reverification_dest
+        )
+        source_path_reverification_rel = (
+            ".opencode/state/reviews/setup-001-review-backlog-verification.md"
+        )
+        source_path_reverification_file = (
+            source_path_reverification_dest / source_path_reverification_rel
+        )
+        source_path_reverification_file.parent.mkdir(parents=True, exist_ok=True)
+        source_path_reverification_file.write_text(
+            "# Backlog Verification\n\n## Result\n\nOverall Result: PASS\n",
+            encoding="utf-8",
+        )
+        source_path_reverification_result = run_generated_tool(
+            source_path_reverification_dest,
+            ".opencode/tools/ticket_reverify.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "evidence_artifact_path": source_path_reverification_rel,
+                "reason": "Synthetic source-path reverification coverage.",
+            },
+        )
+        if (
+            source_path_reverification_result["evidence_artifact_path"]
+            == source_path_reverification_rel
+        ):
+            raise RuntimeError(
+                "ticket_reverify should register a canonical backlog-verification source file and return the current artifact path before restoring trust"
+            )
+        source_path_reverification_manifest = json.loads(
+            (
+                source_path_reverification_dest / "tickets" / "manifest.json"
+            ).read_text(encoding="utf-8")
+        )
+        source_path_reverification_ticket = next(
+            ticket
+            for ticket in source_path_reverification_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        if source_path_reverification_ticket["verification_state"] != "reverified":
+            raise RuntimeError(
+                "ticket_reverify should restore trust when given the canonical backlog-verification source path for a closed ticket"
+            )
+        source_path_registered_evidence = next(
+            artifact
+            for artifact in source_path_reverification_ticket["artifacts"]
+            if artifact["kind"] == "backlog-verification"
+            and artifact["trust_state"] == "current"
+        )
+        if source_path_registered_evidence["path"] == source_path_reverification_rel:
+            raise RuntimeError(
+                "ticket_reverify should mirror a source-path backlog-verification file into the registered current artifact history path"
+            )
+
         self_lineage_reverification_dest = (
             workspace / "self-lineage-ticket-reverification"
         )
@@ -8297,6 +8483,66 @@ def main() -> int:
             raise RuntimeError(
                 "issue_intake should write the canonical issue-discovery artifact"
             )
+        acceptance_refresh_issue_dest = workspace / "executed-acceptance-refresh-issue"
+        shutil.copytree(full_dest, acceptance_refresh_issue_dest)
+        seed_closed_ticket_needing_explicit_reverification(
+            acceptance_refresh_issue_dest
+        )
+        acceptance_evidence_rel = (
+            ".opencode/state/reviews/setup-001-review-acceptance-evidence.md"
+        )
+        register_current_ticket_artifact(
+            acceptance_refresh_issue_dest,
+            ticket_id="SETUP-001",
+            kind="backlog-verification",
+            stage="review",
+            relative_path=acceptance_evidence_rel,
+            summary="Synthetic acceptance refresh evidence.",
+            content="# Existing Evidence\n\nAcceptance contract no longer matches the accepted outcome.\n",
+        )
+        acceptance_refresh_result = run_generated_tool(
+            acceptance_refresh_issue_dest,
+            ".opencode/tools/issue_intake.ts",
+            {
+                "source_ticket_id": "SETUP-001",
+                "defect_class": "acceptance_imprecision",
+                "acceptance_broken": True,
+                "scope_changed": False,
+                "rollback_required": False,
+                "evidence_artifact_path": acceptance_evidence_rel,
+            },
+        )
+        if acceptance_refresh_result["outcome"] != "invalidates_done":
+            raise RuntimeError(
+                "issue_intake should reopen the source ticket when acceptance_broken invalidates historical completion"
+            )
+        acceptance_refresh_workflow = json.loads(
+            (
+                acceptance_refresh_issue_dest
+                / ".opencode"
+                / "state"
+                / "workflow-state.json"
+            ).read_text(encoding="utf-8")
+        )
+        if (
+            acceptance_refresh_workflow["ticket_state"]["SETUP-001"].get(
+                "needs_acceptance_refresh"
+            )
+            is not True
+        ):
+            raise RuntimeError(
+                "issue_intake should mark acceptance-broken reopened tickets as needing canonical acceptance refresh"
+            )
+        acceptance_issue_artifact = acceptance_refresh_issue_dest / str(
+            acceptance_refresh_result["issue_artifact"]
+        )
+        if (
+            "acceptance_refresh_required: true"
+            not in acceptance_issue_artifact.read_text(encoding="utf-8")
+        ):
+            raise RuntimeError(
+                "issue_intake should record acceptance_refresh_required in the issue-discovery artifact when canonical acceptance must be refreshed"
+            )
 
         executed_lookup_prebootstrap_dest = (
             workspace / "executed-ticket-lookup-prebootstrap"
@@ -8722,6 +8968,49 @@ def main() -> int:
             content="# Smoke Test\n\n## Command\n\n`pytest -q`\n\n## Raw Output\n\n```text\n1 passed in 0.01s\n```\n\nOverall Result: PASS\n",
             created_at="2026-04-01T00:00:00Z",
         )
+        repair_follow_on_refresh_result = run_generated_tool(
+            process_all_done_dest,
+            ".opencode/tools/repair_follow_on_refresh.ts",
+            {
+                "change_summary": "Synthetic repair follow-on self-resolution coverage.",
+                "process_version": process_all_done_workflow["process_version"],
+                "parallel_mode": process_all_done_workflow["parallel_mode"],
+                "repair_follow_on_json": json.dumps(
+                    {
+                        "outcome": "source_follow_up",
+                        "required_stages": [
+                            "project-skill-bootstrap",
+                            "ticket-pack-builder",
+                        ],
+                        "completed_stages": [
+                            "project-skill-bootstrap",
+                            "ticket-pack-builder",
+                        ],
+                        "blocking_reasons": [],
+                        "verification_passed": False,
+                        "handoff_allowed": True,
+                    }
+                ),
+            },
+        )
+        if repair_follow_on_refresh_result["active_ticket"] != "LEGACY-001":
+            raise RuntimeError(
+                "repair_follow_on_refresh should report the converged foreground ticket after process verification becomes the canonical next move"
+            )
+        process_all_done_manifest = json.loads(
+            process_all_done_manifest_path.read_text(encoding="utf-8")
+        )
+        process_all_done_workflow = json.loads(
+            process_all_done_workflow_path.read_text(encoding="utf-8")
+        )
+        if process_all_done_manifest["active_ticket"] != "LEGACY-001":
+            raise RuntimeError(
+                "repair_follow_on_refresh should persist manifest.active_ticket when syncWorkflowSelection changes the foreground ticket"
+            )
+        if process_all_done_workflow["active_ticket"] != "LEGACY-001":
+            raise RuntimeError(
+                "repair_follow_on_refresh should persist workflow.active_ticket after process-verification foregrounding"
+            )
         process_all_done_lookup = run_generated_tool(
             process_all_done_dest,
             ".opencode/tools/ticket_lookup.ts",
@@ -8795,7 +9084,13 @@ def main() -> int:
         shutil.copytree(full_dest, review_preference_dest)
         seed_ready_bootstrap(review_preference_dest)
         seed_review_stage_with_verdict(
-            review_preference_dest, "## Review Verdict\n\n**`REJECT`**"
+            review_preference_dest,
+            (
+                "## Implementation Evidence\n\n"
+                "- project_initialize: ✅ PASS\n\n"
+                "## Review Verdict\n\n"
+                "**`REJECT`**"
+            ),
         )
         register_current_ticket_artifact(
             review_preference_dest,
@@ -8853,6 +9148,184 @@ def main() -> int:
         if review_preference_post_lookup["transition_guidance"]["next_action_tool"] != "artifact_write":
             raise RuntimeError(
                 "ticket_update rollback to implementation should require a fresh implementation artifact after a blocking review"
+            )
+        acceptance_refresh_gate_dest = workspace / "executed-acceptance-refresh-gate"
+        shutil.copytree(full_dest, acceptance_refresh_gate_dest)
+        seed_ready_bootstrap(acceptance_refresh_gate_dest)
+        seed_closed_ticket_needing_explicit_reverification(
+            acceptance_refresh_gate_dest
+        )
+        acceptance_refresh_gate_manifest_path = (
+            acceptance_refresh_gate_dest / "tickets" / "manifest.json"
+        )
+        acceptance_refresh_gate_workflow_path = (
+            acceptance_refresh_gate_dest
+            / ".opencode"
+            / "state"
+            / "workflow-state.json"
+        )
+        acceptance_refresh_gate_manifest = json.loads(
+            acceptance_refresh_gate_manifest_path.read_text(encoding="utf-8")
+        )
+        acceptance_refresh_gate_workflow = json.loads(
+            acceptance_refresh_gate_workflow_path.read_text(encoding="utf-8")
+        )
+        acceptance_ticket = next(
+            ticket
+            for ticket in acceptance_refresh_gate_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        acceptance_ticket["stage"] = "implementation"
+        acceptance_ticket["status"] = "in_progress"
+        acceptance_ticket["resolution_state"] = "reopened"
+        acceptance_ticket["verification_state"] = "invalidated"
+        acceptance_refresh_gate_manifest["active_ticket"] = "SETUP-001"
+        acceptance_refresh_gate_manifest_path.write_text(
+            json.dumps(acceptance_refresh_gate_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        acceptance_refresh_gate_workflow["active_ticket"] = "SETUP-001"
+        acceptance_refresh_gate_workflow["stage"] = "implementation"
+        acceptance_refresh_gate_workflow["status"] = "in_progress"
+        acceptance_refresh_gate_workflow.setdefault("ticket_state", {}).setdefault(
+            "SETUP-001",
+            {
+                "approved_plan": True,
+                "reopen_count": 1,
+                "needs_reverification": True,
+            },
+        )
+        acceptance_refresh_gate_workflow["ticket_state"]["SETUP-001"][
+            "approved_plan"
+        ] = True
+        acceptance_refresh_gate_workflow["ticket_state"]["SETUP-001"][
+            "needs_acceptance_refresh"
+        ] = True
+        acceptance_refresh_gate_workflow_path.write_text(
+            json.dumps(acceptance_refresh_gate_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        register_current_ticket_artifact(
+            acceptance_refresh_gate_dest,
+            ticket_id="SETUP-001",
+            kind="implementation",
+            stage="implementation",
+            relative_path=".opencode/state/artifacts/history/setup-001/implementation/2026-04-17T04-00-00Z-implementation.md",
+            summary="Implementation uses revised acceptance reasoning.",
+            content=(
+                "# Implementation — SETUP-001\n\n"
+                "## Command 1 — Godot headless load\n"
+                "```text\n"
+                "godot4 --headless --path . --quit\n"
+                "```\n"
+                "**Raw output:**\n"
+                "```text\n"
+                "Godot Engine v4.6.1.stable.official.14d1944e - https://godotengine.org\n"
+                "EXIT: 0\n"
+                "```\n\n"
+                "## Command 2 — Acceptance refresh proof\n"
+                "```text\n"
+                "python3 -c 'print(\"format-agnostic acceptance\")'\n"
+                "```\n"
+                "**Raw output:**\n"
+                "```text\n"
+                "format-agnostic acceptance\n"
+                "RESULT: PASS\n"
+                "```\n"
+            ),
+            created_at="2026-04-17T04:00:00Z",
+        )
+        acceptance_refresh_lookup = run_generated_tool(
+            acceptance_refresh_gate_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if acceptance_refresh_lookup["transition_guidance"]["next_action_tool"] != "ticket_update":
+            raise RuntimeError(
+                "ticket_lookup should foreground canonical acceptance refresh before moving a reopened ticket from implementation into review"
+            )
+        if "acceptance" not in acceptance_refresh_lookup["transition_guidance"][
+            "recommended_action"
+        ]:
+            raise RuntimeError(
+                "ticket_lookup should explain that canonical acceptance must be refreshed explicitly before review"
+            )
+        acceptance_refresh_error = run_generated_tool_error(
+            acceptance_refresh_gate_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "review", "activate": True},
+        )
+        if "needs canonical acceptance refresh" not in acceptance_refresh_error:
+            raise RuntimeError(
+                "ticket_update should block review progression while canonical acceptance refresh is still pending"
+            )
+        acceptance_refresh_reverify_error = run_generated_tool_error(
+            acceptance_refresh_gate_dest,
+            ".opencode/tools/ticket_reverify.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "verification_content": "# Backlog Verification\n\n## Result\n\nPASS\n",
+                "reason": "Synthetic attempt to bypass canonical acceptance refresh.",
+            },
+        )
+        if "needs canonical acceptance refresh" not in acceptance_refresh_reverify_error:
+            raise RuntimeError(
+                "ticket_reverify should reject trust restoration while canonical acceptance refresh is still pending"
+            )
+        refreshed_acceptance = [
+            "Scene loads without errors in headless mode or the blocker is recorded",
+            "Touch emulation remains enabled for desktop testing",
+        ]
+        acceptance_refresh_update = run_generated_tool(
+            acceptance_refresh_gate_dest,
+            ".opencode/tools/ticket_update.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "acceptance": refreshed_acceptance,
+                "stage": "review",
+                "activate": True,
+            },
+        )
+        if (
+            acceptance_refresh_update["updated_ticket"]["acceptance"]
+            != refreshed_acceptance
+        ):
+            raise RuntimeError(
+                "ticket_update should persist refreshed canonical acceptance criteria onto the ticket"
+            )
+        if (
+            acceptance_refresh_update["workflow"]["ticket_state"]["SETUP-001"].get(
+                "needs_acceptance_refresh"
+            )
+            is True
+        ):
+            raise RuntimeError(
+                "ticket_update should clear needs_acceptance_refresh once canonical acceptance is refreshed"
+            )
+        acceptance_refresh_ticket_text = (
+            acceptance_refresh_gate_dest / "tickets" / "SETUP-001.md"
+        ).read_text(encoding="utf-8")
+        if "Touch emulation remains enabled for desktop testing" not in acceptance_refresh_ticket_text:
+            raise RuntimeError(
+                "ticket_update should rewrite the ticket markdown from the refreshed canonical acceptance"
+            )
+        acceptance_refresh_registry = json.loads(
+            (
+                acceptance_refresh_gate_dest
+                / ".opencode"
+                / "state"
+                / "artifacts"
+                / "registry.json"
+            ).read_text(encoding="utf-8")
+        )
+        if not any(
+            artifact.get("ticket_id") == "SETUP-001"
+            and artifact.get("kind") == "acceptance-refresh"
+            and artifact.get("trust_state") == "current"
+            for artifact in acceptance_refresh_registry.get("artifacts", [])
+        ):
+            raise RuntimeError(
+                "ticket_update should register a current acceptance-refresh artifact when canonical acceptance is refreshed"
             )
         direct_implementation_error = run_generated_tool_error(
             executed_lifecycle_dest,
@@ -9192,6 +9665,30 @@ def main() -> int:
         if review_heading_update["updated_ticket"]["stage"] != "qa":
             raise RuntimeError(
                 "ticket_update should allow review-to-QA transitions when the latest review artifact records `## Review Verdict` followed by `**APPROVE**`"
+            )
+        decision_heading_dest = workspace / "executed-review-decision-verdict"
+        shutil.copytree(full_dest, decision_heading_dest)
+        seed_ready_bootstrap(decision_heading_dest)
+        seed_review_stage_with_verdict(
+            decision_heading_dest, "## Decision\n\n**APPROVE**"
+        )
+        decision_heading_lookup = run_generated_tool(
+            decision_heading_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if decision_heading_lookup["transition_guidance"]["review_verdict"] != "APPROVED":
+            raise RuntimeError(
+                "ticket_lookup should extract APPROVED verdicts from `## Decision` headings"
+            )
+        decision_heading_update = run_generated_tool(
+            decision_heading_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "qa", "activate": True},
+        )
+        if decision_heading_update["updated_ticket"]["stage"] != "qa":
+            raise RuntimeError(
+                "ticket_update should allow review-to-QA transitions when the latest review artifact records `## Decision` followed by `**APPROVE**`"
             )
         non_remediation_finding_source_dest = (
             workspace / "executed-review-non-remediation-finding-source"
@@ -9987,6 +10484,132 @@ def main() -> int:
         if split_reconcile_child_id in split_reconciled_source.get("follow_up_ticket_ids", []):
             raise RuntimeError(
                 "ticket_reconcile should remove a superseded split child from the parent follow_up_ticket_ids when the parent lease authorizes the mutation"
+            )
+        split_reconcile_hist_child_id = "EXEC-RECON-SPLIT-HIST"
+        split_reconcile_hist_source_id = "EXEC-RECON-HIST-SRC"
+        split_reconcile_manifest["tickets"].append(
+            {
+                "id": split_reconcile_hist_source_id,
+                "title": "Historical evidence owner for split reconcile",
+                "wave": 2,
+                "lane": "remediation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "closeout",
+                "status": "done",
+                "depends_on": [],
+                "summary": "Completed historical ticket whose current artifact proves the split child is stale.",
+                "acceptance": ["Historical evidence remains available."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "done",
+                "verification_state": "trusted",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        split_reconcile_manifest["tickets"].append(
+            {
+                "id": split_reconcile_hist_child_id,
+                "title": "Synthetic stale split child backed by historical evidence owner",
+                "wave": 3,
+                "lane": "remediation",
+                "parallel_safe": False,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "todo",
+                "depends_on": [],
+                "summary": "Open split child that should be superseded under the parent lease even when evidence belongs to a different historical ticket.",
+                "acceptance": ["Parent-authoritative reconciliation succeeds with historical evidence."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "split_scope",
+                "split_kind": "parallel_independent",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        split_reconcile_source["follow_up_ticket_ids"].append(split_reconcile_hist_child_id)
+        split_reconcile_workflow["ticket_state"][split_reconcile_hist_source_id] = {
+            "approved_plan": False,
+            "reopen_count": 0,
+            "needs_reverification": False,
+        }
+        split_reconcile_workflow["ticket_state"][split_reconcile_hist_child_id] = {
+            "approved_plan": False,
+            "reopen_count": 0,
+            "needs_reverification": False,
+        }
+        split_reconcile_manifest_path.write_text(
+            json.dumps(split_reconcile_manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        split_reconcile_workflow_path.write_text(
+            json.dumps(split_reconcile_workflow, indent=2) + "\n", encoding="utf-8"
+        )
+        register_current_ticket_artifact(
+            split_reconcile_dest,
+            ticket_id=split_reconcile_hist_source_id,
+            kind="review",
+            stage="review",
+            relative_path=".opencode/state/reviews/exec-recon-hist-src-review-review.md",
+            summary="Historical review artifact proving the split child is stale.",
+            content="# Historical Review\n\nExact command: synthetic-check\n\nRaw output:\nPASS\n\nOverall result: PASS\n",
+        )
+        run_generated_tool(
+            split_reconcile_dest,
+            ".opencode/tools/ticket_claim.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "owner_agent": "smoke-split-reconcile",
+                "allowed_paths": [".opencode/state", "tickets"],
+                "write_lock": True,
+            },
+        )
+        split_reconcile_hist_args = {
+            "source_ticket_id": "SETUP-001",
+            "target_ticket_id": split_reconcile_hist_child_id,
+            "replacement_source_ticket_id": split_reconcile_hist_source_id,
+            "replacement_source_mode": "split_scope",
+            "evidence_artifact_path": ".opencode/state/reviews/exec-recon-hist-src-review-review.md",
+            "reason": "Synthetic stale split child should still reconcile under the parent lease when current evidence belongs to a different historical ticket.",
+            "supersede_target": True,
+        }
+        run_generated_plugin_before(
+            split_reconcile_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "ticket_reconcile",
+            split_reconcile_hist_args,
+        )
+        split_reconcile_hist_result = run_generated_tool(
+            split_reconcile_dest,
+            ".opencode/tools/ticket_reconcile.ts",
+            split_reconcile_hist_args,
+        )
+        if split_reconcile_hist_result["target_ticket_id"] != split_reconcile_hist_child_id:
+            raise RuntimeError(
+                "ticket_reconcile should keep the split child target when parent-authoritative reconciliation uses historical replacement-source evidence"
+            )
+        split_hist_reconciled_manifest = json.loads(
+            split_reconcile_manifest_path.read_text(encoding="utf-8")
+        )
+        split_hist_reconciled_source = next(
+            ticket
+            for ticket in split_hist_reconciled_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        split_hist_reconciled_child = next(
+            ticket
+            for ticket in split_hist_reconciled_manifest["tickets"]
+            if ticket["id"] == split_reconcile_hist_child_id
+        )
+        if split_hist_reconciled_child["resolution_state"] != "superseded":
+            raise RuntimeError(
+                "ticket_reconcile should allow the parent lease to supersede an open split child even when the current evidence belongs to a different historical replacement source"
+            )
+        if split_reconcile_hist_child_id in split_hist_reconciled_source.get("follow_up_ticket_ids", []):
+            raise RuntimeError(
+                "ticket_reconcile should remove parent-linked split children after parent-authoritative reconciliation with historical replacement-source evidence"
             )
         wildcard_lease_dest = workspace / "wildcard-write-lease"
         shutil.copytree(full_dest, wildcard_lease_dest)
@@ -11292,6 +11915,85 @@ Overall Result: PASS
         if routed_recommendations.get("WFLOW024") != "scafforge-repair":
             raise RuntimeError(
                 "WFLOW024 should route to scafforge-repair once the installed package template already contains the historical reconciliation fix"
+            )
+        acceptance_refresh_drift_dest = workspace / "acceptance-refresh-drift"
+        shutil.copytree(full_dest, acceptance_refresh_drift_dest)
+        seed_ready_bootstrap(acceptance_refresh_drift_dest)
+        seed_closed_ticket_needing_explicit_reverification(
+            acceptance_refresh_drift_dest
+        )
+        acceptance_refresh_drift_manifest_path = (
+            acceptance_refresh_drift_dest / "tickets" / "manifest.json"
+        )
+        acceptance_refresh_drift_workflow_path = (
+            acceptance_refresh_drift_dest
+            / ".opencode"
+            / "state"
+            / "workflow-state.json"
+        )
+        acceptance_refresh_drift_manifest = json.loads(
+            acceptance_refresh_drift_manifest_path.read_text(encoding="utf-8")
+        )
+        acceptance_refresh_drift_workflow = json.loads(
+            acceptance_refresh_drift_workflow_path.read_text(encoding="utf-8")
+        )
+        drift_ticket = next(
+            ticket
+            for ticket in acceptance_refresh_drift_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        drift_ticket["stage"] = "closeout"
+        drift_ticket["status"] = "done"
+        drift_ticket["resolution_state"] = "done"
+        drift_ticket["verification_state"] = "reverified"
+        acceptance_refresh_drift_manifest["active_ticket"] = "SETUP-001"
+        acceptance_refresh_drift_manifest_path.write_text(
+            json.dumps(acceptance_refresh_drift_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        acceptance_refresh_drift_workflow["active_ticket"] = "SETUP-001"
+        acceptance_refresh_drift_workflow["stage"] = "closeout"
+        acceptance_refresh_drift_workflow["status"] = "done"
+        acceptance_refresh_drift_workflow.setdefault("ticket_state", {}).setdefault(
+            "SETUP-001",
+            {
+                "approved_plan": True,
+                "reopen_count": 1,
+                "needs_reverification": False,
+            },
+        )
+        acceptance_refresh_drift_workflow_path.write_text(
+            json.dumps(acceptance_refresh_drift_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        register_current_ticket_artifact(
+            acceptance_refresh_drift_dest,
+            ticket_id="SETUP-001",
+            kind="issue-discovery",
+            stage="review",
+            relative_path=".opencode/state/artifacts/history/setup-001/review/2026-04-17T04-10-00Z-issue-discovery.md",
+            summary="acceptance_imprecision intake routed to invalidates_done.",
+            content="# Issue Discovery\n\n## Source Ticket\n\n- SETUP-001\n\n## Defect\n\n- defect_class: acceptance_imprecision\n- evidence_artifact_path: .opencode/state/reviews/setup-001-review-backlog-verification.md\n\n## Trust\n\n- prior_completion_trusted: false\n- required_next_action: reopen_source_ticket\n- outcome: invalidates_done\n",
+            created_at="2026-04-17T04:10:00Z",
+        )
+        acceptance_refresh_drift_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(acceptance_refresh_drift_dest),
+                "--format",
+                "json",
+                "--no-diagnosis-pack",
+            ],
+            ROOT,
+        )
+        acceptance_refresh_drift_codes = {
+            finding["code"]
+            for finding in acceptance_refresh_drift_audit.get("findings", [])
+        }
+        if "WFLOW033" not in acceptance_refresh_drift_codes:
+            raise RuntimeError(
+                "A repo that re-closed an acceptance_imprecision ticket without canonical acceptance refresh proof should emit WFLOW033"
             )
 
         contradictory_graph_dest = workspace / "contradictory-ticket-graph"
@@ -15075,6 +15777,71 @@ Overall Result: PASS
                 if "no further managed repair required before this follow-up" not in report_four:
                     raise RuntimeError(
                         "Report four should render open-ticket-owned EXEC findings as direct subject-repo follow-up"
+                    )
+
+            with tempfile.TemporaryDirectory(prefix="scafforge-disposition-closed-remed-") as temp_dir:
+                temp_root = Path(temp_dir) / "repo"
+                temp_root.mkdir(parents=True, exist_ok=True)
+                (temp_root / "tickets").mkdir(parents=True, exist_ok=True)
+                (temp_root / "tickets" / "manifest.json").write_text(
+                    json.dumps(
+                        {
+                            "version": 3,
+                            "project": "Synthetic repo",
+                            "active_ticket": "SETUP-001",
+                            "tickets": [
+                                {
+                                    "id": "SETUP-001",
+                                    "lane": "foundation",
+                                    "status": "done",
+                                    "resolution_state": "done",
+                                }
+                            ],
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                diagnosis_dest = Path(temp_dir) / "diagnosis"
+                closed_remediation_pack = audit_reporting_module.emit_diagnosis_pack(
+                    temp_root,
+                    [
+                        SimpleNamespace(
+                            code="EXEC-REMED-001",
+                            severity="error",
+                            problem="Synthetic historical remediation review evidence gap.",
+                            root_cause="Historical remediation proof lacks exact command evidence.",
+                            files=[".opencode/state/reviews/remed-026-review-review.md"],
+                            safer_pattern="Create a remediation follow-up ticket and rerun the exact command with raw output evidence.",
+                            evidence=["synthetic historical remediation evidence"],
+                            provenance="script",
+                        )
+                    ],
+                    diagnosis_dest,
+                    [],
+                    ctx=audit_reporting_module.AuditReportingContext(
+                        package_root=ROOT,
+                        current_package_commit=package_commit(),
+                    ),
+                )
+                closed_bundle = closed_remediation_pack["manifest"]["disposition_bundle"]
+                closed_entry = next(
+                    item
+                    for item in closed_bundle["findings"]
+                    if item["code"] == "EXEC-REMED-001"
+                )
+                if closed_entry["disposition_class"] != "source_follow_up":
+                    raise RuntimeError(
+                        "Audit should route EXEC-REMED-001 to source_follow_up even when the historical remediation ticket is already closed"
+                    )
+                if closed_entry["route"] != "ticket-pack-builder":
+                    raise RuntimeError(
+                        "Diagnosis bundle should keep EXEC-REMED-001 on the ticket-pack-builder route for repo follow-up"
+                    )
+                if closed_remediation_pack["manifest"]["recommended_next_step"] != "subject_repo_source_follow_up":
+                    raise RuntimeError(
+                        "Diagnosis manifest should route closed remediation-evidence gaps to subject_repo_source_follow_up"
                     )
 
             advisory_classes = run_managed_repair_module.classify_verification_findings(

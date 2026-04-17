@@ -15,7 +15,7 @@ DISPOSITION_CLASSES = (
     "process_state_only",
     "advisory",
 )
-PACKAGE_MANAGED_EXEC_CODES = {"EXEC-GODOT-006", "EXEC-REMED-001"}
+PACKAGE_MANAGED_EXEC_CODES = {"EXEC-GODOT-006"}
 
 
 def evidence_grade_for_finding(finding: Finding) -> str:
@@ -67,6 +67,25 @@ def _repo_has_open_remediation_ticket(repo_root: str | Path | None) -> bool:
     )
 
 
+def _repo_supports_acceptance_refresh(repo_root: str | Path | None) -> bool:
+    if repo_root is None:
+        return False
+    root = Path(repo_root)
+    workflow_lib = (root / ".opencode" / "lib" / "workflow.ts").read_text(encoding="utf-8") if (root / ".opencode" / "lib" / "workflow.ts").exists() else ""
+    issue_intake = (root / ".opencode" / "tools" / "issue_intake.ts").read_text(encoding="utf-8") if (root / ".opencode" / "tools" / "issue_intake.ts").exists() else ""
+    ticket_update = (root / ".opencode" / "tools" / "ticket_update.ts").read_text(encoding="utf-8") if (root / ".opencode" / "tools" / "ticket_update.ts").exists() else ""
+    team_leader_candidates = list((root / ".opencode" / "agents").glob("*team-leader.md"))
+    team_leader = team_leader_candidates[0].read_text(encoding="utf-8") if team_leader_candidates else ""
+    return (
+        "needs_acceptance_refresh" in workflow_lib
+        and "acceptanceRefreshRequired" in issue_intake
+        and "needs_acceptance_refresh" in issue_intake
+        and 'kind: "acceptance-refresh"' in ticket_update
+        and "needs_acceptance_refresh" in ticket_update
+        and "ticket_update(acceptance=[...])" in team_leader
+    )
+
+
 def disposition_class_for_finding(finding: Finding, repo_root: str | Path | None = None) -> str:
     code = getattr(finding, "code", "")
     severity = getattr(finding, "severity", "")
@@ -79,13 +98,13 @@ def disposition_class_for_finding(finding: Finding, repo_root: str | Path | None
     if code in PACKAGE_MANAGED_EXEC_CODES:
         if code == "EXEC-GODOT-006" and _repo_has_open_finish_validation(repo_root):
             return "source_follow_up"
-        if code == "EXEC-REMED-001" and _repo_has_open_remediation_ticket(repo_root):
-            return "source_follow_up"
         return "managed_blocker"
     if code.startswith(("EXEC", "REF")):
         return "source_follow_up"
     if code == "WFLOW008":
         return "process_state_only"
+    if code == "WFLOW033":
+        return "source_follow_up" if _repo_supports_acceptance_refresh(repo_root) else "managed_blocker"
     if code.startswith(("BOOT", "CYCLE", "SESSION", "SKILL", "MODEL", "CONFIG")):
         return "managed_blocker"
     if code.startswith("WFLOW"):

@@ -17,14 +17,23 @@ permission:
   artifact_write: allow
   artifact_register: allow
   context_snapshot: allow
+  blender_agent_environment_probe: deny
+  blender_agent_project_initialize: deny
+  blender_agent_mesh_edit_batch: deny
+  blender_agent_modifier_stack_edit: deny
+  blender_agent_scene_batch_edit: deny
+  blender_agent_material_pbr_build: deny
+  blender_agent_node_graph_build: deny
+  blender_agent_uv_workflow: deny
+  blender_agent_bake_maps: deny
+  blender_agent_armature_animation: deny
+  blender_agent_render_preview: deny
+  blender_agent_quality_validate: deny
+  blender_agent_export_asset: deny
+  blender_agent_scene_query: deny
+  blender_agent_blender_python: deny
   skill:
-    "*": deny
-    "project-context": allow
-    "repo-navigation": allow
-    "stack-standards": allow
-    "ticket-execution": allow
-    "local-git-specialist": allow
-    "isolation-guidance": allow
+    "*": allow
   task:
     "*": deny
   bash:
@@ -126,3 +135,9 @@ Rules:
 - if the approved plan still leaves a material choice unresolved, return a blocker instead of deciding it ad hoc
 - do not advance ticket stage or publish handoff surfaces yourself; return evidence to the team leader for workflow transitions
 - do not stop at a summary before the implementation artifact exists unless you are returning an explicit blocker
+- if the repo exposes a dedicated `__AGENT_PREFIX__-blender-asset-creator` and the ticket's primary deliverable is a Blender-generated asset or other managed `blender_agent` output, stop and return a blocker that routes the lane back through that specialist instead of implementing it yourself
+- never call `blender_agent_*` tools yourself for a Blender-routed ticket; those tools belong to `__AGENT_PREFIX__-blender-asset-creator`
+- when the repo exposes a `blender-mcp-workflow` skill or asset-pipeline bootstrap metadata, load that skill before using Blender MCP tools
+- for mutating Blender MCP calls, always provide `output_blend`, then feed the returned `persistence.saved_blend` back as `input_blend` on the next mutating call
+- if a Blender response or `.blender-mcp/audit/*.jsonl` shows `input_blend: null`, `output_blend: null`, or missing `persistence.saved_blend`, treat that as an invocation failure and retry the same step correctly before escalating anything
+- do not call a Blender bridge defect unless a correctly chained retry still fails and the audit log proves non-null `input_blend` / `output_blend` on the matching mutating `job_start`

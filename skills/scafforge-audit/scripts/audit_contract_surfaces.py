@@ -297,6 +297,93 @@ def audit_failure_recovery_contract(root: Path, findings: list[Finding], ctx: Co
     )
 
 
+def audit_acceptance_refresh_drift(root: Path, findings: list[Finding], ctx: ContractSurfaceAuditContext) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    workflow_path = root / ".opencode" / "state" / "workflow-state.json"
+    manifest = ctx.read_json(manifest_path)
+    workflow = ctx.read_json(workflow_path)
+    if not isinstance(manifest, dict) or not isinstance(workflow, dict):
+        return
+
+    tickets = manifest.get("tickets")
+    if not isinstance(tickets, list):
+        return
+    workflow_ticket_state = workflow.get("ticket_state")
+    ticket_state_map = workflow_ticket_state if isinstance(workflow_ticket_state, dict) else {}
+
+    files: list[str] = [ctx.normalize_path(manifest_path, root), ctx.normalize_path(workflow_path, root)]
+    evidence: list[str] = []
+
+    for raw_ticket in tickets:
+        if not isinstance(raw_ticket, dict):
+            continue
+        ticket_id = str(raw_ticket.get("id", "")).strip()
+        if not ticket_id:
+            continue
+        artifacts = raw_ticket.get("artifacts")
+        if not isinstance(artifacts, list):
+            continue
+        current_issue_artifacts = [
+            artifact
+            for artifact in artifacts
+            if isinstance(artifact, dict)
+            and artifact.get("kind") == "issue-discovery"
+            and artifact.get("trust_state", "current") == "current"
+        ]
+        if not current_issue_artifacts:
+            continue
+        issue_artifact = max(
+            current_issue_artifacts,
+            key=lambda artifact: str(artifact.get("created_at", "")),
+        )
+        issue_path = root / str(issue_artifact.get("path", "")).strip()
+        issue_text = ctx.read_text(issue_path)
+        if "defect_class: acceptance_imprecision" not in issue_text or "outcome: invalidates_done" not in issue_text:
+            continue
+
+        current_refresh_artifacts = [
+            artifact
+            for artifact in artifacts
+            if isinstance(artifact, dict)
+            and artifact.get("kind") == "acceptance-refresh"
+            and artifact.get("trust_state", "current") == "current"
+        ]
+        issue_created_at = str(issue_artifact.get("created_at", ""))
+        has_refresh_after_issue = any(
+            str(artifact.get("created_at", "")) >= issue_created_at
+            for artifact in current_refresh_artifacts
+        )
+        raw_state = ticket_state_map.get(ticket_id)
+        refresh_pending = isinstance(raw_state, dict) and raw_state.get("needs_acceptance_refresh") is True
+        if has_refresh_after_issue and not refresh_pending:
+            continue
+
+        files.append(ctx.normalize_path(issue_path, root))
+        files.append(ctx.normalize_path(root / "tickets" / f"{ticket_id}.md", root))
+        evidence.append(
+            f"{ticket_id} carries current acceptance_imprecision issue-discovery evidence but lacks current acceptance-refresh proof newer than {issue_created_at}."
+        )
+        if refresh_pending:
+            evidence.append(f"{ticket_id} still records ticket_state.needs_acceptance_refresh=true.")
+
+    if not evidence:
+        return
+
+    ctx.add_finding(
+        findings,
+        Finding(
+            code="WFLOW033",
+            severity="error",
+            problem="Canonical ticket acceptance can drift after acceptance-imprecision intake, leaving artifacts and ticket truth out of sync.",
+            root_cause="A historical ticket was invalidated by `acceptance_imprecision`, but there is no current acceptance-refresh proof (or the workflow still marks refresh pending). That means implementation/review artifacts may be relying on revised criteria that never became canonical in `tickets/manifest.json` and ticket markdown.",
+            files=list(dict.fromkeys(files)),
+            safer_pattern="When `issue_intake` invalidates a ticket because the accepted contract is wrong or imprecise, require the team leader to run `ticket_update(acceptance=[...])`, persist an acceptance-refresh artifact, and block review/closeout/handoff until that canonical refresh is complete.",
+            evidence=evidence[:10],
+            provenance="script",
+        ),
+    )
+
+
 def audit_artifact_path_contract_drift(root: Path, findings: list[Finding], ctx: ContractSurfaceAuditContext) -> None:
     offenders: list[str] = []
     evidence: list[str] = []
@@ -850,7 +937,18 @@ def audit_blender_route_operating_surfaces(root: Path, findings: list[Finding], 
             evidence.append(f"Missing required Blender route agent: {expected}")
             continue
         combined = "\n".join(ctx.read_text(path) for path in matches)
-        for snippet in ("blender_agent", "assets/briefs", "assets/models", ".blender-mcp/audit"):
+        for snippet in (
+            "blender_agent",
+            "assets/briefs",
+            "assets/models",
+            ".blender-mcp/audit",
+            "ticket_lookup: allow",
+            "artifact_write: allow",
+            "artifact_register: allow",
+            "context_snapshot: allow",
+            "blender_agent_project_initialize: allow",
+            "blender_agent_scene_batch_edit: allow",
+        ):
             if snippet not in combined:
                 files.append(ctx.normalize_path(matches[0], root))
                 evidence.append(
@@ -1413,6 +1511,7 @@ def run_contract_surface_audits(root: Path, findings: list[Finding], ctx: Contra
     audit_overloaded_artifact_register(root, findings, ctx)
     audit_artifact_persistence_prompt_contract(root, findings, ctx)
     audit_failure_recovery_contract(root, findings, ctx)
+    audit_acceptance_refresh_drift(root, findings, ctx)
     audit_artifact_path_contract_drift(root, findings, ctx)
     audit_workflow_vocabulary_drift(root, findings, ctx)
     audit_artifact_brief_missing_tuple(root, findings, ctx)

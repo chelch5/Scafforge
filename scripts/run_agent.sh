@@ -213,8 +213,36 @@ infer_android_sdk_path() {
   return 1
 }
 
+infer_godot_executable() {
+  local found=""
+  if found="$(command -v godot4 2>/dev/null)"; then
+    printf '%s\n' "$found"
+    return 0
+  fi
+  if found="$(command -v godot 2>/dev/null)"; then
+    printf '%s\n' "$found"
+    return 0
+  fi
+  local candidate
+  for candidate in \
+    "${HOME}/godot4" \
+    "${HOME}/godot" \
+    "${HOME}/.local/bin/godot4" \
+    "${HOME}/.local/bin/godot" \
+    /usr/local/bin/godot4 \
+    /usr/local/bin/godot \
+    /snap/bin/godot
+  do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 normalize_host_tooling_env() {
-  local inferred_java_home="" inferred_android_sdk=""
+  local inferred_java_home="" inferred_android_sdk="" inferred_godot=""
   if inferred_java_home="$(infer_java_home 2>/dev/null)"; then
     export JAVA_HOME="${JAVA_HOME:-$inferred_java_home}"
   fi
@@ -225,6 +253,15 @@ normalize_host_tooling_env() {
     export ANDROID_SDK_ROOT="$ANDROID_HOME"
   elif [[ -n "${ANDROID_SDK_ROOT:-}" && -z "${ANDROID_HOME:-}" ]]; then
     export ANDROID_HOME="$ANDROID_SDK_ROOT"
+  fi
+  if inferred_godot="$(infer_godot_executable 2>/dev/null)"; then
+    export SCAFFORGE_GODOT_EXECUTABLE="${SCAFFORGE_GODOT_EXECUTABLE:-$inferred_godot}"
+    local godot_dir
+    godot_dir="$(dirname "$inferred_godot")"
+    case ":${PATH}:" in
+      *":${godot_dir}:"*) ;;
+      *) export PATH="${godot_dir}:${PATH}" ;;
+    esac
   fi
 }
 
@@ -469,7 +506,9 @@ if [[ "$MODE" == "opencode" ]]; then
 10. Continue working until the active ticket reaches closeout, you hit a team-leader stop condition, or no legal next action remains.
 11. For split parents, remediation batches, and stale-follow-up sweeps, keep draining ready child tickets in the same run while legal next actions remain.
 12. After delegating a specialist task, wait for the result, confirm the expected artifact or failure, then rerun ticket_lookup and continue in the same run.
-13. Do not restart long Goal / Instructions / Discoveries / Accomplished / Next Steps recap blocks after routine progress; use one or two terse lines unless reporting a blocker.
+13. After a planning artifact is written, do not stop at plan_review: run plan review, and if the guidance or review result says approve the plan, execute the exact ticket_update that records approved_plan=true before stopping or delegating implementation.
+14. When ticket_lookup.transition_guidance.recommended_ticket_update is present after a fresh ticket_lookup, treat that exact update as the required next action unless a concrete blocker prevents it.
+15. Do not restart long Goal / Instructions / Discoveries / Accomplished / Next Steps recap blocks after routine progress; use one or two terse lines unless reporting a blocker.
 
 If you encounter a blocker you cannot resolve after 3 attempts, stop and report it clearly with the exact error and what you tried."
   fi

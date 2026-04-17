@@ -324,6 +324,7 @@ def audit_markdown_verdict_parser_mismatch(
         and "overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?" in normalized_workflow_text
         and "qa\\s+(?:result|verdict)" in normalized_workflow_text
         and "review\\s+(?:result|verdict)" in normalized_workflow_text
+        and "approval\\s+signal|decision|verdict|result" in normalized_workflow_text
     )
     supports_compact_stage_headings = (
         "const compactStageHeading = plain.match(" in workflow_text
@@ -334,7 +335,7 @@ def audit_markdown_verdict_parser_mismatch(
         return
 
     emphasized_verdict = re.compile(
-        r"^(?:[-*]\s*)?(?:\*\*|__)(overall(?:\s+qa)?(?:\s+(?:result|verdict))?|qa\s+(?:result|verdict)|review\s+(?:result|verdict)|verdict|result|approval\s+signal)(?:\*\*|__)\s*:\s*(?:\*\*|__)?\s*(pass|fail|reject|approved?|blocked?|blocker)(?:\*\*|__)?\b",
+        r"^(?:[-*]\s*)?(?:\*\*|__)(overall(?:\s+qa)?(?:\s+(?:result|verdict))?|qa\s+(?:result|verdict)|review\s+(?:result|verdict)|decision|verdict|result|approval\s+signal)(?:\*\*|__)\s*:\s*(?:\*\*|__)?\s*(pass|fail|reject|approved?|blocked?|blocker)(?:\*\*|__)?\b",
         re.IGNORECASE | re.MULTILINE,
     )
     overall_verdict = re.compile(
@@ -343,6 +344,10 @@ def audit_markdown_verdict_parser_mismatch(
     )
     compact_stage_heading = re.compile(
         r"^#{1,4}\s*(?:QA|Review)\s+(?:PASS|FAIL|REJECT|APPROVED?|BLOCKED?|BLOCKER)\b",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    decision_heading = re.compile(
+        r"^#{1,4}\s*Decision\s*(?:\r?\n\s*)+(?:\*\*|__|`)?(?:PASS|FAIL|REJECT|APPROVED?|BLOCKED?|BLOCKER)(?:\*\*|__|`)?\b",
         re.IGNORECASE | re.MULTILINE,
     )
     evidence: list[str] = []
@@ -372,6 +377,10 @@ def audit_markdown_verdict_parser_mismatch(
                 compact_match = compact_stage_heading.search(artifact_text)
                 if compact_match:
                     artifact_matches.append(compact_match.group(0).strip())
+            if not supports_broad_labeled_verdicts:
+                decision_match = decision_heading.search(artifact_text)
+                if decision_match:
+                    artifact_matches.append(decision_match.group(0).strip())
             if not artifact_matches:
                 continue
             files.append(ctx.normalize_path(artifact_path, root))
@@ -389,9 +398,9 @@ def audit_markdown_verdict_parser_mismatch(
             code="WFLOW026",
             severity="error",
             problem="Current artifacts contain explicit verdict headings or labels, but the generated verdict extractor still reports them as unclear.",
-            root_cause="The repo-local workflow parser does not cover the real artifact verdict forms already present in downstream review and QA artifacts, including markdown-emphasized labels, compact stage headings such as `## QA PASS`, and plain `**Overall**: PASS` labels. Those explicit verdicts then look unparseable and block review or QA transitions even though the artifact body is clear.",
+            root_cause="The repo-local workflow parser does not cover the real artifact verdict forms already present in downstream review and QA artifacts, including markdown-emphasized labels, compact stage headings such as `## QA PASS`, `## Decision` headings with the verdict on the next line, and plain `**Overall**: PASS` labels. Those explicit verdicts then look unparseable and block review or QA transitions even though the artifact body is clear.",
             files=list(dict.fromkeys(files)),
-            safer_pattern="Keep one shared artifact verdict extractor that accepts the real artifact family in use: plain and markdown-emphasized verdict labels, compact `QA/Review + verdict` headings, and `Overall: PASS/FAIL` labels. Route ticket_lookup and ticket_update through that shared parser instead of treating explicit review or QA verdicts as unclear.",
+            safer_pattern="Keep one shared artifact verdict extractor that accepts the real artifact family in use: plain and markdown-emphasized verdict labels, compact `QA/Review + verdict` headings, `## Decision` headings with the verdict on the next line, and `Overall: PASS/FAIL` labels. Route ticket_lookup and ticket_update through that shared parser instead of treating explicit review or QA verdicts as unclear.",
             evidence=evidence[:8],
             provenance="script",
         ),

@@ -10,5 +10,6 @@ Rules:
 
 - Treat this slash command as a human entrypoint only.
 - Use `ticket_reverify` rather than editing trust fields manually.
+- Do not use `ticket_reverify` while canonical acceptance refresh is pending; refresh or re-affirm the ticket's acceptance with `ticket_update(acceptance=[...])` first.
 - Require current evidence from the same ticket or a linked follow-up ticket before restoring trust.
 - Link any remediation evidence back to the historical ticket before claiming the defect is closed.

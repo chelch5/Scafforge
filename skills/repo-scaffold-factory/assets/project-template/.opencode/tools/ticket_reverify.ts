@@ -1,4 +1,6 @@
 import { tool } from "@opencode-ai/plugin"
+import { access } from "node:fs/promises"
+import { join } from "node:path"
 import {
   defaultArtifactPath,
   getTicket,
@@ -9,12 +11,22 @@ import {
   markTicketDone,
   normalizeRepoPath,
   registerArtifactSnapshot,
+  rootPath,
   saveWorkflowBundle,
   syncWorkflowSelection,
   ticketEligibleForTrustRestoration,
   type Artifact,
   writeText,
 } from "../lib/workflow"
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
 function renderArtifact(args: {
   sourceTicketId: string
@@ -70,6 +82,11 @@ export default tool({
     if (!ticketEligibleForTrustRestoration(sourceTicket)) {
       throw new Error(`Ticket ${sourceTicket.id} must still be a historical done or reopened ticket before it can be reverified.`)
     }
+    if (getTicketWorkflowState(workflow, sourceTicket.id).needs_acceptance_refresh === true) {
+      throw new Error(
+        `Ticket ${sourceTicket.id} still needs canonical acceptance refresh. Re-run ticket_update with acceptance=[...] to refresh or re-affirm the canonical acceptance criteria before ticket_reverify can restore trust.`,
+      )
+    }
     if (!evidencePath && !verificationContent) {
       throw new Error("ticket_reverify requires evidence_artifact_path or verification_content.")
     }
@@ -90,6 +107,25 @@ export default tool({
           (artifact) => artifact.path === evidencePath && artifact.trust_state === "current",
         ) as Artifact | undefined
       : undefined
+    if (!evidenceArtifact && evidencePath) {
+      const canonicalVerificationSourcePath = normalizeRepoPath(
+        defaultArtifactPath(evidenceTicket.id, "review", "backlog-verification"),
+      )
+      const candidateSourcePath = join(rootPath(), evidencePath)
+      if (
+        evidencePath === canonicalVerificationSourcePath &&
+        await exists(candidateSourcePath)
+      ) {
+        evidenceArtifact = await registerArtifactSnapshot({
+          ticket: evidenceTicket,
+          registry,
+          source_path: evidencePath,
+          kind: "backlog-verification",
+          stage: "review",
+          summary: `Backlog verification registered during ticket_reverify for ${evidenceTicket.id}.`,
+        })
+      }
+    }
     if (!evidenceArtifact && evidencePath) {
       throw new Error(`Evidence artifact ${evidencePath} is not a current artifact on ticket ${evidenceTicket.id}.`)
     }

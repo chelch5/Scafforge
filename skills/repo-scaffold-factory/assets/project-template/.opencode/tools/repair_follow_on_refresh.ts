@@ -4,8 +4,7 @@ import {
   loadManifest,
   loadWorkflowState,
   type RepairFollowOnState,
-  rootPath,
-  saveWorkflowState,
+  saveWorkflowBundle,
   syncWorkflowSelection,
 } from "../lib/workflow"
 
@@ -124,11 +123,16 @@ export default tool({
     }
 
     const expectedRevision = workflow.state_revision
-    await saveWorkflowState(workflow, rootPath(), expectedRevision, { refreshDerivedSurfaces: false }, { manifest, skipGraphValidation: true })
+    await saveWorkflowBundle({
+      workflow,
+      manifest,
+      expectedRevision,
+      skipGraphValidation: true,
+    })
 
     return JSON.stringify(
       {
-        active_ticket: workflow.active_ticket,
+        active_ticket: manifest.active_ticket,
         process_version: workflow.process_version,
         parallel_mode: workflow.parallel_mode,
         pending_process_verification: workflow.pending_process_verification,

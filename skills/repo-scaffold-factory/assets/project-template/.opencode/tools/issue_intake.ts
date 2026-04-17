@@ -33,6 +33,7 @@ function renderArtifact(args: {
   outcome: DefectOutcome
   priorCompletionTrusted: boolean
   requiredNextAction: string
+  acceptanceRefreshRequired: boolean
 }): string {
   return `# Issue Discovery
 
@@ -50,6 +51,7 @@ function renderArtifact(args: {
 - prior_completion_trusted: ${args.priorCompletionTrusted ? "true" : "false"}
 - required_next_action: ${args.requiredNextAction}
 - outcome: ${args.outcome}
+- acceptance_refresh_required: ${args.acceptanceRefreshRequired ? "true" : "false"}
 `
 }
 
@@ -102,9 +104,13 @@ export default tool({
 
     let requiredNextAction = outcome
     let createdTicketId: string | null = null
+    const acceptanceRefreshRequired = outcome === "invalidates_done" && args.acceptance_broken
     if (outcome === "invalidates_done") {
       markTicketReopened(sourceTicket, workflow, `Issue intake invalidated prior completion: ${defectClass}`)
       setPlanApprovedForTicket(workflow, sourceTicket.id, false)
+      if (acceptanceRefreshRequired) {
+        getTicketWorkflowState(workflow, sourceTicket.id).needs_acceptance_refresh = true
+      }
       manifest.active_ticket = sourceTicket.id
       syncWorkflowSelection(workflow, manifest)
       requiredNextAction = "reopen_source_ticket"
@@ -158,6 +164,7 @@ export default tool({
       outcome,
       priorCompletionTrusted,
       requiredNextAction,
+      acceptanceRefreshRequired,
     })
     const canonicalPath = normalizeRepoPath(defaultArtifactPath(sourceTicket.id, "review", "issue-discovery"))
     await writeText(canonicalPath, artifactBody)

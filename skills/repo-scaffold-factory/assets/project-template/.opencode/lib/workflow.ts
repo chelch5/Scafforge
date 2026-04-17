@@ -75,6 +75,7 @@ export type TicketWorkflowState = {
   approved_plan: boolean
   reopen_count: number
   needs_reverification: boolean
+  needs_acceptance_refresh?: boolean
 }
 
 export type BootstrapState = {
@@ -559,6 +560,7 @@ function normalizeTicketWorkflowState(value: unknown): TicketWorkflowState {
     approved_plan: typeof state.approved_plan === "boolean" ? state.approved_plan : false,
     reopen_count: typeof state.reopen_count === "number" && state.reopen_count >= 0 ? Math.floor(state.reopen_count) : 0,
     needs_reverification: typeof state.needs_reverification === "boolean" ? state.needs_reverification : false,
+    needs_acceptance_refresh: state.needs_acceptance_refresh === true ? true : undefined,
   }
 }
 function normalizeTicketStateMap(value: unknown): Record<string, TicketWorkflowState> {
@@ -884,6 +886,9 @@ export function getTicket(manifest: Manifest, ticketId?: string): Ticket {
 export function isPlanApprovedForTicket(workflow: WorkflowState, ticketId: string): boolean { return ensureTicketWorkflowState(workflow, ticketId).approved_plan }
 export function setPlanApprovedForTicket(workflow: WorkflowState, ticketId: string, approved: boolean): void { ensureTicketWorkflowState(workflow, ticketId).approved_plan = approved }
 export function getTicketWorkflowState(workflow: WorkflowState, ticketId: string): TicketWorkflowState { return ensureTicketWorkflowState(workflow, ticketId) }
+export function ticketNeedsAcceptanceRefresh(workflow: WorkflowState, ticketId: string): boolean {
+  return ensureTicketWorkflowState(workflow, ticketId).needs_acceptance_refresh === true
+}
 export function selectForegroundTicket(manifest: Manifest, workflow?: WorkflowState, currentTicketId = manifest.active_ticket): Ticket {
   const currentTicket = manifest.tickets.find((item) => item.id === currentTicketId)
   if (currentTicket && currentTicket.status !== "done") return currentTicket
@@ -1069,6 +1074,10 @@ export function validateRestartSurfacePublication(manifest: Manifest, workflow: 
   if (workflow.stage !== activeTicket.stage || workflow.status !== activeTicket.status) {
     return `Restart surfaces can only publish from the verified post-mutation snapshot for ${activeTicket.id}.`
   }
+  const acceptanceRefreshTickets = manifest.tickets.filter((ticket) => ticketNeedsAcceptanceRefresh(workflow, ticket.id))
+  if (acceptanceRefreshTickets.length > 0) {
+    return `Restart surfaces can only publish after canonical acceptance refresh is complete for ${acceptanceRefreshTickets.map((ticket) => ticket.id).join(", ")}.`
+  }
   return null
 }
 
@@ -1164,13 +1173,14 @@ export function isRemediationTicket(ticket: Pick<Ticket, "id" | "lane">): boolea
   return ticket.lane.trim().toLowerCase() === "remediation" || ticket.id.trim().toUpperCase().startsWith("REMED-")
 }
 const ARTIFACT_VERDICT_LABEL_PATTERN =
-  "(?:overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?|qa\\s+(?:result|verdict)|review\\s+(?:result|verdict)|blocker\\s+or\\s+approval\\s+signal|approval\\s+signal|verdict|result)"
+  "(?:overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?|qa\\s+(?:result|verdict)|review\\s+(?:result|verdict)|blocker\\s+or\\s+approval\\s+signal|approval\\s+signal|decision|verdict|result)"
 export function extractArtifactVerdict(content: string): ArtifactVerdictInspection {
   const lines = content.split(/\r?\n/)
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim()
-    if (!trimmed) continue
-    const plain = trimmed.replace(/(?:\*\*|__|`)/g, "")
+  const explicitChecks = (
+    trimmed: string,
+    plain: string,
+    index: number,
+  ): ArtifactVerdictInspection | null => {
     const labeled = plain.match(
       new RegExp(
         `^(?:[-*]\\s*)?${ARTIFACT_VERDICT_LABEL_PATTERN}\\s*:\\s*(pass|fail|reject|approved?|blocked?|blocker)\\b`,
@@ -1207,7 +1217,7 @@ export function extractArtifactVerdict(content: string): ArtifactVerdictInspecti
       ),
     )
     if (headingLabel) {
-      for (let j = i + 1; j < lines.length; j++) {
+      for (let j = index + 1; j < lines.length; j++) {
         const nextTrimmed = lines[j].trim()
         if (!nextTrimmed) continue
         const nextPlain = nextTrimmed.replace(/(?:\*\*|__|`)/g, "")
@@ -1221,6 +1231,18 @@ export function extractArtifactVerdict(content: string): ArtifactVerdictInspecti
         break
       }
     }
+    return null
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim()
+    if (!trimmed) continue
+    const plain = trimmed.replace(/(?:\*\*|__|`)/g, "")
+    const explicitVerdict = explicitChecks(trimmed, plain, i)
+    if (explicitVerdict) return explicitVerdict
+  }
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim()
+    if (!trimmed) continue
     const failureEmoji = trimmed.match(/[❌✖]\s*(?:[^A-Za-z]*)(pass|fail|reject|approved?|blocked?|blocker)\b/i)
     if (failureEmoji) {
       const verdict = normalizeArtifactVerdictToken(failureEmoji[1] || "")
@@ -2011,7 +2033,7 @@ export function renderContextSnapshot(manifest: Manifest, workflow: WorkflowStat
   const pivotInputs = pivot.restart_surface_inputs
   const pivotState = pivot.downstream_refresh_state
   const noteBlock = note ? `\n## Note\n\n${note}\n` : ""
-  return `# Context Snapshot\n\n## Project\n\n${manifest.project}\n\n## Active Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n- Approved plan: ${workflow.approved_plan ? "yes" : "no"}\n- Needs reverification: ${ticketState.needs_reverification ? "yes" : "no"}\n- Open split children: ${splitChildren.length > 0 ? splitChildren.map((item) => item.id).join(", ") : "none"}\n\n## Bootstrap\n\n- status: ${workflow.bootstrap.status}\n- last_verified_at: ${workflow.bootstrap.last_verified_at || "Not yet verified."}\n- proof_artifact: ${workflow.bootstrap.proof_artifact || "None"}\n- blockers: ${workflow.bootstrap_blockers.length > 0 ? workflow.bootstrap_blockers.map((item) => `${item.executable} (${item.reason})`).join(", ") : "none"}\n\n## Process State\n\n- process_version: ${workflow.process_version}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- parallel_mode: ${workflow.parallel_mode}\n- state_revision: ${workflow.state_revision}\n\n## Repair Follow-On\n\n- outcome: ${workflow.repair_follow_on.outcome}\n- required: ${hasPendingRepairFollowOn(workflow) ? "yes" : "no"}\n- next_required_stage: ${repairNextStage}\n- verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- last_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n\n## Pivot State\n\n- pivot_in_progress: ${pivotInputs.pivot_in_progress ? "true" : "false"}\n- pivot_class: ${pivotInputs.pivot_class || "none"}\n- pivot_changed_surfaces: ${pivotInputs.pivot_changed_surfaces.length > 0 ? pivotInputs.pivot_changed_surfaces.join(", ") : "none"}\n- pending_downstream_stages: ${pivotInputs.pending_downstream_stages.length > 0 ? pivotInputs.pending_downstream_stages.join(", ") : "none"}\n- completed_downstream_stages: ${pivotInputs.completed_downstream_stages.length > 0 ? pivotInputs.completed_downstream_stages.join(", ") : "none"}\n- pending_ticket_lineage_actions: ${pivotInputs.pending_ticket_lineage_actions.length > 0 ? pivotInputs.pending_ticket_lineage_actions.join(", ") : "none"}\n- completed_ticket_lineage_actions: ${pivotInputs.completed_ticket_lineage_actions.length > 0 ? pivotInputs.completed_ticket_lineage_actions.join(", ") : "none"}\n- post_pivot_verification_passed: ${pivotInputs.post_pivot_verification_passed ? "true" : "false"}\n- pivot_state_path: ${pivot.pivot_state_path || ".opencode/meta/pivot-state.json"}\n- pivot_tracking_mode: ${pivotState?.tracking_mode || "none"}\n\n## Lane Leases\n\n${leases}\n\n## Recent Artifacts\n\n${artifactLines}${noteBlock}`
+  return `# Context Snapshot\n\n## Project\n\n${manifest.project}\n\n## Active Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n- Approved plan: ${workflow.approved_plan ? "yes" : "no"}\n- Needs reverification: ${ticketState.needs_reverification ? "yes" : "no"}\n- Needs acceptance refresh: ${ticketState.needs_acceptance_refresh ? "yes" : "no"}\n- Open split children: ${splitChildren.length > 0 ? splitChildren.map((item) => item.id).join(", ") : "none"}\n\n## Bootstrap\n\n- status: ${workflow.bootstrap.status}\n- last_verified_at: ${workflow.bootstrap.last_verified_at || "Not yet verified."}\n- proof_artifact: ${workflow.bootstrap.proof_artifact || "None"}\n- blockers: ${workflow.bootstrap_blockers.length > 0 ? workflow.bootstrap_blockers.map((item) => `${item.executable} (${item.reason})`).join(", ") : "none"}\n\n## Process State\n\n- process_version: ${workflow.process_version}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- parallel_mode: ${workflow.parallel_mode}\n- state_revision: ${workflow.state_revision}\n\n## Repair Follow-On\n\n- outcome: ${workflow.repair_follow_on.outcome}\n- required: ${hasPendingRepairFollowOn(workflow) ? "yes" : "no"}\n- next_required_stage: ${repairNextStage}\n- verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- last_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n\n## Pivot State\n\n- pivot_in_progress: ${pivotInputs.pivot_in_progress ? "true" : "false"}\n- pivot_class: ${pivotInputs.pivot_class || "none"}\n- pivot_changed_surfaces: ${pivotInputs.pivot_changed_surfaces.length > 0 ? pivotInputs.pivot_changed_surfaces.join(", ") : "none"}\n- pending_downstream_stages: ${pivotInputs.pending_downstream_stages.length > 0 ? pivotInputs.pending_downstream_stages.join(", ") : "none"}\n- completed_downstream_stages: ${pivotInputs.completed_downstream_stages.length > 0 ? pivotInputs.completed_downstream_stages.join(", ") : "none"}\n- pending_ticket_lineage_actions: ${pivotInputs.pending_ticket_lineage_actions.length > 0 ? pivotInputs.pending_ticket_lineage_actions.join(", ") : "none"}\n- completed_ticket_lineage_actions: ${pivotInputs.completed_ticket_lineage_actions.length > 0 ? pivotInputs.completed_ticket_lineage_actions.join(", ") : "none"}\n- post_pivot_verification_passed: ${pivotInputs.post_pivot_verification_passed ? "true" : "false"}\n- pivot_state_path: ${pivot.pivot_state_path || ".opencode/meta/pivot-state.json"}\n- pivot_tracking_mode: ${pivotState?.tracking_mode || "none"}\n\n## Lane Leases\n\n${leases}\n\n## Recent Artifacts\n\n${artifactLines}${noteBlock}`
 }
 export function renderStartHere(manifest: Manifest, workflow: WorkflowState, pivot: PivotState, options: StartHereOptions = {}): string {
   const ticket = getTicket(manifest, workflow.active_ticket)
@@ -2023,8 +2045,10 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, piv
     : null
   const activeTicketNeedsHistoricalReconciliation = ticketNeedsHistoricalReconciliation(ticket)
   const activeTicketNeedsTrustRestoration = ticketNeedsTrustRestoration(ticket, workflow)
+  const activeTicketNeedsAcceptanceRefresh = ticketState.needs_acceptance_refresh === true
   const suspectDone = processVerification.done_but_not_fully_trusted
   const reverification = manifest.tickets.filter((item) => getTicketWorkflowState(workflow, item.id).needs_reverification)
+  const acceptanceRefresh = manifest.tickets.filter((item) => ticketNeedsAcceptanceRefresh(workflow, item.id))
   const blockedDependents = blockedDependentTickets(manifest, ticket.id)
   const splitChildren = openSplitScopeChildren(manifest, ticket.id)
   const verifierLabel = options.backlogVerifierAgent ? `\`${options.backlogVerifierAgent}\`` : "the backlog verifier"
@@ -2041,7 +2065,7 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, piv
         ? "pivot follow-up required"
       : repairFollowOnPending
         ? "repair follow-up required"
-        : processVerification.pending || activeTicketNeedsTrustRestoration || activeTicketNeedsHistoricalReconciliation
+        : processVerification.pending || activeTicketNeedsTrustRestoration || activeTicketNeedsHistoricalReconciliation || acceptanceRefresh.length > 0
           ? "workflow verification pending"
           : "ready for continued development"
   )
@@ -2054,6 +2078,8 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, piv
             : "Complete the remaining pivot follow-on work and republish the restart surfaces before resuming normal ticket lifecycle work.")
       : repairFollowOnPending
         ? (repairBlocker || (repairNextStage ? `Complete the required repair follow-on stage \`${repairNextStage}\` before resuming normal ticket lifecycle work.` : "Complete the required repair follow-on stages before resuming normal ticket lifecycle work."))
+          : activeTicketNeedsAcceptanceRefresh
+            ? `Keep ${ticket.id} as the foreground ticket, but refresh or re-affirm its canonical acceptance criteria through ticket_update before relying on review, QA, smoke-test, or closeout.`
           : splitChildren.length > 0
             ? `Keep ${ticket.id} open as a split parent and continue the child ticket lane${splitChildren.length > 1 ? "s" : ""}: ${splitChildren.map((item) => item.id).join(", ")}.`
             : ticket.status !== "done"
@@ -2083,8 +2109,10 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, piv
     sourceFollowUpPending ? "- Managed repair converged, but source-layer follow-up still remains in the ticket graph." : null,
     activeTicketNeedsHistoricalReconciliation ? "- Historical lineage remains contradictory until ticket_reconcile repairs the superseded invalidated ticket graph." : null,
     activeTicketNeedsTrustRestoration || processVerification.pending ? "- Historical completion should not be treated as fully trusted until pending process verification or explicit reverification is cleared." : null,
+    activeTicketNeedsAcceptanceRefresh ? `- ${ticket.id} still needs an explicit canonical acceptance refresh before downstream review and closeout should be trusted.` : null,
     processVerification.clearable_now ? "- The workflow still records pending process verification even though no done tickets remain affected; clear the workflow flag before relying on a clean-state restart narrative." : null,
     suspectDone.length > 0 ? `- Some done tickets are not fully trusted yet: ${suspectDone.map((item) => item.id).join(", ")}.` : null,
+    acceptanceRefresh.length > 0 ? `- Some tickets still need canonical acceptance refresh: ${acceptanceRefresh.map((item) => item.id).join(", ")}.` : null,
     splitChildren.length > 0 ? `- ${ticket.id} is an open split parent; child ticket${splitChildren.length > 1 ? "s" : ""} ${splitChildren.map((item) => item.id).join(", ")} remain the active foreground work.` : null,
     blockedDependents.length > 0 && ticket.status !== "done" ? `- Downstream tickets ${blockedDependents.map((item) => item.id).join(", ")} remain formally blocked until ${ticket.id} reaches done.` : null,
   ].filter((line): line is string => Boolean(line)).join("\n") || "- None recorded."

@@ -138,7 +138,6 @@ function sourceLeaseCoversSplitScopeTargetMutation(args: {
   return (
     args.targetTicket.source_mode === "split_scope"
     && args.targetTicket.source_ticket_id === args.sourceTicket.id
-    && args.replacementSourceTicket.id === args.sourceTicket.id
   )
 }
 
@@ -391,6 +390,11 @@ export const StageGateEnforcer: Plugin = async () => {
         if (!ticketEligibleForTrustRestoration(ticket)) {
           throw new Error(`Ticket ${ticket.id} must still be a historical done or reopened ticket before ticket_reverify can restore trust.`)
         }
+        if (getTicketWorkflowState(workflow, ticket.id).needs_acceptance_refresh) {
+          throw new Error(
+            `Ticket ${ticket.id} still needs canonical acceptance refresh. Re-run ticket_update with acceptance=[...] before ticket_reverify can restore trust.`,
+          )
+        }
         const hasEvidenceArtifactPath = typeof output.args.evidence_artifact_path === "string" && output.args.evidence_artifact_path.trim()
         const hasVerificationContent = typeof output.args.verification_content === "string" && output.args.verification_content.trim()
         if (!hasEvidenceArtifactPath && !hasVerificationContent) {
@@ -455,6 +459,7 @@ export const StageGateEnforcer: Plugin = async () => {
           stage: typeof output.args.stage === "string" ? output.args.stage : undefined,
           status: typeof output.args.status === "string" ? output.args.status : undefined,
         })
+        const acceptanceProvided = Array.isArray(output.args.acceptance)
         const blockedTicketUnblockOnly = isBlockedTicketUnblockOnly(ticket, requested, output.args)
         if (!(processVerificationClearOnly && processVerification.clearable_now) && !blockedTicketUnblockOnly) {
           await ensureTargetTicketWriteLease(ticketId)
@@ -537,6 +542,16 @@ export const StageGateEnforcer: Plugin = async () => {
           await ensureBootstrapReadyForValidation()
         }
 
+        if (
+          getTicketWorkflowState(workflow, ticket.id).needs_acceptance_refresh
+          && ["review", "qa", "smoke-test", "closeout"].includes(requested.stage)
+          && !acceptanceProvided
+        ) {
+          throw new Error(
+            `Ticket ${ticket.id} still needs canonical acceptance refresh before it can advance to ${requested.stage}. Re-run ticket_update with acceptance=[...] first.`,
+          )
+        }
+
         if (getTicketWorkflowState(workflow, ticket.id).needs_reverification && requested.status === "done" && ticket.resolution_state !== "reopened") {
           throw new Error(`Ticket ${ticket.id} still needs reverification and cannot be closed from a non-reopened state.`)
         }
@@ -560,6 +575,10 @@ export const StageGateEnforcer: Plugin = async () => {
         )
         if (blockingReverification.length > 0) {
           throw new Error(`Cannot publish handoff while active or reopened tickets still need reverification: ${blockingReverification.map((ticket) => ticket.id).join(", ")}.`)
+        }
+        const acceptanceRefreshTickets = manifest.tickets.filter((ticket) => getTicketWorkflowState(workflow, ticket.id).needs_acceptance_refresh)
+        if (acceptanceRefreshTickets.length > 0) {
+          throw new Error(`Cannot publish handoff while canonical acceptance refresh remains pending for: ${acceptanceRefreshTickets.map((ticket) => ticket.id).join(", ")}.`)
         }
       }
     },

@@ -68,6 +68,7 @@ Use local skills only when they materially reduce ambiguity or provide the requi
 - `docs-and-handoff` for closeout and resume artifacts
 - `workflow-observability` for provenance and usage audits
 - `research-delegation` for read-only background investigation patterns
+- `blender-mcp-workflow` when the repo routes asset work through Blender MCP; its chaining contract outranks ad hoc tool guesses
 - `local-git-specialist` for local diff and commit hygiene
 - `isolation-guidance` for deciding when risky work needs a safer lane
 
@@ -105,6 +106,8 @@ Headless persistence and completion discipline:
 - do not end your response with a self-addressed "Next Steps" summary while the active ticket is still open, while the current stage still has an unfinished legal transition, or while another ready child ticket can be claimed legally
 - after each successful `ticket_update`, specialist delegation, or `smoke_test`, re-run `ticket_lookup` and continue lifecycle advancement until the current ticket reaches closeout, a listed stop condition, or an explicit blocker
 - a delegated specialist task is not a stop condition; wait for the task result, confirm the expected artifact or failure, then immediately re-run `ticket_lookup` and continue in the same run
+- after a planning artifact lands, do not stop at `plan_review`: run the plan-review specialist, inspect the decision, and keep advancing in the same run
+- when the plan-review artifact decision is APPROVED or `ticket_lookup.transition_guidance.recommended_ticket_update` names the `approved_plan=true` approval step, execute that exact `ticket_update` while the ticket remains in `plan_review` before you consider implementation or stopping
 - for split parents, stale-follow-up sweeps, and remediation child batches, keep draining ready child tickets in the same run until no writable child can advance legally or a listed stop condition fires
 - do not restart long Goal / Instructions / Discoveries / Accomplished / Next Steps recap blocks after routine progress; if you are not reporting a blocker, keep progress narration to one or two short lines
 
@@ -120,7 +123,7 @@ Ticket ownership:
 
 - planning: `__AGENT_PREFIX__-planner` owns the planning artifact
 - plan review: `__AGENT_PREFIX__-plan-review` owns the review artifact
-- implementation: `__AGENT_PREFIX__-lane-executor` or `__AGENT_PREFIX__-implementer` owns the implementation artifact for the claimed lane
+- implementation: `__AGENT_PREFIX__-lane-executor` or `__AGENT_PREFIX__-implementer` owns the implementation artifact for the claimed lane, except when the repo exposes a dedicated `__AGENT_PREFIX__-blender-asset-creator` and the ticket's primary deliverable is a Blender-generated asset through `blender_agent`; in that case the Blender specialist owns the implementation artifact
 - review: the assigned reviewer owns the review artifact; if no reviewer agent exists for the required check, you must stop and escalate instead of authoring the review body yourself
 - QA: `__AGENT_PREFIX__-tester-qa` owns the QA artifact; if no QA agent exists, you may evaluate readiness but you still must not fabricate a QA artifact body yourself
 - smoke-test: you own the deterministic `smoke_test` execution and its stage transition
@@ -148,6 +151,9 @@ Bounded parallel work:
 - keep the active open ticket as the foreground lane even when historical reverification is pending, unless dependencies or blockers force a different next step
 - grant a write lease with `ticket_claim` before any specialist writes planning, implementation, review, QA, or handoff artifact bodies or makes code changes, and release it with `ticket_release` when that bounded lane is complete
 - use `__AGENT_PREFIX__-lane-executor` as the default hidden worker for bounded parallel write work; keep `__AGENT_PREFIX__-implementer` for single-lane or specialized implementation when parallel fan-out is unnecessary
+- if the repo exposes `__AGENT_PREFIX__-blender-asset-creator` and the ticket's primary deliverable is a Blender-generated asset or other managed `blender_agent` output, delegate implementation to that Blender specialist instead of the generic implementer or lane executor
+- when you delegate a Blender-routed implementation, the launched worker must literally be `__AGENT_PREFIX__-blender-asset-creator`; if the worker label or subagent selection resolves to `__AGENT_PREFIX__-implementer` or `__AGENT_PREFIX__-lane-executor`, stop and reroute before any Blender MCP call
+- if a generic implementation worker returns a Blender-MCP invocation failure or bridge-defect claim for an asset-generation ticket, treat that as misrouting first and hand the lane to `__AGENT_PREFIX__-blender-asset-creator` before accepting the defect as canonical
 - keep one visible team leader coordinating the repo by default; introduce broader manager or section-leader layers only when the project brief clearly proves disjoint domains and the local skill pack already covers them
 
 Process-change verification:
@@ -159,6 +165,7 @@ Process-change verification:
 - when `ticket_lookup.process_verification.clearable_now` is `true`, treat the recommended `ticket_update(..., pending_process_verification: false)` as required cleanup and execute it before any split-parent handoff or ordinary lifecycle advancement
 - clear `pending_process_verification` only after `ticket_lookup.process_verification.affected_done_tickets` is empty
 - when `ticket_lookup.process_verification.clearable_now` is true but the foreground ticket is already closed, do not try to reclaim the closed ticket; foreground an open writable ticket, claim it, and carry `pending_process_verification: false` through `ticket_update` on that open ticket instead
+- when a closed-ticket backlog verifier wrote the canonical `.opencode/state/reviews/...-backlog-verification.md` file but did not complete registration, read that body and call `ticket_reverify` with `verification_content` (and `evidence_ticket_id` when needed) only if `ticket_lookup.transition_guidance.acceptance_refresh_required` is false; if the ticket still needs canonical acceptance refresh, use `ticket_update(acceptance=[...])` first instead of trying to restore trust early
 - treat `repair_follow_on` as separate from `pending_process_verification`; historical trust restoration does not mean managed repair follow-on is complete
 - use `ticket_create(source_mode=split_scope)` when an open or reopened parent ticket needs planned child decomposition; keep the parent open and linked instead of blocking it behind the child work
 - for split parents, keep the parent in the foreground until its current `planning` proof exists and `plan_review` approval is recorded; do not foreground parallel children ahead of missing parent-owned setup proof
@@ -175,8 +182,10 @@ Post-completion defects:
 - before `issue_intake` invalidates a previously completed ticket, verify the claimed defect against the current code and current runtime behavior; if direct inspection or current probes show the defect no longer reproduces, treat the old claim as stale evidence instead of fabricating new follow-up work
 - use `ticket_reopen` only when the original accepted scope is directly false and the same ticket should resume ownership
 - use remediation or follow-up ticket creation when the new issue expands scope, crosses ticket boundaries, or should preserve the original ticket as historical completion
-- if a historically completed ticket was reopened by stale post-completion evidence and current inspection now disproves that defect, record current backlog-verification evidence and use `ticket_reverify` to restore the ticket instead of manufacturing no-op implementation churn
-- use `ticket_reverify` to restore trust on historical completion after linked evidence proves the defect is resolved
+- if a historically completed ticket was reopened by stale post-completion evidence and current inspection now disproves that defect, record current backlog-verification evidence and use `ticket_reverify` to restore the ticket only when `ticket_lookup.transition_guidance.acceptance_refresh_required` is false; if canonical acceptance still needs refresh, update that acceptance first instead of manufacturing no-op implementation churn
+- use `ticket_reverify` to restore trust on historical completion after linked evidence proves the defect is resolved, but never use it to bypass a pending canonical acceptance refresh
+- when `issue_intake` invalidates a historical ticket because the accepted contract itself is in question, refresh or re-affirm the ticket's canonical acceptance criteria with `ticket_update(acceptance=[...])` before relying on review, QA, smoke-test, or handoff
+- if the reopened ticket keeps the same literal acceptance, still re-affirm that canonical acceptance explicitly through `ticket_update(acceptance=[...])`; do not assume review artifacts alone are enough to clear acceptance drift
 - treat `.opencode/state/artifacts/history/...` paths as immutable evidence surfaces; when a follow-up ticket references them, use them as read-only context and record superseding proof on current writable repo surfaces or current ticket artifacts instead of attempting a history edit
 
 Rules:
@@ -214,7 +223,11 @@ Rules:
 - you must not call `artifact_write` or `artifact_register` for planning, implementation, review, or QA artifact bodies; only the assigned specialist may author and persist stage artifact bodies — a coordinator-authored stage artifact created through `artifact_write` or `artifact_register` is a workflow defect
 - when `ticket_lookup.transition_guidance.next_action_kind` is `write_artifact`, do not attempt `artifact_write` or `artifact_register` yourself even if the guidance names a canonical artifact path; immediately delegate the owning specialist and require that specialist to complete both `artifact_write` and `artifact_register` in the same pass
 - if a coordinator-authored `artifact_write` or `artifact_register` attempt is rejected, do not treat the partially recovered file as sufficient; reroute the same action through the owning specialist and wait for registered artifact proof before any stage advancement
+- if the rejected artifact was backlog-verification for a closed ticket, use the verifier's artifact body with `ticket_reverify(verification_content=...)` instead of retrying `artifact_register` as coordinator only when canonical acceptance refresh is not pending for that ticket
 - treat coordinator-authored planning, implementation, review, or QA artifacts as suspect evidence that needs remediation, not as proof of progression
+- when Blender MCP work is in scope, a claim that the bridge itself is broken is invalid until one correct chained retry proves it: `project_initialize(output_blend=...)`, then a mutating call that reuses the returned `persistence.saved_blend` as `input_blend`, with `.blender-mcp/audit/*.jsonl` showing non-null `input_blend` / `output_blend` on the matching `job_start`
+- if a mutating Blender audit record still shows null `input_blend` or `output_blend`, classify that as invocation misuse and send the work back for a correctly chained retry instead of escalating a bridge defect to the operator
+- do not call `blender_agent_*` tools yourself to diagnose or retry a Blender-routed implementation failure; require `__AGENT_PREFIX__-blender-asset-creator` to own the retried implementation and its artifact evidence
 
 Normal lifecycle states that are NOT repair triggers (WFLOW031 anti-pattern):
 
@@ -279,6 +292,7 @@ Additional fields for verifier and migration-follow-up routing:
 - to `__AGENT_PREFIX__-backlog-verifier`: include the exact done ticket id, the current process-change summary, and instruct it to call `ticket_lookup` with `include_artifact_contents: true`
 - to `__AGENT_PREFIX__-ticket-creator`: include the new ticket id, title, lane, wave, summary, acceptance criteria, source ticket id, verification artifact path, and any decision blockers
 - to `__AGENT_PREFIX__-lane-executor` or `__AGENT_PREFIX__-implementer`: include the claimed ticket id, lane, allowed paths, and the artifact path it must populate before handoff
+- to `__AGENT_PREFIX__-blender-asset-creator`: include the claimed ticket id, the asset brief path, expected asset output paths, allowed paths, the implementation artifact path, and the `.blender-mcp/audit` path it must cite when proving saved-blend chaining or any remaining bridge defect
 
 ## Godot Android Export Requirements
 

@@ -44,6 +44,8 @@ Rules:
 - read the latest planning, implementation, review, QA, and smoke-test artifact bodies from `ticket_lookup` before deciding whether old completion still holds
 - if no canonical artifact path is supplied for the backlog-verification result, return `BLOCKED` immediately instead of guessing a path
 - write and register a `review` artifact with kind `backlog-verification` when a canonical artifact path is supplied
+- when registration succeeds, return the registered current artifact path from `artifact_register`, not just the writable `.opencode/state/reviews/...` source path
+- if a closed-ticket backlog verification writes the canonical source artifact but registration still cannot complete, return the full verification body plus the canonical source path so the team leader can call `ticket_reverify(verification_content=...)` only when canonical acceptance refresh is not pending; if the ticket's accepted contract is what failed, say that acceptance refresh is required first and do not recommend early trust restoration
 - if artifact creation is blocked because the ticket lease is missing, return that blocker to the team leader instead of trying to claim a lease yourself
 - return your findings to the calling agent; do not create tickets yourself
 - do not mutate source code, ticket state, or existing repo files — artifact creation via `artifact_write` and `artifact_register` is the only permitted write

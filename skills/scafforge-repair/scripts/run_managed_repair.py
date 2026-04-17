@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from apply_repo_process_repair import (
     FOLLOW_ON_TRACKING_PATH,
     REPAIR_ESCALATION_PATH,
     RepairEscalation,
+    _AGENT_TEAM_REGEN_CODES,
     _AGENT_PROMPT_WFLOW_CODES,
     append_migration_history,
     apply_repair,
@@ -61,6 +63,7 @@ from android_scaffold import (
     load_android_surface_values,
     repo_declares_godot_android,
 )
+from discover_host_paths import discover_host_paths
 
 
 EXECUTION_RECORD_PATH = Path(".opencode/meta/repair-execution.json")
@@ -206,6 +209,50 @@ def regenerate_android_surfaces(repo_root: Path) -> dict[str, Any]:
         "placeholder_repairs": placeholder_repairs,
         "project_slug": project_slug,
         "package_name": package_name,
+    }
+
+
+def reconcile_blender_agent_config(repo_root: Path) -> dict[str, Any]:
+    bootstrap_path = repo_root / ".opencode" / "meta" / "asset-pipeline-bootstrap.json"
+    opencode_path = repo_root / "opencode.jsonc"
+    bootstrap = read_json(bootstrap_path)
+    if not isinstance(bootstrap, dict) or bootstrap.get("requires_blender_mcp") is not True:
+        return {"performed": False, "reason": "repo does not currently require Blender-MCP", "updated": []}
+    if not opencode_path.exists():
+        return {"performed": False, "reason": "opencode.jsonc missing", "updated": []}
+
+    host_paths = discover_host_paths()
+    blender_executable = str(host_paths.get("blender_executable") or "").strip()
+    blender_project = str(host_paths.get("blender_mcp_project") or "").strip()
+    if not blender_executable or not blender_project:
+        return {
+            "performed": False,
+            "reason": "host does not currently expose both blender_executable and blender_mcp_project",
+            "updated": [],
+        }
+
+    original = opencode_path.read_text(encoding="utf-8")
+    updated = (
+        original
+        .replace("__BLENDER_EXECUTABLE__", blender_executable)
+        .replace("__BLENDER_MCP_PROJECT_PATH__", blender_project)
+    )
+    updated, enabled_replacements = re.subn(
+        r'("blender_agent"\s*:\s*\{[\s\S]*?"enabled"\s*:\s*)(true|false)',
+        r"\1true",
+        updated,
+        count=1,
+    )
+    if enabled_replacements == 0:
+        return {"performed": False, "reason": "blender_agent.enabled entry not found in opencode.jsonc", "updated": []}
+    if updated == original:
+        return {"performed": False, "reason": "blender_agent configuration already matches the required Blender route", "updated": []}
+
+    opencode_path.write_text(updated, encoding="utf-8")
+    return {
+        "performed": True,
+        "reason": "Enabled blender_agent because the repo's canonical asset route requires Blender-MCP and the host exposes the required Blender MCP paths.",
+        "updated": ["opencode.jsonc"],
     }
 
 
@@ -872,6 +919,12 @@ def derive_required_follow_on_stages(
     placeholder_skills = find_placeholder_skills(repo_root)
     prompt_drift = detect_agent_prompt_drift(repo_root)
     finding_codes = {getattr(finding, "code", "") for finding in findings}
+    agent_surface_drift = any(
+        isinstance(path, str)
+        and (path.startswith(".opencode/agents/") or path == "docs/process/agent-catalog.md")
+        for finding in findings
+        for path in (getattr(finding, "files", []) or [])
+    )
 
     if placeholder_skills or any(code.startswith(("SKILL", "MODEL")) for code in finding_codes):
         required.append(
@@ -881,10 +934,11 @@ def derive_required_follow_on_stages(
                 "reason": "Repo-local skills still contain generic placeholder/model drift that must be regenerated with project-specific content.",
             }
         )
-    # Only specific WFLOW codes indicate agent-team or prompt-surface drift.
-    # Ticket-graph, release-gate, and other WFLOW codes must NOT trigger host-only
-    # opencode-team-bootstrap / agent-prompt-engineering stages.
-    if prompt_drift or bool(finding_codes & _AGENT_PROMPT_WFLOW_CODES):
+    # Prompt drift stays distinct from agent-team drift. Findings that cite
+    # .opencode/agents/ or explicit agent-regeneration codes (for example SKILL003)
+    # require opencode-team-bootstrap even when the prompt-specific WFLOW codes
+    # are absent.
+    if agent_surface_drift or bool(finding_codes & _AGENT_TEAM_REGEN_CODES) or prompt_drift or bool(finding_codes & _AGENT_PROMPT_WFLOW_CODES):
         required.append(
             {
                 **follow_on_stage_metadata("opencode-team-bootstrap"),
@@ -892,6 +946,7 @@ def derive_required_follow_on_stages(
                 "reason": "Agent or .opencode prompt surfaces still drift from the current workflow contract and must be regenerated.",
             }
         )
+    if prompt_drift or bool(finding_codes & _AGENT_PROMPT_WFLOW_CODES):
         required.append(
             {
                 **follow_on_stage_metadata("agent-prompt-engineering"),
@@ -913,10 +968,10 @@ def derive_required_follow_on_stages(
                     "reason": "Replaced .opencode/skills surfaces require regeneration with project-specific content.",
                 }
             )
-    if any(code.startswith("EXEC") for code in finding_codes) or "WFLOW025" in finding_codes or "WFLOW029" in finding_codes:
+    if any(code.startswith("EXEC") for code in finding_codes) or "WFLOW029" in finding_codes or "WFLOW033" in finding_codes:
         ticket_follow_up_reason = (
             "Repair left remediation, reverification, or target-completion follow-up that must be routed into the repo ticket system."
-            if "WFLOW025" in finding_codes or "WFLOW029" in finding_codes
+            if "WFLOW029" in finding_codes or "WFLOW033" in finding_codes
             else "Repair left remediation or reverification follow-up that must be routed into the repo ticket system."
         )
         required.append(
@@ -1105,10 +1160,10 @@ def classify_verification_findings(
         if repo_root is not None and code == "EXEC-GODOT-006" and _repo_has_open_finish_validation(repo_root):
             source_follow_up.append(finding)
             continue
-        if repo_root is not None and code == "EXEC-REMED-001" and _repo_has_open_remediation_ticket(repo_root):
+        if code == "EXEC-REMED-001":
             source_follow_up.append(finding)
             continue
-        disposition_class = disposition_class_for_finding(finding)
+        disposition_class = disposition_class_for_finding(finding, repo_root=repo_root)
         if disposition_class == "source_follow_up":
             source_follow_up.append(finding)
         elif disposition_class == "process_state_only":
@@ -1510,6 +1565,7 @@ def main() -> int:
         # Regenerate missing Scafforge-owned Android export surfaces (ANDROID-SURFACE-001).
         # Scoped strictly to repo-managed surfaces; does not touch signing secrets or keystores.
         android_surface_result = regenerate_android_surfaces(candidate_root)
+        blender_agent_result = reconcile_blender_agent_config(candidate_root)
 
         # Reconcile stale-stage drift: if any current artifact outpaces the manifest stage,
         # align stage/status now so verification and restart-surface generation see correct state.
@@ -1556,6 +1612,7 @@ def main() -> int:
                 if isinstance(diagnosis_target, str) and diagnosis_target.strip():
                     remediation_follow_up = create_remediation_follow_up_tickets(candidate_root, diagnosis_target)
                     if remediation_follow_up.get("created_tickets"):
+                        workflow_selection_sync = _sync_workflow_selection(candidate_root) or workflow_selection_sync
                         regenerate_restart_surfaces(
                             candidate_root,
                             reason="Refined repair follow-up tickets after managed repair.",

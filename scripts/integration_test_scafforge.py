@@ -1087,7 +1087,20 @@ def greenfield_integration(workspace: Path) -> None:
             "Asset-pipeline integration should render a dedicated blender asset subagent when Blender-MCP is required."
         )
     blender_agent_text = blender_agent_path.read_text(encoding="utf-8")
-    for required_snippet in ("asset-description", "blender-mcp-workflow", "blender_agent", "assets/briefs", "assets/models", ".blender-mcp/audit"):
+    for required_snippet in (
+        "asset-description",
+        "blender-mcp-workflow",
+        "blender_agent",
+        "assets/briefs",
+        "assets/models",
+        ".blender-mcp/audit",
+        "ticket_lookup: allow",
+        "artifact_write: allow",
+        "artifact_register: allow",
+        "context_snapshot: allow",
+        "blender_agent_project_initialize: allow",
+        "blender_agent_scene_batch_edit: allow",
+    ):
         if required_snippet not in blender_agent_text:
             raise RuntimeError(
                 "Asset-pipeline integration should wire the blender asset subagent to the repo-local skills, managed MCP entry, and audit-backed asset paths."

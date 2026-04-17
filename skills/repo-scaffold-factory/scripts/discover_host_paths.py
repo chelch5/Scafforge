@@ -94,8 +94,12 @@ def discover_godot_executable() -> str | None:
 
     home = _home()
     candidates = [
+        home / "godot4",
+        home / "godot",
         home / ".local" / "bin" / "godot4",
         home / ".local" / "bin" / "godot",
+        *sorted(home.glob("Godot*_linux*.x86_64"), reverse=True),
+        *sorted(home.glob("Godot*_linux*.64"), reverse=True),
         Path("/usr/local/bin/godot4"),
         Path("/usr/local/bin/godot"),
         Path("/snap/bin/godot"),
