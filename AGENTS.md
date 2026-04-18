@@ -30,9 +30,10 @@ It contains:
 - validation and proof harnesses under `scripts/` and `tests/`
 - contract references under `references/`
 - package planning artifacts under `tickets/`
-- live test repos under `livetesting/`
 - active audit collections from generated repos under `active-audits/`
 - active implementation plans for Scafforge work under `active-plans/`
+
+The Glitch game project lives in a separate repository (`merceralex397-collab/glitch`). Historical logs, audits, and session data are in `merceralex397-collab/scafforge-archive`.
 
 ### Output layer
 
@@ -50,7 +51,7 @@ That output may include:
 - `.opencode/meta/`
 - signposted docs and ticket surfaces
 
-Do not import the output layer into the package root. If you need to change generated-repo behavior, change package code or template assets. If you need a live generated repo for proof, use `livetesting/` or a harness-created fixture.
+Do not import the output layer into the package root. If you need to change generated-repo behavior, change package code or template assets. If you need a live generated repo for proof, use a harness-created fixture.
 
 ## Package Working Mode
 
@@ -109,15 +110,6 @@ Use `python3` or `sys.executable` for Python entrypoints in this repository. Do 
 - When a plan has been fully implemented and verified, move it to `archive/archived-diagnosis-plans/`.
 - Plans must not be marked complete until all verification steps pass.
 
-## Live Testing
-
-`livetesting/` is the sanctioned place for in-repo experiments that need actual generated-repo surfaces.
-
-Current focus:
-- `livetesting/glitch/` is the standing Godot Android stress target
-
-If a package change needs real generated runtime state, prove it in `livetesting/` or through the harness. Do not reproduce that state at the repository root.
-
 ## Host-side validation hygiene
 
 When Scafforge package skill content changes and you plan to validate with host-installed skills, refresh the host copies before trusting the result:
@@ -137,7 +129,7 @@ This is local operator hygiene for real validation, not part of the generated pa
 5. Preserve clear ownership boundaries between diagnosis, mutation, restart publication, and proof.
 6. Generate the smallest surface compatible with the selected profile; for the default full profile, keep heavier packs thin or lazy-activated until they are actually needed.
 7. Never treat public skill discovery as permission to auto-install random skills.
-8. Treat package-root generated-repo simulation as a defect unless it lives under `livetesting/`, a fixture, or a template path.
+8. Treat package-root generated-repo simulation as a defect unless it lives under a fixture or a template path.
 
 ## Default Scaffold Spine
 

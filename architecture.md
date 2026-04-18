@@ -240,7 +240,6 @@ Managed game repos also carry machine-readable route metadata and starter captur
 ## Testing
 
 - `tests/` contains validation harnesses
-- `livetesting/` contains live test repos (e.g., glitch)
 - Active audit collections under `active-audits/`
 - Agent runner logs under `reports/agent-runs/`
 

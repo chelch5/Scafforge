@@ -112,7 +112,7 @@ Validation
 
 - [x] `git status --short`
 - [x] `git diff --name-only main...HEAD | rg '^smoke-test$|^active-plans/possibleassethelp/'`
-- [x] confirm `active-plans/*.md`, `archive/archived-audits/`, and sanctioned `livetesting/` source surfaces still remain when expected
+- [x] confirm `active-plans/*.md` and `archive/archived-audits/` still remain when expected
 
 ## 2. Fix managed-repair publish safety
 

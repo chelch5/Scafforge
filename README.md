@@ -51,12 +51,6 @@ Historical implementation-planning context for the reliability re-architecture i
 
 See `AGENTS.md` for the full lifecycle rules governing both folders.
 
-## Live testing sandbox
-
-The `livetesting` folder is reserved for in-repo experimentation where Scafforge is used to scaffold and iterate prototypes from inside this repo. Use the integrated IDE terminal plus `opencode` to run the full greenfield chain and inspect generated beams in `.opencode`, `tickets`, and `START-HERE.md`.
-
-The current smoke project is `livetesting/glitch`, a simple Android 2D platformer concept for early stress tests.
-
 ## Default scaffold chain
 
 Greenfield generation is one kickoff run. The default chain is:
