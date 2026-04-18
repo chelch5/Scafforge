@@ -1480,7 +1480,17 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts",
-        "Do not fabricate a PASS artifact through generic artifact tools.",
+        "async function implementationDelegate(ticket",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts",
+        "delegate_to_agent: await implementationDelegate(ticket)",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts",
+        "Do not fabricate the expected smoke-test result through generic artifact tools.",
     )
     require_contains(
         findings,
@@ -1650,6 +1660,16 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts",
+        "const stageChanged = requested.stage !== ticket.stage",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts",
+        'stageChanged && requested.stage === "implementation"',
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts",
         'type: "BLOCKER"',
     )
     require_contains(
@@ -1761,6 +1781,26 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
         findings,
         TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
         "do not call `blender_agent_*` tools yourself to diagnose or retry a Blender-routed implementation failure; require `__AGENT_PREFIX__-blender-asset-creator` to own the retried implementation and its artifact evidence",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "blender_agent_project_initialize: deny",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "blender_agent_scene_batch_edit: deny",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "when a ticket's canonical acceptance explicitly requires the smoke-test to fail or block in order to prove truthful diagnostics",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "before closeout: a `smoke-test` artifact must exist and match the ticket's expected outcome",
     )
     require_contains(
         findings,
@@ -1935,6 +1975,11 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     )
     require_contains(
         findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        'ticket_update(acceptance=[...], summary="...")',
+    )
+    require_contains(
+        findings,
         ROOT / "scripts" / "run_agent.sh",
         "If ticket_lookup.process_verification.clearable_now is true, clear pending_process_verification on the current writable ticket immediately via the recommended ticket_update before any split-parent or other lifecycle action",
     )
@@ -1977,6 +2022,21 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
         findings,
         TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
         "when the plan-review artifact decision is APPROVED or `ticket_lookup.transition_guidance.recommended_ticket_update` names the `approved_plan=true` approval step, execute that exact `ticket_update` while the ticket remains in `plan_review` before you consider implementation or stopping",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "treat a required stage as satisfied only when the repo already contains that stage's current-cycle canonical repair completion artifact",
+    )
+    require_absent(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "assert as completed",
+    )
+    require_absent(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "plugins" / "stage-gate-enforcer.ts",
+        "use repair_follow_on_refresh to assert them as completed with a justification",
     )
     require_contains(
         findings,
@@ -3341,6 +3401,8 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW004"')
     require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW005"')
     require_contains(findings, audit_restart_surfaces, 'code="WFLOW006"')
+    require_contains(findings, audit_restart_surfaces, "acceptance_refresh_required")
+    require_contains(findings, audit_restart_surfaces, "legacy repair-follow-on self-assert path")
     require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW007"')
     require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW008"')
     require_contains(findings, audit_lifecycle_contracts, 'code="WFLOW009"')
@@ -3380,6 +3442,48 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, audit_session_transcripts, 'code="SESSION004"')
     require_contains(findings, audit_session_transcripts, 'code="SESSION005"')
     require_contains(findings, audit_session_transcripts, 'code="SESSION006"')
+    require_contains(findings, audit_session_transcripts, 'code="SESSION008"')
+    require_contains(findings, audit_session_transcripts, 'code="SESSION009"')
+    require_contains(
+        findings,
+        ROOT / "skills" / "asset-pipeline" / "agents" / "blender-asset-creator.md",
+        'call `skill_ping` with `skill_id: "blender-mcp-workflow"`',
+    )
+    require_contains(
+        findings,
+        ROOT / "skills" / "asset-pipeline" / "agents" / "blender-asset-creator.md",
+        "Do not read or inspect external `blender-agent` source code",
+    )
+    require_contains(
+        findings,
+        ROOT / "skills" / "asset-pipeline" / "agents" / "blender-asset-creator.md",
+        "Do not substitute a different asset brief just because it exists elsewhere in `assets/briefs/`.",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "do not substitute an unrelated brief from `assets/briefs/`",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "plugins" / "tool-guard.ts",
+        "Blender project_initialize must set a concrete output_blend",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "plugins" / "tool-guard.ts",
+        "must include non-null input_blend and output_blend",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "lib" / "workflow.ts",
+        "Current implementation artifact records a blocking result.",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "tools" / "ticket_lookup.ts",
+        "The current implementation artifact is still blocker-shaped.",
+    )
     require_contains(findings, audit_restart_surfaces, 'code="SKILL002"')
     require_contains(
         findings, audit_skill / "scripts" / "audit_repo_process.py", "--supporting-log"
@@ -3620,6 +3724,16 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     )
     require_contains(
         findings,
+        audit_skill / "references" / "process-smells.md",
+        "Clearable process-verification deadlock (SESSION008",
+    )
+    require_contains(
+        findings,
+        audit_skill / "references" / "process-smells.md",
+        "Blender worker misrouting (SESSION009",
+    )
+    require_contains(
+        findings,
         repair_skill / "references" / "repair-playbook.md",
         "## BOOT repair actions (BOOT001 / BOOT002)",
     )
@@ -3699,7 +3813,7 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         audit_skill / "references" / "repair-playbook.md",
-        "## Workflow repair actions (WFLOW001 / WFLOW002 / WFLOW003 / WFLOW004 / WFLOW005 / WFLOW006 / WFLOW007 / WFLOW008 / WFLOW010 / WFLOW011 / WFLOW012 / WFLOW013 / WFLOW014 / WFLOW015 / WFLOW016 / WFLOW017 / WFLOW018 / WFLOW019 / WFLOW020 / WFLOW021 / WFLOW022 / WFLOW023 / WFLOW024 / SESSION001 / SESSION002 / SESSION003 / SESSION004 / SESSION005 / SESSION006)",
+        "## Workflow repair actions (WFLOW001 / WFLOW002 / WFLOW003 / WFLOW004 / WFLOW005 / WFLOW006 / WFLOW007 / WFLOW008 / WFLOW010 / WFLOW011 / WFLOW012 / WFLOW013 / WFLOW014 / WFLOW015 / WFLOW016 / WFLOW017 / WFLOW018 / WFLOW019 / WFLOW020 / WFLOW021 / WFLOW022 / WFLOW023 / WFLOW024 / SESSION001 / SESSION002 / SESSION003 / SESSION004 / SESSION005 / SESSION006 / SESSION008 / SESSION009)",
     )
     require_contains(
         findings,

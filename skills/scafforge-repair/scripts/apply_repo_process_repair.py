@@ -77,6 +77,9 @@ DEFAULT_FINISH_CONTRACT_FIELD_VALUES = {
 }
 FINISH_CONTRACT_FIELDS = tuple(DEFAULT_FINISH_CONTRACT_FIELD_VALUES.keys())
 CANONICAL_PROVENANCE_TABLE_HEADER = "| asset_path | source_or_workflow | license | author | acquired_or_generated_on | notes |"
+REPAIR_RENDER_HINT_SURFACES = (
+    Path(".opencode/meta/asset-pipeline-bootstrap.json"),
+)
 
 
 def load_asset_pipeline_initializer():
@@ -1126,7 +1129,20 @@ def load_metadata(repo_root: Path, args: argparse.Namespace) -> dict[str, str]:
     return result
 
 
-def run_bootstrap_render(dest_root: Path, metadata: dict[str, str], stack_label: str) -> None:
+def seed_render_hints(repo_root: Path, dest_root: Path) -> None:
+    for relative in REPAIR_RENDER_HINT_SURFACES:
+        source = repo_root / relative
+        if not source.exists():
+            continue
+        target = dest_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def run_bootstrap_render(
+    repo_root: Path, dest_root: Path, metadata: dict[str, str], stack_label: str
+) -> None:
+    seed_render_hints(repo_root, dest_root)
     command = [
         sys.executable,
         str(bootstrap_script_path()),
@@ -2006,7 +2022,7 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="scafforge-repair-") as temp_dir:
         rendered_root = Path(temp_dir) / "rendered"
-        run_bootstrap_render(rendered_root, metadata, metadata["stack_label"])
+        run_bootstrap_render(repo_root, rendered_root, metadata, metadata["stack_label"])
         result = apply_repair(
             repo_root,
             rendered_root,

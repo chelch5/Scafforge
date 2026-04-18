@@ -525,11 +525,13 @@ def audit_invocation_log_coordinator_artifact_authorship(root: Path, findings: l
 
 def audit_team_leader_workflow_contract(root: Path, findings: list[Finding], ctx: RestartSurfaceAuditContext) -> None:
     team_leader = next((path for path in (root / ".opencode" / "agents").glob("*team-leader*.md")), None)
+    backlog_verifier = next((path for path in (root / ".opencode" / "agents").glob("*backlog-verifier*.md")), None)
     if not team_leader:
         return
 
     text = ctx.read_text(team_leader)
     evidence: list[str] = []
+    files = [ctx.normalize_path(team_leader, root)]
     if "ticket_lookup.transition_guidance" not in text:
         evidence.append("Team leader prompt does not treat `ticket_lookup.transition_guidance` as the canonical next-step summary.")
     if "alternate stage or status values" not in text:
@@ -538,6 +540,23 @@ def audit_team_leader_workflow_contract(root: Path, findings: list[Finding], ctx
         evidence.append("Team leader prompt does not forbid stage-artifact authorship overreach by the coordinator.")
     if "slash commands" not in text.lower() or "entrypoint" not in text.lower():
         evidence.append("Team leader prompt does not mark slash commands as human entrypoints only.")
+    if "when a backlog verifier returns `acceptance_refresh_required: true`, treat that as the required next action" not in text:
+        evidence.append("Team leader prompt does not route stale canonical ticket truth through acceptance or summary refresh before reverification.")
+    if "ticket_update(acceptance=[...], summary=" not in text:
+        evidence.append("Team leader prompt does not tell the agent how to refresh stale canonical summary text alongside acceptance drift.")
+    if "do not guess or assert stage completion from plausibility" not in text:
+        evidence.append("Team leader prompt does not forbid plausibility-based repair follow-on completion.")
+    if "assert as completed" in text or "repair_follow_on_refresh` for EACH stage you can justify as satisfied" in text:
+        evidence.append("Team leader prompt still contains the legacy repair-follow-on self-assert path instead of current-cycle completion-artifact routing.")
+
+    if backlog_verifier is not None:
+        backlog_text = ctx.read_text(backlog_verifier)
+        if "acceptance_refresh_required" not in backlog_text:
+            files.append(ctx.normalize_path(backlog_verifier, root))
+            evidence.append("Backlog verifier prompt does not require `acceptance_refresh_required` output when canonical ticket truth is stale.")
+        if "do not recommend rolling back truthful diagnostics just to match stale artifacts" not in backlog_text:
+            files.append(ctx.normalize_path(backlog_verifier, root))
+            evidence.append("Backlog verifier prompt can still recommend rollback-to-match-history instead of canonical acceptance refresh.")
 
     if not evidence:
         return
@@ -548,9 +567,9 @@ def audit_team_leader_workflow_contract(root: Path, findings: list[Finding], ctx
             code="WFLOW006",
             severity="warning",
             problem="The team leader prompt leaves workflow mechanics underspecified enough that weaker models can thrash or search for bypasses.",
-            root_cause="Without explicit transition guidance, contradiction-stop behavior, artifact-ownership rules, and command boundaries, the coordinator has to infer the state machine and may start authoring artifacts or testing workaround transitions itself.",
-            files=[ctx.normalize_path(team_leader, root)],
-            safer_pattern="Tell the team leader to route from `ticket_lookup.transition_guidance`, stop after repeated lifecycle errors, leave stage artifacts to the owning specialist, and keep slash commands human-only.",
+            root_cause="Without current transition guidance, acceptance-refresh routing, repair follow-on rules, artifact-ownership rules, and command boundaries, the coordinator has to infer the state machine and may start authoring artifacts, preserving stale ticket truth, or self-asserting repair completion.",
+            files=list(dict.fromkeys(files)),
+            safer_pattern="Tell the team leader to route from `ticket_lookup.transition_guidance`, refresh canonical acceptance and summary before reverification when the backlog verifier reports stale ticket truth, require current-cycle repair completion artifacts instead of self-asserted repair follow-on, leave stage artifacts to the owning specialist, and keep slash commands human-only.",
             evidence=evidence,
             provenance="script",
         ),

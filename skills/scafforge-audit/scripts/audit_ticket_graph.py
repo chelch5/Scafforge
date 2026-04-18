@@ -411,6 +411,100 @@ def audit_completed_parent_split_scope_children(root: Path, findings: list[Findi
     )
 
 
+def audit_open_parent_remediation_split_deadlock(root: Path, findings: list[Finding], ctx: TicketGraphAuditContext) -> None:
+    manifest_path = root / "tickets" / "manifest.json"
+    workflow_path = root / ".opencode" / "state" / "workflow-state.json"
+    if not manifest_path.exists():
+        return
+
+    manifest = ctx.read_json(manifest_path)
+    tickets = manifest.get("tickets") if isinstance(manifest, dict) and isinstance(manifest.get("tickets"), list) else []
+    if not tickets:
+        return
+
+    workflow = ctx.read_json(workflow_path) if workflow_path.exists() else {}
+    active_ticket_id = ""
+    if isinstance(workflow, dict):
+        active_ticket_id = str(workflow.get("active_ticket", "")).strip()
+    if not active_ticket_id and isinstance(manifest, dict):
+        active_ticket_id = str(manifest.get("active_ticket", "")).strip()
+
+    tickets_by_id = {
+        str(ticket.get("id")): ticket
+        for ticket in tickets
+        if isinstance(ticket, dict) and isinstance(ticket.get("id"), str)
+    }
+    evidence: list[str] = []
+
+    for ticket_id, ticket in tickets_by_id.items():
+        if str(ticket.get("source_mode", "")).strip() != "split_scope":
+            continue
+        if str(ticket.get("split_kind", "")).strip() != "sequential_dependent":
+            continue
+        if ticket.get("status") == "done" or str(ticket.get("resolution_state", "")).strip() == "superseded":
+            continue
+        if not (
+            ticket_id.startswith("REMED-")
+            or str(ticket.get("lane", "")).strip() == "remediation"
+            or str(ticket.get("finding_source", "")).strip()
+        ):
+            continue
+        source_ticket_id = str(ticket.get("source_ticket_id", "")).strip()
+        if not source_ticket_id:
+            continue
+        source = tickets_by_id.get(source_ticket_id)
+        if not isinstance(source, dict):
+            continue
+        if active_ticket_id and active_ticket_id not in {ticket_id, source_ticket_id}:
+            continue
+
+        source_status = str(source.get("status", "")).strip()
+        source_stage = str(source.get("stage", "")).strip()
+        source_resolution = str(source.get("resolution_state", "open")).strip() or "open"
+        child_stage = str(ticket.get("stage", "")).strip()
+        child_status = str(ticket.get("status", "")).strip()
+
+        if source_status == "done" or source_resolution in {"done", "superseded"}:
+            continue
+        if source_stage not in {"review", "qa"} and source_status not in {"review", "qa"}:
+            continue
+        if child_stage not in {"plan_review", "implementation", "review", "qa", "smoke-test", "closeout"}:
+            continue
+
+        evidence.append(
+            f"{ticket_id} is an open remediation split child of {source_ticket_id} with split_kind=sequential_dependent"
+            f" while {source_ticket_id} is still open at {source_stage or 'unknown'}/{source_status or 'unknown'}."
+            f" {ticket_id} is already at {child_stage or 'unknown'}/{child_status or 'unknown'}, so the child is ready to become the next executable lane"
+            f" but the sequential split contract still forbids activating it before the parent closes."
+        )
+
+    if not evidence:
+        return
+
+    if active_ticket_id:
+        evidence.insert(
+            0,
+            f"Active ticket {active_ticket_id} sits inside the open-parent remediation split deadlock.",
+        )
+
+    ctx.add_finding(
+        findings,
+        Finding(
+            code="WFLOW034",
+            severity="error",
+            problem="Open-parent remediation follow-up is deadlocked behind a sequential split child that cannot legally activate before the parent closes.",
+            root_cause="Ticket-pack-builder created an open-parent remediation child as `split_scope + sequential_dependent`, but the source ticket is still open in a blocking review/QA state. The child exists specifically to resolve that blocker, so the parent cannot finish first and the workflow has no legal forward move.",
+            files=[
+                ctx.normalize_path(manifest_path, root),
+                *([ctx.normalize_path(workflow_path, root)] if workflow_path.exists() else []),
+            ],
+            safer_pattern="For remediation or source-follow-up tickets that must resolve an open parent's current blocker, create or refresh the child as `split_scope + parallel_independent`, keep `issue_intake` reserved for completed historical tickets, and let ticket_lookup foreground the remediation child while the parent stays open.",
+            evidence=evidence[:8],
+            provenance="script",
+        ),
+    )
+
+
 def audit_release_feature_gate(root: Path, findings: list[Finding], ctx: TicketGraphAuditContext) -> None:
     manifest_path = root / "tickets" / "manifest.json"
     if not manifest_path.exists() or not declares_godot_android_target(root):
@@ -478,4 +572,5 @@ def run_ticket_graph_audits(root: Path, findings: list[Finding], ctx: TicketGrap
     audit_open_ticket_split_routing(root, findings, ctx)
     audit_android_target_completion_backlog(root, findings, ctx)
     audit_completed_parent_split_scope_children(root, findings, ctx)
+    audit_open_parent_remediation_split_deadlock(root, findings, ctx)
     audit_release_feature_gate(root, findings, ctx)

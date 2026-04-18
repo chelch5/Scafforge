@@ -11,7 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from disposition_bundle import bundle_source_follow_up_codes, build_disposition_bundle, evidence_grade_for_finding
+from disposition_bundle import (
+    bundle_source_follow_up_codes,
+    build_disposition_bundle,
+    evidence_grade_for_finding,
+    repo_has_godot_smoke_guard,
+)
 from shared_verifier_types import Finding
 
 
@@ -192,7 +197,9 @@ def prevention_action(finding: Finding) -> str:
     if finding.code == "WFLOW025":
         return "Extend the target-completion contract so declared Godot Android repos always get canonical `ANDROID-001` and `RELEASE-001` backlog ownership instead of leaving Android delivery buried in generic polish work."
     if finding.code == "WFLOW033":
-        return "When `issue_intake` invalidates a ticket because the accepted contract is wrong or imprecise, require `ticket_update(acceptance=[...])`, persist an acceptance-refresh artifact, and treat missing canonical refresh as repo-owned follow-up once the installed workflow supports it."
+        return "When `issue_intake` invalidates a ticket because the accepted contract is wrong or imprecise, require `ticket_update(acceptance=[...], summary=\"...\")` for the stale canonical fields, persist an acceptance-refresh artifact, and treat missing canonical refresh as repo-owned follow-up once the installed workflow supports it."
+    if finding.code == "WFLOW034":
+        return "Create open-parent remediation follow-up tickets as `split_scope + parallel_independent`, keep `issue_intake` reserved for completed historical tickets, and audit the parent-FAIL plus sequential-child deadlock before live runs stall on it."
     if finding.code == "WFLOW026":
         return "Teach the shared artifact verdict extractor to accept markdown-emphasized labels, compact `## QA PASS` / `## Review APPROVE` headings, `## Decision` headings with the verdict on the next line, and plain `**Overall**: PASS` labels, then route ticket_lookup and ticket_update through that single parser."
     if finding.code == "WFLOW027":
@@ -213,6 +220,8 @@ def prevention_action(finding: Finding) -> str:
         return "Teach audit and generated coordinator prompts to treat coordinator-authored specialist artifacts as a workflow defect that requires prompt plus local-skill regeneration."
     if finding.code == "SESSION006":
         return "Treat operator confusion itself as workflow evidence when the transcript shows no single legal next move, and audit adjacent surfaces together until one competent route exists."
+    if finding.code == "SESSION008":
+        return "Teach scafforge-audit to treat transcript-backed clearable pending_process_verification cleanup failures as managed workflow defects, and let ticket_update clear that flag without re-running stage-entry validation on the current ticket."
     if finding.code == "BOOT001":
         return "Make generated Python bootstrap manager-aware (`uv` or repo-local `.venv`), classify missing prerequisites accurately, and audit bootstrap deadlocks before routing source remediation."
     if finding.code == "BOOT002":
@@ -439,7 +448,10 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
             route = "manual-prerequisite"
             repair_class = "Host prerequisite or operator environment fix required before the next subject-repo run"
         elif finding.code == "EXEC-GODOT-006":
-            if godot_smoke_fix_available:
+            if repo_has_godot_smoke_guard(root):
+                route = "ticket-pack-builder"
+                repair_class = "generated-repo remediation ticket"
+            elif godot_smoke_fix_available:
                 route = "scafforge-repair"
                 repair_class = "safe Scafforge package change"
             else:

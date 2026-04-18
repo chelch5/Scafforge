@@ -377,7 +377,7 @@ def audit_acceptance_refresh_drift(root: Path, findings: list[Finding], ctx: Con
             problem="Canonical ticket acceptance can drift after acceptance-imprecision intake, leaving artifacts and ticket truth out of sync.",
             root_cause="A historical ticket was invalidated by `acceptance_imprecision`, but there is no current acceptance-refresh proof (or the workflow still marks refresh pending). That means implementation/review artifacts may be relying on revised criteria that never became canonical in `tickets/manifest.json` and ticket markdown.",
             files=list(dict.fromkeys(files)),
-            safer_pattern="When `issue_intake` invalidates a ticket because the accepted contract is wrong or imprecise, require the team leader to run `ticket_update(acceptance=[...])`, persist an acceptance-refresh artifact, and block review/closeout/handoff until that canonical refresh is complete.",
+            safer_pattern="When `issue_intake` invalidates a ticket because the accepted contract is wrong or imprecise, require the team leader to run `ticket_update(acceptance=[...], summary=\"...\")` for the stale canonical fields, persist an acceptance-refresh artifact, and block review/closeout/handoff until that canonical refresh is complete.",
             evidence=evidence[:10],
             provenance="script",
         ),
@@ -927,6 +927,7 @@ def audit_blender_route_operating_surfaces(root: Path, findings: list[Finding], 
     required_agents = metadata.get("required_agents")
     if not isinstance(required_agents, list) or not required_agents:
         required_agents = ["blender-asset-creator"]
+    blender_agent_paths: list[Path] = []
     for agent_name in required_agents:
         if not isinstance(agent_name, str) or not agent_name.strip():
             continue
@@ -936,6 +937,7 @@ def audit_blender_route_operating_surfaces(root: Path, findings: list[Finding], 
             files.append(expected)
             evidence.append(f"Missing required Blender route agent: {expected}")
             continue
+        blender_agent_paths.extend(matches)
         combined = "\n".join(ctx.read_text(path) for path in matches)
         for snippet in (
             "blender_agent",
@@ -955,6 +957,38 @@ def audit_blender_route_operating_surfaces(root: Path, findings: list[Finding], 
                     f"{ctx.normalize_path(matches[0], root)} is missing required Blender route snippet: {snippet}"
                 )
 
+    if blender_agent_paths:
+        team_leader_candidates = sorted(agents_dir.glob("*team-leader*.md")) if agents_dir.exists() else []
+        if team_leader_candidates:
+            team_leader_path = team_leader_candidates[0]
+            team_leader_text = ctx.read_text(team_leader_path)
+            for blender_agent_path in blender_agent_paths:
+                expected_delegate = f'"{blender_agent_path.stem}": allow'
+                if expected_delegate not in team_leader_text:
+                    files.append(ctx.normalize_path(team_leader_path, root))
+                    evidence.append(
+                        f"{ctx.normalize_path(team_leader_path, root)} cannot delegate Blender-route tickets because task allowlist is missing {expected_delegate}"
+                    )
+            for snippet in (
+                "blender_agent_project_initialize: deny",
+                "blender_agent_scene_batch_edit: deny",
+                "blender_agent_export_asset: deny",
+            ):
+                if snippet not in team_leader_text:
+                    files.append(ctx.normalize_path(team_leader_path, root))
+                    evidence.append(
+                        f"{ctx.normalize_path(team_leader_path, root)} must deny direct Blender MCP tool ownership to keep implementation on the blender-asset-creator lane: missing {snippet}"
+                    )
+            if "blender_agent_project_initialize: allow" in team_leader_text or "blender_agent_scene_batch_edit: allow" in team_leader_text:
+                files.append(ctx.normalize_path(team_leader_path, root))
+                evidence.append(
+                    f"{ctx.normalize_path(team_leader_path, root)} still allows direct Blender MCP tool access on the team leader, so Blender-route tickets can bypass the blender-asset-creator."
+                )
+        else:
+            expected = ctx.normalize_path(agents_dir / "team-leader.md", root)
+            files.append(expected)
+            evidence.append(f"Missing team leader agent required to delegate Blender route tickets: {expected}")
+
     if files:
         ctx.add_finding(
             findings,
@@ -962,9 +996,9 @@ def audit_blender_route_operating_surfaces(root: Path, findings: list[Finding], 
                 code="SKILL003",
                 severity="warning",
                 problem="The repo requires Blender-MCP for its asset route but is missing mandatory Blender operating surfaces.",
-                root_cause="The managed repo metadata requires Blender work, but the repo-local agent and skill pack did not fully materialize the mandatory Blender contract surfaces.",
+                root_cause="The managed repo metadata requires Blender work, but the repo-local agent team and skill pack did not fully materialize the mandatory Blender route contract surfaces.",
                 files=sorted(set(files)),
-                safer_pattern="When asset-pipeline metadata requires Blender-MCP, keep `asset-description`, `blender-mcp-workflow`, and a dedicated `blender-asset-creator` in sync with the managed `blender_agent` MCP entry and the repo's asset/audit paths.",
+                safer_pattern="When asset-pipeline metadata requires Blender-MCP, keep `asset-description`, `blender-mcp-workflow`, a dedicated `blender-asset-creator`, and the team leader's delegation allowlist in sync with the managed `blender_agent` MCP entry and the repo's asset/audit paths.",
                 evidence=evidence,
                 provenance="script",
             ),

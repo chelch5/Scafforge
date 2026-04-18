@@ -199,9 +199,9 @@ export const StageGateEnforcer: Plugin = async () => {
           "managed_blocked_active",
           `Repair follow-on is managed_blocked. Next required stage: ${nextStage}. Reason: ${reason}. ` +
           `Allowed tools: ${[...MANAGED_BLOCKED_ALLOWED_TOOLS].join(", ")}, bash (read-only), read, write, edit, glob, grep, list. ` +
-          `To resolve: use repair_follow_on_refresh to assert stage completion once the required work is done or verified as already satisfied. ` +
-          `If the required stages are host-agent skills (project-skill-bootstrap, ticket-pack-builder, etc.) that you cannot invoke, ` +
-          `use repair_follow_on_refresh to assert them as completed with a justification, then resume normal work.`,
+          `To resolve: only use repair_follow_on_refresh after the repo already contains current-cycle canonical repair completion artifacts for the required stages. ` +
+          `Do not assert stage completion from plausibility. If a required host-agent stage (project-skill-bootstrap, ticket-pack-builder, etc.) has no current-cycle completion artifact yet, ` +
+          `stop and ask the host operator to finish that repair follow-on stage before resuming normal work.`,
           "repair_follow_on_refresh",
           {}
         )
@@ -459,6 +459,7 @@ export const StageGateEnforcer: Plugin = async () => {
           stage: typeof output.args.stage === "string" ? output.args.stage : undefined,
           status: typeof output.args.status === "string" ? output.args.status : undefined,
         })
+        const stageChanged = requested.stage !== ticket.stage
         const acceptanceProvided = Array.isArray(output.args.acceptance)
         const blockedTicketUnblockOnly = isBlockedTicketUnblockOnly(ticket, requested, output.args)
         if (!(processVerificationClearOnly && processVerification.clearable_now) && !blockedTicketUnblockOnly) {
@@ -480,15 +481,15 @@ export const StageGateEnforcer: Plugin = async () => {
           throw new Error("Planning artifact required before marking the workflow as approved.")
         }
 
-        if (requested.stage === "implementation" && approving === true && !isPlanApprovedForTicket(workflow, ticket.id)) {
+        if (stageChanged && requested.stage === "implementation" && approving === true && !isPlanApprovedForTicket(workflow, ticket.id)) {
           throw new Error(`Approve ${ticket.id} while it remains in plan_review first, then move it to implementation in a separate ticket_update call.`)
         }
 
-        if (requested.stage === "implementation" && !isPlanApprovedForTicket(workflow, ticket.id)) {
+        if (stageChanged && requested.stage === "implementation" && !isPlanApprovedForTicket(workflow, ticket.id)) {
           throw new Error(`Approved plan required before moving ${ticket.id} to in_progress.`)
         }
 
-        if (requested.stage === "implementation" && ticket.stage !== "plan_review") {
+        if (stageChanged && requested.stage === "implementation" && ticket.stage !== "plan_review") {
           if (ticket.stage !== "review" && ticket.stage !== "qa") {
             throw new Error(
               `Cannot move ${ticket.id} to implementation from ${ticket.stage}. Allowed source stages: plan_review (normal path), review or qa (on FAIL verdict only).`,
@@ -516,27 +517,27 @@ export const StageGateEnforcer: Plugin = async () => {
           }
         }
 
-        if (requested.stage === "review") {
+        if (stageChanged && requested.stage === "review") {
           const implementationBlocker = await validateImplementationArtifactEvidence(ticket)
           if (implementationBlocker) throw new Error(implementationBlocker)
         }
 
-        if (requested.stage === "qa" && !hasReviewArtifact(ticket)) {
+        if (stageChanged && requested.stage === "qa" && !hasReviewArtifact(ticket)) {
           throw new Error("Cannot move to qa before at least one review artifact exists.")
         }
 
-        if (requested.stage === "qa") {
+        if (stageChanged && requested.stage === "qa") {
           const reviewBlocker = await validateReviewArtifactEvidence(ticket)
           if (reviewBlocker) throw new Error(reviewBlocker)
         }
 
-        if (requested.stage === "smoke-test") {
+        if (stageChanged && requested.stage === "smoke-test") {
           const qaBlocker = await validateQaArtifactEvidence(ticket)
           if (qaBlocker) throw new Error(qaBlocker)
           await ensureBootstrapReadyForValidation()
         }
 
-        if (requested.stage === "closeout") {
+        if (stageChanged && requested.stage === "closeout") {
           const smokeTestBlocker = await validateSmokeTestArtifactEvidence(ticket)
           if (smokeTestBlocker) throw new Error(smokeTestBlocker)
           await ensureBootstrapReadyForValidation()

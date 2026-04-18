@@ -102,8 +102,12 @@ For EVERY agent, rewrite the generic prompt to be project-specific:
 - When asset-pipeline metadata exists, delegation briefs must mention the seeded asset surfaces and route-specific ownership instead of generic "art/content" wording.
 - When Blender is a required route, the `blender-asset-creator` prompt must explicitly:
   - allow `asset-description` and `blender-mcp-workflow`
+  - call `skill_ping("blender-mcp-workflow")` before any Blender-MCP mutating call
   - route Blender work through the managed `blender_agent` MCP entry in `opencode.jsonc`
   - name `assets/briefs/` as input, `assets/models/` as output, and `.blender-mcp/audit/` as the first-chain proof surface
+  - forbid substituting an unrelated asset brief when the ticket-specific brief path is missing; require fallback to the delegated ticket summary/acceptance instead
+  - treat prior blocker artifacts as historical only and require a fresh first-chain proof after repair
+  - forbid external `blender-agent` source inspection from inside the Blender specialist; after one correctly shaped retry fails, the worker must emit a blocker artifact instead of debugging the MCP server
 
 **Inject stack-specific implementation notes:**
 - Rewrite the implementer template's `Stack-specific notes` block so it no longer contains scaffold placeholder text.

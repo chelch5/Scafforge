@@ -46,6 +46,13 @@ OPENCODE_SCOPE_FILES = {
     ".opencode",
 }
 
+PRESERVED_OPENCODE_RUNTIME_PREFIXES = (
+    ".opencode/state/",
+)
+PRESERVED_OPENCODE_RUNTIME_FILES = {
+    ".opencode/meta/bootstrap-provenance.json",
+}
+
 PROCESS_CONTRACT_VERSION = 7
 TICKET_CONTRACT_VERSION = 3
 DEFAULT_PARALLEL_MODE = "sequential"
@@ -213,8 +220,10 @@ def copy_template(template_root: Path, dest_root: Path, replacements: dict[str, 
             continue
         target = dest_root / source.name
         if source.is_dir():
-            created.extend(copy_dir(source, target, replacements, force))
+            created.extend(copy_dir(source, target, replacements, force, scope=scope, repo_root=dest_root))
         else:
+            if should_preserve_existing_opencode_runtime_surface(target, repo_root=dest_root, scope=scope):
+                continue
             write_file(source, target, replacements, force)
             created.append(target)
     return created
@@ -246,7 +255,27 @@ def ensure_asset_pipeline_surfaces(
     )
 
 
-def copy_dir(source_dir: Path, dest_dir: Path, replacements: dict[str, str], force: bool) -> list[Path]:
+def should_preserve_existing_opencode_runtime_surface(target: Path, *, repo_root: Path, scope: str) -> bool:
+    if scope != "opencode" or not target.exists():
+        return False
+    try:
+        relative = target.relative_to(repo_root).as_posix()
+    except ValueError:
+        return False
+    return relative in PRESERVED_OPENCODE_RUNTIME_FILES or any(
+        relative.startswith(prefix) for prefix in PRESERVED_OPENCODE_RUNTIME_PREFIXES
+    )
+
+
+def copy_dir(
+    source_dir: Path,
+    dest_dir: Path,
+    replacements: dict[str, str],
+    force: bool,
+    *,
+    scope: str,
+    repo_root: Path,
+) -> list[Path]:
     created: list[Path] = []
     dest_dir.mkdir(parents=True, exist_ok=True)
     for source in source_dir.rglob("*"):
@@ -254,6 +283,8 @@ def copy_dir(source_dir: Path, dest_dir: Path, replacements: dict[str, str], for
         target = dest_dir / relative
         if source.is_dir():
             target.mkdir(parents=True, exist_ok=True)
+            continue
+        if should_preserve_existing_opencode_runtime_surface(target, repo_root=repo_root, scope=scope):
             continue
         write_file(source, target, replacements, force)
         created.append(target)
@@ -1074,6 +1105,9 @@ def write_bootstrap_provenance(
     licensing_or_provenance_constraints: str,
     finish_acceptance_signals: str,
 ) -> None:
+    target = dest_root / ".opencode" / "meta" / "bootstrap-provenance.json"
+    if scope == "opencode" and target.exists():
+        return
     template_commit_result = template_commit()
     steps = (
         ["repo-scaffold-factory/render-full-scaffold"]
@@ -1169,7 +1203,6 @@ def write_bootstrap_provenance(
         "repair_history": [],
     }
 
-    target = dest_root / ".opencode" / "meta" / "bootstrap-provenance.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 

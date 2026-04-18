@@ -201,10 +201,10 @@ def build_acceptance(recommendation: dict[str, Any]) -> list[str]:
 def remediation_split_kind(recommendation: dict[str, Any], source_ticket_id: str | None) -> str | None:
     if not source_ticket_id:
         return None
-    finding_code = str(recommendation.get("source_finding_code") or recommendation.get("id") or "").strip()
-    if finding_code == "EXEC-REMED-001":
-        return "parallel_independent"
-    return "sequential_dependent"
+    # Remediation follow-up created from the active open ticket must remain runnable while the
+    # parent stays open; otherwise the parent can hit review/QA failure and deadlock behind a
+    # sequential child that exists specifically to resolve that failure.
+    return "parallel_independent"
 
 
 def build_ticket_record(recommendation: dict[str, Any], manifest: dict[str, Any], active_ticket: dict[str, Any] | None, wave: int) -> dict[str, Any]:

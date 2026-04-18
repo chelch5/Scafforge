@@ -104,7 +104,7 @@ BOOT findings mean the managed bootstrap layer is broken on the current machine.
 - surface missing prerequisites accurately; a failed bootstrap artifact must not report `Missing Prerequisites: None` when `pip` or `uv` is actually missing
 - rerun the subject repo's `environment_bootstrap` flow after the managed-surface refresh, then rerun `audit_repo_process.py`; source-layer EXEC tickets should proceed only after `BOOT001` and `BOOT002` are gone
 
-## Workflow repair actions (WFLOW001 / WFLOW002 / WFLOW003 / WFLOW004 / WFLOW005 / WFLOW006 / WFLOW007 / WFLOW008 / WFLOW010 / WFLOW011 / WFLOW012 / WFLOW013 / WFLOW014 / WFLOW015 / WFLOW016 / WFLOW017 / WFLOW018 / WFLOW019 / WFLOW020 / WFLOW021 / WFLOW022 / WFLOW023 / WFLOW024 / SESSION001 / SESSION002 / SESSION003 / SESSION004 / SESSION005 / SESSION006)
+## Workflow repair actions (WFLOW001 / WFLOW002 / WFLOW003 / WFLOW004 / WFLOW005 / WFLOW006 / WFLOW007 / WFLOW008 / WFLOW010 / WFLOW011 / WFLOW012 / WFLOW013 / WFLOW014 / WFLOW015 / WFLOW016 / WFLOW017 / WFLOW018 / WFLOW019 / WFLOW020 / WFLOW021 / WFLOW022 / WFLOW023 / WFLOW024 / SESSION001 / SESSION002 / SESSION003 / SESSION004 / SESSION005 / SESSION006 / SESSION008 / SESSION009)
 
 Workflow findings mean the generated repo contract itself is causing or misreporting the deadlock.
 
@@ -137,6 +137,8 @@ Workflow findings mean the generated repo contract itself is causing or misrepor
 - `SESSION004`: if the transcript shows validation could not run and later artifacts still claim PASS without later executable recovery evidence, treat that as a workflow-surface defect first: tighten artifact ownership, QA proof rules, and smoke-test ownership before trusting any closeout generated under the older contract
 - `SESSION005`: if the coordinator wrote specialist stage artifacts directly, regenerate the repo-local workflow skill and team-leader prompt together so routing ownership and artifact authorship boundaries are explicit
 - `SESSION006`: treat operator confusion as workflow evidence; if the transcript shows no legal next move, audit adjacent surfaces together until one explicit owner and blocker route exists
+- `SESSION008`: if the transcript shows `clearable_now` but the recommended metadata-only `ticket_update(..., pending_process_verification: false)` still fails with an implementation-stage transition error, refresh `.opencode/tools/ticket_update.ts`, `ticket_lookup`, and the coordinator guidance together so clearable process-verification cleanup bypasses stage-entry validation and actually works on the current writable ticket
+- `SESSION009`: if the transcript shows a Blender-routed implementation ticket blocked on missing scene-editing tools while also naming `blender-asset-creator` as the correct next worker, refresh `ticket_lookup.transition_guidance` and any related coordinator/runtime delegation surfaces so implementation routes to `blender-asset-creator` instead of the generic implementer or lane-executor
 
 ## SKILL repair actions (SKILL001)
 

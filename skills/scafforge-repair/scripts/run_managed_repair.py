@@ -1482,7 +1482,7 @@ def main() -> int:
             return 2
         with tempfile.TemporaryDirectory(prefix="scafforge-repair-") as temp_dir:
             rendered_root = Path(temp_dir) / "rendered"
-            run_bootstrap_render(rendered_root, metadata, args.stack_label)
+            run_bootstrap_render(repo_root, rendered_root, metadata, args.stack_label)
             try:
                 repair_result = apply_repair(
                     repo_root,

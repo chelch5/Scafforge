@@ -67,6 +67,23 @@ def _repo_has_open_remediation_ticket(repo_root: str | Path | None) -> bool:
     )
 
 
+def repo_has_godot_smoke_guard(repo_root: str | Path | None) -> bool:
+    if repo_root is None:
+        return False
+    smoke_test_path = Path(repo_root) / ".opencode" / "tools" / "smoke_test.ts"
+    if not smoke_test_path.exists():
+        return False
+    try:
+        smoke_test = smoke_test_path.read_text(encoding="utf-8")
+    except Exception:
+        return False
+    return (
+        "tooling_parse_warning" in smoke_test
+        and "commandBlocksPass" in smoke_test
+        and "failed to load script" in smoke_test.lower()
+    )
+
+
 def _repo_supports_acceptance_refresh(repo_root: str | Path | None) -> bool:
     if repo_root is None:
         return False
@@ -96,7 +113,10 @@ def disposition_class_for_finding(finding: Finding, repo_root: str | Path | None
     if code.startswith("ENV"):
         return "manual_prerequisite_blocker"
     if code in PACKAGE_MANAGED_EXEC_CODES:
-        if code == "EXEC-GODOT-006" and _repo_has_open_finish_validation(repo_root):
+        if code == "EXEC-GODOT-006" and (
+            _repo_has_open_finish_validation(repo_root)
+            or repo_has_godot_smoke_guard(repo_root)
+        ):
             return "source_follow_up"
         return "managed_blocker"
     if code.startswith(("EXEC", "REF")):

@@ -102,6 +102,7 @@ export default tool({
     const requested = resolveRequestedTicketProgress(ticket, { stage: args.stage, status: args.status })
     const targetStage = requested.stage
     const targetStatus = requested.status
+    const stageChanged = targetStage !== ticket.stage
     const normalizedAcceptance = Array.isArray(args.acceptance)
       ? args.acceptance.map((item) => item.trim()).filter(Boolean)
       : null
@@ -122,21 +123,21 @@ export default tool({
       throw new Error("Cannot approve a plan before a planning artifact exists.")
     }
 
-    if (targetStage === "plan_review") {
+    if (stageChanged && targetStage === "plan_review") {
       if (!hasArtifact(ticket, { stage: "planning" })) {
         throw new Error("Cannot move to plan_review before a planning artifact exists.")
       }
     }
 
-    if (targetStage === "implementation" && args.approved_plan === true && !isPlanApprovedForTicket(workflow, ticket.id)) {
+    if (stageChanged && targetStage === "implementation" && args.approved_plan === true && !isPlanApprovedForTicket(workflow, ticket.id)) {
       throw new Error(`Approve ${ticket.id} while it remains in plan_review first, then move it to implementation in a separate ticket_update call.`)
     }
 
-    if (targetStage === "implementation" && !isPlanApprovedForTicket(workflow, ticket.id)) {
+    if (stageChanged && targetStage === "implementation" && !isPlanApprovedForTicket(workflow, ticket.id)) {
       throw new Error(`Cannot move ${ticket.id} to implementation before its plan is approved in workflow-state.`)
     }
 
-    if (targetStage === "implementation" && ticket.stage !== "plan_review") {
+    if (stageChanged && targetStage === "implementation" && ticket.stage !== "plan_review") {
       if (ticket.stage !== "review" && ticket.stage !== "qa") {
         throw new Error(
           `Cannot move ${ticket.id} to implementation from ${ticket.stage}. Allowed source stages: plan_review (normal path), review or qa (on FAIL verdict only).`,
@@ -170,18 +171,18 @@ export default tool({
       )
     }
 
-    if (targetStage === "review") {
+    if (stageChanged && targetStage === "review") {
       const implementationBlocker = await validateImplementationArtifactEvidence(ticket)
       if (implementationBlocker) {
         throw new Error(implementationBlocker)
       }
     }
 
-    if (targetStage === "qa" && !hasReviewArtifact(ticket)) {
+    if (stageChanged && targetStage === "qa" && !hasReviewArtifact(ticket)) {
       throw new Error("Cannot move to qa before at least one review artifact exists.")
     }
 
-    if (targetStage === "qa") {
+    if (stageChanged && targetStage === "qa") {
       const reviewBlocker = await validateReviewArtifactEvidence(ticket)
       if (reviewBlocker) {
         throw new Error(reviewBlocker)
@@ -196,7 +197,7 @@ export default tool({
       }
     }
 
-    if (targetStage === "smoke-test") {
+    if (stageChanged && targetStage === "smoke-test") {
       const qaBlocker = await validateQaArtifactEvidence(ticket)
       if (qaBlocker) {
         throw new Error(qaBlocker)
@@ -211,7 +212,7 @@ export default tool({
       }
     }
 
-    if (targetStage === "closeout") {
+    if (stageChanged && targetStage === "closeout") {
       const smokeTestBlocker = await validateSmokeTestArtifactEvidence(ticket)
       if (smokeTestBlocker) {
         throw new Error(smokeTestBlocker)
@@ -219,7 +220,8 @@ export default tool({
     }
 
     if (
-      ticketState.needs_acceptance_refresh === true
+      stageChanged
+      && ticketState.needs_acceptance_refresh === true
       && ["review", "qa", "smoke-test", "closeout"].includes(targetStage)
       && !normalizedAcceptance
     ) {
@@ -271,7 +273,7 @@ export default tool({
       })
     }
     if (args.activate) manifest.active_ticket = ticket.id
-    if (targetStage === "implementation" && ticket.verification_state !== "invalidated") {
+    if (stageChanged && targetStage === "implementation" && ticket.verification_state !== "invalidated") {
       ticket.verification_state = "suspect"
     }
 

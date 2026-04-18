@@ -358,7 +358,96 @@ def audit_session_evidence_free_verification(root: Path, findings: list[Finding]
                 problem="The supplied session transcript shows PASS-style implementation, QA, or smoke-test claims after validation had already failed or could not run.",
                 root_cause="The coordinator substituted visual inspection or expected results for executable proof, then let artifacts claim PASS even though the earlier transcript said verification commands were unavailable.",
                 files=[ctx.normalize_path(path, root)],
-                safer_pattern="If validation cannot run, return a blocker; require raw command output in implementation and QA artifacts, and reserve smoke-test PASS proof to the deterministic `smoke_test` tool.",
+                safer_pattern="If validation cannot run, return a blocker; require raw command output in implementation and QA artifacts, and reserve the expected smoke-test result to the deterministic `smoke_test` tool.",
+                evidence=evidence,
+                provenance="script",
+            ),
+        )
+
+
+def audit_session_process_verification_clear_deadlock(root: Path, findings: list[Finding], logs: list[Path], ctx: SessionTranscriptAuditContext) -> None:
+    ticket_update_path = root / ".opencode" / "tools" / "ticket_update.ts"
+    clearable_patterns = (
+        r"clearable_now[\"`\s:=]+true",
+        r"pending_process_verification[^\n]*false",
+    )
+    for path in logs:
+        text = ctx.read_text(path)
+        if not text:
+            continue
+        clearable_hits = ctx.matching_line_numbers(text, clearable_patterns)
+        if not clearable_hits:
+            continue
+        evidence: list[str] = []
+        for event in ctx.parse_transcript_tool_events(text):
+            if event.tool != "ticket_update" or not isinstance(event.args, dict):
+                continue
+            if event.args.get("pending_process_verification") is not False:
+                continue
+            if str(event.args.get("stage", "")).strip():
+                continue
+            error_summary = (event.error or "").splitlines()[0].strip()
+            if not re.search(r"Cannot move\s+\S+\s+to implementation from implementation", error_summary, re.IGNORECASE):
+                continue
+            ticket_id = str(event.args.get("ticket_id", "")).strip() or "unknown ticket"
+            evidence.append(
+                f"Line {event.line_number}: metadata-only ticket_update on `{ticket_id}` failed with `{error_summary}` while clearing pending_process_verification."
+            )
+        if not evidence:
+            continue
+        evidence = [f"Line {line_number}: {line}" for line_number, line in clearable_hits[:3]] + evidence[:3]
+        ctx.add_finding(
+            findings,
+            Finding(
+                code="SESSION008",
+                severity="error",
+                problem="The supplied session transcript shows the legal clearable pending_process_verification cleanup path failing inside ticket_update.",
+                root_cause="ticket_lookup exposed `clearable_now`, but the installed `ticket_update` still re-ran implementation-entry transition guards for a metadata-only pending_process_verification clear on a ticket that was already in implementation.",
+                files=[ctx.normalize_path(path, root), ctx.normalize_path(ticket_update_path, root)],
+                safer_pattern="When ticket_lookup reports `process_verification.clearable_now`, allow metadata-only `ticket_update(..., pending_process_verification: false)` writes to skip stage-entry validation so the current writable ticket can clear the stale global flag even if it is already in implementation.",
+                evidence=evidence,
+                provenance="script",
+            ),
+        )
+
+
+def audit_session_blender_worker_misroute(root: Path, findings: list[Finding], logs: list[Path], ctx: SessionTranscriptAuditContext) -> None:
+    ticket_lookup_path = root / ".opencode" / "tools" / "ticket_lookup.ts"
+    for path in logs:
+        text = ctx.read_text(path)
+        if not text:
+            continue
+        tool_access_hits = ctx.matching_line_numbers(
+            text,
+            (
+                r"Blender-MCP .*not being accessible in the current toolset",
+                r"scene editing tools .* were not accessible",
+                r"Blender-MCP tools .* not accessible",
+            ),
+        )
+        reroute_hits = ctx.matching_line_numbers(
+            text,
+            (
+                r"blender-asset-creator .* appropriate next step",
+                r"delegate.*blender-asset-creator",
+                r"before escalating a bridge defect",
+            ),
+        )
+        if not tool_access_hits or not reroute_hits:
+            continue
+        evidence = [f"Line {line_number}: {line}" for line_number, line in tool_access_hits[:3]]
+        evidence.extend(
+            f"Line {line_number}: {line}" for line_number, line in reroute_hits[:3]
+        )
+        ctx.add_finding(
+            findings,
+            Finding(
+                code="SESSION009",
+                severity="error",
+                problem="The supplied session transcript shows a Blender-routed implementation ticket delegated to a generic worker that lacks the required Blender asset-creation toolset.",
+                root_cause="The installed implementation routing still pointed the coordinator at the generic implementer/lane-executor path even though the same transcript identifies `blender-asset-creator` as the correct worker for the Blender-routed ticket.",
+                files=[ctx.normalize_path(path, root), ctx.normalize_path(ticket_lookup_path, root)],
+                safer_pattern="When a repo exposes `blender-asset-creator` and the ticket's primary deliverable is a Blender-generated asset, `ticket_lookup.transition_guidance.delegate_to_agent` must route implementation and implementation-recovery paths to `blender-asset-creator` instead of the generic implementer.",
                 evidence=evidence,
                 provenance="script",
             ),
@@ -480,5 +569,7 @@ def run_session_transcript_audits(root: Path, findings: list[Finding], logs: lis
     audit_session_handoff_closeout_lease_deadlock(root, findings, logs, ctx)
     audit_session_acceptance_scope_contamination(root, findings, logs, ctx)
     audit_session_evidence_free_verification(root, findings, logs, ctx)
+    audit_session_process_verification_clear_deadlock(root, findings, logs, ctx)
+    audit_session_blender_worker_misroute(root, findings, logs, ctx)
     audit_session_coordinator_artifact_authorship(root, findings, logs, ctx)
     audit_session_operator_trap(root, findings, logs, ctx)

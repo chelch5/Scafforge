@@ -2010,7 +2010,7 @@ def seed_smoke_artifact_bypass(dest: Path) -> None:
     ticket_lookup = dest / ".opencode" / "tools" / "ticket_lookup.ts"
     ticket_lookup.write_text(
         ticket_lookup.read_text(encoding="utf-8").replace(
-            "Use the smoke_test tool to produce the current smoke-test artifact. Do not fabricate a PASS artifact through generic artifact tools.",
+            "Use the smoke_test tool to produce the current smoke-test artifact. Do not fabricate the expected smoke-test result through generic artifact tools.",
             "Use a smoke-test artifact to record current results.",
         ),
         encoding="utf-8",
@@ -2039,6 +2039,76 @@ def seed_recovered_verification_log(dest: Path) -> Path:
                 "12 passed in 0.42s",
                 "Result: PASS (scoped)",
                 "Verified by running the recovery command above.",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
+def seed_process_verification_clear_deadlock_log(dest: Path) -> Path:
+    log_path = dest / "process-verification-clear-deadlock-log.md"
+    log_path.write_text(
+        "\n".join(
+            [
+                "## Assistant (Smoke-Team-Leader · MiniMax-M2.7 · 2.0s)",
+                "",
+                "**Tool: ticket_lookup**",
+                "",
+                "**Input:**",
+                "```json",
+                "{}",
+                "```",
+                "",
+                "**Output:**",
+                "```json",
+                '{"process_verification":{"clearable_now":true,"affected_done_tickets":[]},"transition_guidance":{"next_action_tool":"ticket_update","recommended_ticket_update":{"ticket_id":"MODEL-007","pending_process_verification":false}}}',
+                "```",
+                "",
+                "## Assistant (Smoke-Team-Leader · MiniMax-M2.7 · 1.8s)",
+                "",
+                "**Tool: ticket_update**",
+                "",
+                "**Input:**",
+                "```json",
+                '{"ticket_id":"MODEL-007","pending_process_verification":false}',
+                "```",
+                "",
+                "**Error:**",
+                "```text",
+                "Error: Cannot move MODEL-007 to implementation from implementation. Allowed source stages: plan_review (normal path), review or qa (on FAIL verdict only).",
+                "```",
+                "",
+                "`clearable_now: true` and `pending_process_verification: false` were the recommended cleanup path.",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
+def seed_blender_worker_misroute_log(dest: Path) -> Path:
+    log_path = dest / "blender-worker-misroute-log.md"
+    log_path.write_text(
+        "\n".join(
+            [
+                "## Assistant (Smoke-Team-Leader · MiniMax-M2.7 · 2.4s)",
+                "",
+                "**Tool: handoff_publish**",
+                "",
+                "**Input:**",
+                "```json",
+                '{"next_action":"Continue MODEL-007 implementation — blender_agent is enabled in opencode.jsonc, but Blender-MCP scene editing tools (scene_batch_edit, mesh_edit_batch, material_pbr_build, quality_validate, export_asset) were not accessible in prior attempts. The blocker may be tool availability rather than config. Before escalating, re-verify tool accessibility in current session and attempt one fresh Blender-MCP chaining chain."}',
+                "```",
+                "",
+                "## Assistant (Smoke-Team-Leader · MiniMax-M2.7 · 2.6s)",
+                "",
+                "**Output:**",
+                "```text",
+                "MODEL-007 is back as the active implementation ticket and still blocked. The blocker is Blender-MCP scene editing tools not being accessible in the current toolset despite blender_agent being enabled. The wvhvc-blender-asset-creator delegation is the appropriate next step before escalating a bridge defect.",
+                "```",
             ]
         )
         + "\n",
@@ -2825,6 +2895,51 @@ def seed_blocked_split_parent(dest: Path) -> None:
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
+def seed_open_parent_remediation_deadlock(dest: Path) -> None:
+    manifest_path = dest / "tickets" / "manifest.json"
+    workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+
+    parent = manifest["tickets"][0]
+    parent["stage"] = "qa"
+    parent["status"] = "qa"
+    parent["resolution_state"] = "open"
+    parent["verification_state"] = "suspect"
+    child_id = "REMED-DEADLOCK"
+    parent["follow_up_ticket_ids"] = [child_id]
+    manifest["tickets"].append(
+        {
+            "id": child_id,
+            "title": "Synthetic remediation deadlock child",
+            "wave": parent["wave"] + 1,
+            "lane": "remediation",
+            "parallel_safe": False,
+            "overlap_risk": "low",
+            "stage": "plan_review",
+            "status": "plan_review",
+            "depends_on": [],
+            "summary": "Synthetic remediation child that should be allowed to run while the open parent remains blocked.",
+            "acceptance": ["Open-parent remediation deadlock is detected."],
+            "decision_blockers": [],
+            "artifacts": [],
+            "resolution_state": "open",
+            "verification_state": "suspect",
+            "finding_source": "EXEC-BLENDER-001",
+            "source_ticket_id": parent["id"],
+            "follow_up_ticket_ids": [],
+            "source_mode": "split_scope",
+            "split_kind": "sequential_dependent",
+        }
+    )
+    manifest["active_ticket"] = parent["id"]
+    workflow["active_ticket"] = parent["id"]
+    workflow["stage"] = "qa"
+    workflow["status"] = "qa"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+
+
 def seed_bootstrap_guidance_drift(dest: Path) -> None:
     workflow_path = dest / ".opencode" / "state" / "workflow-state.json"
     workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
@@ -3055,7 +3170,23 @@ def seed_team_leader_workflow_drift(dest: Path) -> None:
         "",
     )
     text = text.replace("- use human slash commands only as entrypoints\n", "")
+    text = text.replace(
+        '- when a backlog verifier returns `acceptance_refresh_required: true`, treat that as the required next action on the verified closed ticket: foreground that ticket, refresh the stale canonical fields with `ticket_update(acceptance=[...], summary="...")` using the verifier\'s proposed replacement acceptance bullets and/or summary text, then rerun `ticket_lookup` or backlog verification instead of escalating a fake runtime regression\n',
+        "",
+    )
+    text = text.replace(
+        "- when `ticket_lookup.repair_follow_on.outcome` is `managed_blocked`, do not guess or assert stage completion from plausibility\n",
+        '- when `ticket_lookup.repair_follow_on.outcome` is `managed_blocked`, you MUST attempt self-resolution before stopping:\n  1. Check `repair_follow_on.required_stages` — these are the stages that must be cleared\n  2. For each required stage NOT in `completed_stages`, determine if you can verify it is satisfied:\n     - `project-skill-bootstrap`: check if `.opencode/skills/` files exist and contain project-specific content (not just template placeholders). If skills look reasonable, assert as completed.\n',
+    )
     team_leader.write_text(text, encoding="utf-8")
+    backlog_verifier = next((dest / ".opencode" / "agents").glob("*backlog-verifier*.md"))
+    backlog_text = backlog_verifier.read_text(encoding="utf-8")
+    backlog_text = backlog_text.replace("acceptance_refresh_required", "acceptance truth refresh")
+    backlog_text = backlog_text.replace(
+        "do not recommend rolling back truthful diagnostics just to match stale artifacts",
+        "you may recommend reverting truthful diagnostics if old artifacts expected a different outcome",
+    )
+    backlog_verifier.write_text(backlog_text, encoding="utf-8")
 
 
 def seed_thin_ticket_execution(dest: Path) -> None:
@@ -3486,11 +3617,23 @@ def main() -> int:
                 "context_snapshot: allow",
                 "blender_agent_project_initialize: allow",
                 "blender_agent_scene_batch_edit: allow",
+                "Do not substitute a different asset brief just because it exists elsewhere in `assets/briefs/`.",
             ):
                 if expected not in blender_agent_prompt:
                     raise RuntimeError(
                         f"Generated blender asset creator prompt is missing required implementation ownership or Blender tool permission: {expected}"
                     )
+
+        tool_guard_text = (full_dest / ".opencode" / "plugins" / "tool-guard.ts").read_text(encoding="utf-8")
+        for expected in (
+            "Blender project_initialize must set a concrete output_blend",
+            "must include non-null input_blend and output_blend",
+            "Reuse persistence.saved_blend from the previous saved step instead of issuing a stateless mutation.",
+        ):
+            if expected not in tool_guard_text:
+                raise RuntimeError(
+                    f"Generated tool-guard is missing required Blender persistence enforcement: {expected}"
+                )
 
         tester_qa_prompt = next(
             (full_dest / ".opencode" / "agents").glob("*tester-qa*.md")
@@ -3675,6 +3818,133 @@ def main() -> int:
                 raise RuntimeError(
                     f"opencode-team-bootstrap skill is missing phase 5 requirement: {expected}"
                 )
+
+        opencode_repair_preserve_dest = workspace / "opencode-team-bootstrap-preserve"
+        shutil.copytree(full_dest, opencode_repair_preserve_dest)
+        preserve_workflow_path = (
+            opencode_repair_preserve_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        preserve_context_path = (
+            opencode_repair_preserve_dest / ".opencode" / "state" / "context-snapshot.md"
+        )
+        preserve_handoff_path = (
+            opencode_repair_preserve_dest / ".opencode" / "state" / "latest-handoff.md"
+        )
+        preserve_registry_path = (
+            opencode_repair_preserve_dest / ".opencode" / "state" / "artifacts" / "registry.json"
+        )
+        preserve_provenance_path = (
+            opencode_repair_preserve_dest
+            / ".opencode"
+            / "meta"
+            / "bootstrap-provenance.json"
+        )
+        preserve_workflow = json.loads(preserve_workflow_path.read_text(encoding="utf-8"))
+        preserve_workflow["active_ticket"] = "SENTINEL-TEAM-BOOTSTRAP"
+        preserve_workflow["stage"] = "review"
+        preserve_workflow["status"] = "review"
+        preserve_workflow["pending_process_verification"] = True
+        preserve_workflow["state_revision"] = 987
+        preserve_workflow_path.write_text(
+            json.dumps(preserve_workflow, indent=2) + "\n", encoding="utf-8"
+        )
+        preserve_context_path.write_text(
+            "# Context Snapshot\n\nSENTINEL-TEAM-BOOTSTRAP-CONTEXT\n",
+            encoding="utf-8",
+        )
+        preserve_handoff_path.write_text(
+            "# Latest Handoff\n\nSENTINEL-TEAM-BOOTSTRAP-HANDOFF\n",
+            encoding="utf-8",
+        )
+        preserve_registry = json.loads(
+            preserve_registry_path.read_text(encoding="utf-8")
+        )
+        preserve_registry["sentinel"] = "team-bootstrap-preserve"
+        preserve_registry_path.write_text(
+            json.dumps(preserve_registry, indent=2) + "\n", encoding="utf-8"
+        )
+        preserve_provenance = json.loads(
+            preserve_provenance_path.read_text(encoding="utf-8")
+        )
+        preserve_provenance["repair_history"] = [
+            {"sentinel": "preserve-existing-bootstrap-provenance"}
+        ]
+        preserve_provenance_path.write_text(
+            json.dumps(preserve_provenance, indent=2) + "\n", encoding="utf-8"
+        )
+        subprocess.run(
+            [
+                sys.executable,
+                str(
+                    ROOT
+                    / "skills"
+                    / "opencode-team-bootstrap"
+                    / "scripts"
+                    / "bootstrap_opencode_team.py"
+                ),
+                "--dest",
+                str(opencode_repair_preserve_dest),
+                "--project-name",
+                preserve_provenance["project_name"],
+                "--project-slug",
+                preserve_provenance["project_slug"],
+                "--agent-prefix",
+                preserve_provenance["agent_prefix"],
+                "--model-provider",
+                preserve_provenance["runtime_models"]["provider"],
+                "--planner-model",
+                preserve_provenance["runtime_models"]["planner"],
+                "--implementer-model",
+                preserve_provenance["runtime_models"]["implementer"],
+                "--utility-model",
+                preserve_provenance["runtime_models"]["utility"],
+                "--stack-label",
+                preserve_provenance["stack_label"],
+                "--force",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        preserved_workflow = json.loads(
+            preserve_workflow_path.read_text(encoding="utf-8")
+        )
+        if preserved_workflow.get("active_ticket") != "SENTINEL-TEAM-BOOTSTRAP":
+            raise RuntimeError(
+                "opencode-team-bootstrap follow-on should preserve an existing workflow-state.json instead of resetting the active ticket"
+            )
+        if preserved_workflow.get("state_revision") != 987:
+            raise RuntimeError(
+                "opencode-team-bootstrap follow-on should preserve workflow-state.json state_revision instead of reseeding runtime state"
+            )
+        if "SENTINEL-TEAM-BOOTSTRAP-CONTEXT" not in preserve_context_path.read_text(
+            encoding="utf-8"
+        ):
+            raise RuntimeError(
+                "opencode-team-bootstrap follow-on should preserve an existing context-snapshot.md instead of replacing it with scaffold defaults"
+            )
+        if "SENTINEL-TEAM-BOOTSTRAP-HANDOFF" not in preserve_handoff_path.read_text(
+            encoding="utf-8"
+        ):
+            raise RuntimeError(
+                "opencode-team-bootstrap follow-on should preserve an existing latest-handoff.md instead of replacing it with scaffold defaults"
+            )
+        preserved_registry = json.loads(
+            preserve_registry_path.read_text(encoding="utf-8")
+        )
+        if preserved_registry.get("sentinel") != "team-bootstrap-preserve":
+            raise RuntimeError(
+                "opencode-team-bootstrap follow-on should preserve the existing artifact registry instead of reseeding it"
+            )
+        preserved_provenance = json.loads(
+            preserve_provenance_path.read_text(encoding="utf-8")
+        )
+        if preserved_provenance.get("repair_history") != [
+            {"sentinel": "preserve-existing-bootstrap-provenance"}
+        ]:
+            raise RuntimeError(
+                "opencode-team-bootstrap follow-on should preserve existing bootstrap-provenance history instead of overwriting it"
+            )
 
         agent_prompt_engineering_skill = (
             ROOT / "skills" / "agent-prompt-engineering" / "SKILL.md"
@@ -3994,6 +4264,14 @@ def main() -> int:
             raise RuntimeError(
                 "backlog-verifier template should document the closed-ticket ticket_reverify fallback instead of asking the coordinator to register review artifacts"
             )
+        if "acceptance_refresh_required: true" not in backlog_verifier_template:
+            raise RuntimeError(
+                "backlog-verifier template should explicitly require acceptance_refresh_required output when canonical ticket truth is stale"
+            )
+        if "do not recommend rolling back truthful diagnostics just to match stale artifacts" not in backlog_verifier_template:
+            raise RuntimeError(
+                "backlog-verifier template should treat stale canonical truth as acceptance refresh, not as a forced diagnostics rollback"
+            )
         team_leader_template = (
             ROOT
             / "skills"
@@ -4035,6 +4313,14 @@ def main() -> int:
         ):
             raise RuntimeError(
                 "team-leader agent template should prioritize clearable pending_process_verification cleanup before split-parent or ordinary lifecycle routing"
+            )
+        if "when a backlog verifier returns `acceptance_refresh_required: true`, treat that as the required next action on the verified closed ticket" not in team_leader_template:
+            raise RuntimeError(
+                "team-leader agent template should route closed-ticket canonical truth drift through ticket_update(acceptance=[...], summary=\"...\") instead of escalating a fake runtime regression"
+            )
+        if 'ticket_update(acceptance=[...], summary="...")' not in team_leader_template:
+            raise RuntimeError(
+                "team-leader agent template should explicitly document summary refresh alongside acceptance refresh when canonical ticket truth is stale"
             )
         if (
             "a delegated specialist task is not a stop condition; wait for the task result, confirm the expected artifact or failure, then immediately re-run `ticket_lookup` and continue in the same run"
@@ -4211,7 +4497,7 @@ def main() -> int:
                 "Generated ticket_lookup.ts should expose transition_guidance"
             )
         if (
-            "Do not fabricate a PASS artifact through generic artifact tools."
+            "Do not fabricate the expected smoke-test result through generic artifact tools."
             not in generated_ticket_lookup
         ):
             raise RuntimeError(
@@ -5929,6 +6215,118 @@ def main() -> int:
             raise RuntimeError(
                 "A Blender-required repo with missing Blender operating surfaces should emit SKILL003"
             )
+        bootstrap_script_dir = BOOTSTRAP.parent
+        bootstrap_script_dir_str = str(bootstrap_script_dir)
+        if bootstrap_script_dir_str not in sys.path:
+            sys.path.insert(0, bootstrap_script_dir_str)
+        bootstrap_module = load_python_module(
+            BOOTSTRAP, "scafforge_smoke_bootstrap_repo_scaffold_blender_delegate"
+        )
+        blender_delegate_dest = workspace / "blender-required-delegate"
+        shutil.copytree(full_dest, blender_delegate_dest)
+        team_leader_path = next(
+            (blender_delegate_dest / ".opencode" / "agents").glob("*-team-leader.md")
+        )
+        delegate_prefix = team_leader_path.name.removesuffix("-team-leader.md")
+        (
+            blender_delegate_dest / ".opencode" / "meta" / "asset-pipeline-bootstrap.json"
+        ).write_text(
+            json.dumps(
+                {
+                    "requires_blender_mcp": True,
+                    "required_skills": ["asset-description", "blender-mcp-workflow"],
+                    "required_agents": ["blender-asset-creator"],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        bootstrap_module.ensure_blender_route_operating_surfaces(
+            blender_delegate_dest,
+            agent_prefix=delegate_prefix,
+            full_implementer_model="openrouter/openai/gpt-5-codex",
+            force=True,
+        )
+        blender_team_leader = team_leader_path.read_text(encoding="utf-8")
+        if f'"{delegate_prefix}-blender-asset-creator": allow' not in blender_team_leader:
+            raise RuntimeError(
+                "A Blender-required scaffold must let the team leader delegate to the generated blender-asset-creator"
+            )
+        for snippet in (
+            "blender_agent_project_initialize: deny",
+            "blender_agent_scene_batch_edit: deny",
+            "blender_agent_export_asset: deny",
+        ):
+            if snippet not in blender_team_leader:
+                raise RuntimeError(
+                    f"A Blender-required scaffold must keep direct Blender MCP tools off the team leader ({snippet})"
+                )
+        missing_delegate_dest = workspace / "blender-required-missing-delegate"
+        shutil.copytree(blender_delegate_dest, missing_delegate_dest)
+        missing_delegate_path = (
+            missing_delegate_dest / ".opencode" / "agents" / f"{delegate_prefix}-team-leader.md"
+        )
+        missing_delegate_path.write_text(
+            missing_delegate_path.read_text(encoding="utf-8").replace(
+                f'    "{delegate_prefix}-blender-asset-creator": allow\n', ""
+            ),
+            encoding="utf-8",
+        )
+        missing_delegate_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(missing_delegate_dest),
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        missing_delegate_findings = [
+            finding
+            for finding in missing_delegate_audit.get("findings", [])
+            if finding.get("code") == "SKILL003"
+        ]
+        if not any(
+            "cannot delegate Blender-route tickets" in " ".join(finding.get("evidence", []))
+            for finding in missing_delegate_findings
+        ):
+            raise RuntimeError(
+                "Audit should flag Blender-required repos when the team leader cannot delegate to the blender-asset-creator"
+            )
+        missing_team_leader_deny_dest = workspace / "blender-required-missing-team-leader-deny"
+        shutil.copytree(blender_delegate_dest, missing_team_leader_deny_dest)
+        missing_team_leader_deny_path = (
+            missing_team_leader_deny_dest / ".opencode" / "agents" / f"{delegate_prefix}-team-leader.md"
+        )
+        missing_team_leader_deny_text = missing_team_leader_deny_path.read_text(encoding="utf-8")
+        missing_team_leader_deny_path.write_text(
+            missing_team_leader_deny_text.replace("  blender_agent_project_initialize: deny\n", ""),
+            encoding="utf-8",
+        )
+        missing_team_leader_deny_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(missing_team_leader_deny_dest),
+                "--format",
+                "json",
+            ],
+            ROOT,
+        )
+        missing_team_leader_deny_findings = [
+            finding
+            for finding in missing_team_leader_deny_audit.get("findings", [])
+            if finding.get("code") == "SKILL003"
+        ]
+        if not any(
+            "must deny direct Blender MCP tool ownership" in " ".join(finding.get("evidence", []))
+            for finding in missing_team_leader_deny_findings
+        ):
+            raise RuntimeError(
+                "Audit should flag Blender-required repos when the team leader can still own direct Blender MCP tools"
+            )
         run_managed_repair_module = load_python_module(
             PUBLIC_REPAIR, "scafforge_smoke_run_managed_repair_blender_follow_on"
         )
@@ -5953,6 +6351,44 @@ def main() -> int:
         if "agent-prompt-engineering" in blender_follow_on_stages:
             raise RuntimeError(
                 "SKILL003 alone should not force agent-prompt-engineering when prompt-specific drift was not detected"
+            )
+        blender_repair_dest = workspace / "blender-required-repair-render"
+        shutil.copytree(full_dest, blender_repair_dest)
+        (blender_repair_dest / ".opencode" / "meta" / "asset-pipeline-bootstrap.json").write_text(
+            json.dumps(
+                {
+                    "requires_blender_mcp": True,
+                    "required_skills": ["asset-description", "blender-mcp-workflow"],
+                    "required_agents": ["blender-asset-creator"],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        run(
+            [
+                sys.executable,
+                str(REPAIR),
+                str(blender_repair_dest),
+                "--skip-verify",
+            ],
+            ROOT,
+        )
+        repaired_team_leader = next(
+            (blender_repair_dest / ".opencode" / "agents").glob("*-team-leader.md")
+        ).read_text(encoding="utf-8")
+        repaired_blender_agents = list(
+            (blender_repair_dest / ".opencode" / "agents").glob("*blender-asset-creator*.md")
+        )
+        if not repaired_blender_agents:
+            raise RuntimeError(
+                "Deterministic repair should regenerate the blender-asset-creator when asset-pipeline metadata requires Blender MCP"
+            )
+        repaired_prefix = repaired_blender_agents[0].name.removesuffix("-blender-asset-creator.md")
+        if f'"{repaired_prefix}-blender-asset-creator": allow' not in repaired_team_leader:
+            raise RuntimeError(
+                "Deterministic repair should preserve Blender-route team-leader delegation when asset-pipeline metadata requires it"
             )
 
         legacy_asset_dest = workspace / "legacy-asset-repair"
@@ -6989,6 +7425,56 @@ def main() -> int:
         if "SESSION004" in recovered_codes:
             raise RuntimeError(
                 "A transcript with later real recovery evidence should not emit SESSION004"
+            )
+        process_clear_deadlock_dest = workspace / "process-clear-deadlock"
+        shutil.copytree(full_dest, process_clear_deadlock_dest)
+        process_clear_deadlock_log = seed_process_verification_clear_deadlock_log(
+            process_clear_deadlock_dest
+        )
+        process_clear_deadlock_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(process_clear_deadlock_dest),
+                "--format",
+                "json",
+                "--supporting-log",
+                str(process_clear_deadlock_log),
+            ],
+            ROOT,
+        )
+        process_clear_deadlock_codes = {
+            finding["code"]
+            for finding in process_clear_deadlock_audit.get("findings", [])
+        }
+        if "SESSION008" not in process_clear_deadlock_codes:
+            raise RuntimeError(
+                "A transcript where clearable pending_process_verification cleanup still fails inside ticket_update should emit SESSION008"
+            )
+        blender_worker_misroute_dest = workspace / "blender-worker-misroute"
+        shutil.copytree(full_dest, blender_worker_misroute_dest)
+        blender_worker_misroute_log = seed_blender_worker_misroute_log(
+            blender_worker_misroute_dest
+        )
+        blender_worker_misroute_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(blender_worker_misroute_dest),
+                "--format",
+                "json",
+                "--supporting-log",
+                str(blender_worker_misroute_log),
+            ],
+            ROOT,
+        )
+        blender_worker_misroute_codes = {
+            finding["code"]
+            for finding in blender_worker_misroute_audit.get("findings", [])
+        }
+        if "SESSION009" not in blender_worker_misroute_codes:
+            raise RuntimeError(
+                "A transcript where a Blender-routed implementation stays on a generic worker should emit SESSION009"
             )
 
         failing_suite_dest = workspace / "failing-suite"
@@ -8884,6 +9370,171 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_update should clear pending_process_verification when ticket_lookup routes the cleanup through the current open ticket"
             )
+        process_clearable_impl_dest = workspace / "executed-process-clearable-implementation"
+        shutil.copytree(process_clearable_open_dest, process_clearable_impl_dest)
+        process_clearable_impl_manifest_path = (
+            process_clearable_impl_dest / "tickets" / "manifest.json"
+        )
+        process_clearable_impl_workflow_path = (
+            process_clearable_impl_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        process_clearable_impl_manifest = json.loads(
+            process_clearable_impl_manifest_path.read_text(encoding="utf-8")
+        )
+        process_clearable_impl_workflow = json.loads(
+            process_clearable_impl_workflow_path.read_text(encoding="utf-8")
+        )
+        process_clearable_impl_ticket = next(
+            ticket
+            for ticket in process_clearable_impl_manifest["tickets"]
+            if ticket["id"] == "PROC-001"
+        )
+        process_clearable_impl_ticket["stage"] = "implementation"
+        process_clearable_impl_ticket["status"] = "in_progress"
+        process_clearable_impl_workflow["active_ticket"] = "PROC-001"
+        process_clearable_impl_workflow["stage"] = "implementation"
+        process_clearable_impl_workflow["status"] = "in_progress"
+        process_clearable_impl_workflow["pending_process_verification"] = True
+        process_clearable_impl_workflow["ticket_state"]["PROC-001"]["approved_plan"] = True
+        process_clearable_impl_manifest_path.write_text(
+            json.dumps(process_clearable_impl_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        process_clearable_impl_workflow_path.write_text(
+            json.dumps(process_clearable_impl_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        process_clearable_impl_lookup = run_generated_tool(
+            process_clearable_impl_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        if process_clearable_impl_lookup["process_verification"]["clearable_now"] is not True:
+            raise RuntimeError(
+                "ticket_lookup should keep reporting clearable_now when the current writable ticket is already in implementation"
+            )
+        run_generated_tool(
+            process_clearable_impl_dest,
+            ".opencode/tools/ticket_claim.ts",
+            {
+                "ticket_id": "PROC-001",
+                "owner_agent": "smoke-process-clear",
+                "write_lock": True,
+            },
+        )
+        run_generated_plugin_before(
+            process_clearable_impl_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "ticket_update",
+            process_clearable_impl_lookup["transition_guidance"]["recommended_ticket_update"],
+        )
+        process_clearable_impl_update = run_generated_tool(
+            process_clearable_impl_dest,
+            ".opencode/tools/ticket_update.ts",
+            process_clearable_impl_lookup["transition_guidance"]["recommended_ticket_update"],
+        )
+        if process_clearable_impl_update["workflow"]["pending_process_verification"]:
+            raise RuntimeError(
+                "ticket_update and stage-gate-enforcer should clear pending_process_verification without tripping implementation stage transition guards when the writable ticket is already in implementation"
+            )
+        blocking_smoke_closeout_dest = workspace / "executed-blocking-smoke-closeout"
+        shutil.copytree(full_dest, blocking_smoke_closeout_dest)
+        seed_ready_bootstrap(blocking_smoke_closeout_dest)
+        blocking_smoke_manifest_path = blocking_smoke_closeout_dest / "tickets" / "manifest.json"
+        blocking_smoke_workflow_path = (
+            blocking_smoke_closeout_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        blocking_smoke_manifest = json.loads(
+            blocking_smoke_manifest_path.read_text(encoding="utf-8")
+        )
+        blocking_smoke_workflow = json.loads(
+            blocking_smoke_workflow_path.read_text(encoding="utf-8")
+        )
+        blocking_smoke_manifest["tickets"].append(
+            {
+                "id": "REMED-900",
+                "title": "Make smoke_test fail honestly for fatal diagnostics",
+                "wave": 90,
+                "lane": "remediation",
+                "parallel_safe": False,
+                "overlap_risk": "low",
+                "stage": "smoke-test",
+                "status": "smoke_test",
+                "depends_on": [],
+                "summary": "Synthetic remediation ticket proving closeout can rely on expected blocking smoke-test evidence.",
+                "acceptance": [
+                    "Make smoke_test fail when fatal diagnostics are present instead of publishing a false PASS artifact.",
+                    "Record current smoke-test evidence on writable repo surfaces.",
+                ],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "smoke_verified",
+                "finding_source": "EXEC-GODOT-006",
+                "follow_up_ticket_ids": [],
+                "source_mode": "split_scope",
+            }
+        )
+        blocking_smoke_manifest["active_ticket"] = "REMED-900"
+        blocking_smoke_workflow["active_ticket"] = "REMED-900"
+        blocking_smoke_workflow["stage"] = "smoke-test"
+        blocking_smoke_workflow["status"] = "smoke_test"
+        blocking_smoke_workflow.setdefault("ticket_state", {})
+        blocking_smoke_workflow["ticket_state"]["REMED-900"] = {
+            "approved_plan": True,
+            "reopen_count": 0,
+            "needs_reverification": False,
+        }
+        blocking_smoke_manifest_path.write_text(
+            json.dumps(blocking_smoke_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        blocking_smoke_workflow_path.write_text(
+            json.dumps(blocking_smoke_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        register_current_ticket_artifact(
+            blocking_smoke_closeout_dest,
+            ticket_id="REMED-900",
+            kind="smoke-test",
+            stage="smoke-test",
+            relative_path=".opencode/state/artifacts/history/remed-900/smoke-test/2026-04-04T00-00-00Z-synthetic-smoke.md",
+            summary="Synthetic blocking smoke artifact for remediation closeout coverage.",
+            content="# Smoke Test\n\n## Command\n\n`godot4 --headless --quit`\n\n## Command Details\n\n- exit_code: 0\n- failure_classification: syntax_error\n- blocked_by_permissions: false\n\n## Raw Output\n\n```text\nSCRIPT ERROR: Parse Error: Identifier \"EnemyBrown\" not declared in the current scope.\nERROR: Failed to load script \"res://scripts/wave_spawner.gd\" with error \"Parse error\".\n```\n\nOverall Result: FAIL\n",
+            created_at="2026-04-04T00:00:00Z",
+        )
+        blocking_smoke_lookup = run_generated_tool(
+            blocking_smoke_closeout_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
+        blocking_smoke_guidance = blocking_smoke_lookup["transition_guidance"]
+        if blocking_smoke_guidance["next_action_tool"] != "ticket_update":
+            raise RuntimeError(
+                "ticket_lookup should allow closeout when a remediation ticket carries the expected blocking smoke-test result"
+            )
+        if blocking_smoke_guidance["recommended_ticket_update"] != {
+            "ticket_id": "REMED-900",
+            "stage": "closeout",
+            "status": "done",
+            "activate": True,
+        }:
+            raise RuntimeError(
+                "ticket_lookup should route expected blocking smoke-test remediation tickets directly to closeout"
+            )
+        if "expected blocking result" not in blocking_smoke_guidance["recommended_action"]:
+            raise RuntimeError(
+                "ticket_lookup should explain that the remediation ticket is ready for closeout because the blocking smoke-test result is expected"
+            )
+        blocking_smoke_update = run_generated_tool(
+            blocking_smoke_closeout_dest,
+            ".opencode/tools/ticket_update.ts",
+            blocking_smoke_guidance["recommended_ticket_update"],
+        )
+        if blocking_smoke_update["updated_ticket"]["status"] != "done":
+            raise RuntimeError(
+                "ticket_update should permit closeout when the current smoke-test artifact carries the expected blocking result for a remediation ticket"
+            )
         process_all_done_dest = workspace / "executed-process-all-done"
         shutil.copytree(full_dest, process_all_done_dest)
         seed_ready_bootstrap(process_all_done_dest)
@@ -9020,13 +9671,64 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_lookup should foreground the first affected done ticket when all open work is complete but process verification is still pending"
             )
+        if process_all_done_lookup["transition_guidance"]["next_action_tool"] != "environment_bootstrap":
+            raise RuntimeError(
+                "ticket_lookup should route all-done process verification through environment_bootstrap first when deterministic repair refresh has invalidated bootstrap readiness"
+            )
+        seed_ready_bootstrap(process_all_done_dest)
+        process_all_done_lookup = run_generated_tool(
+            process_all_done_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {},
+        )
         if process_all_done_lookup["transition_guidance"]["next_action_tool"] != "ticket_reverify":
             raise RuntimeError(
-                "ticket_lookup should route all-done process verification through ticket_reverify on the affected historical ticket"
+                "ticket_lookup should route all-done process verification through ticket_reverify once bootstrap is ready again"
             )
         if process_all_done_lookup["transition_guidance"]["delegate_to_agent"] != "backlog-verifier":
             raise RuntimeError(
-                "ticket_lookup should delegate all-done process verification to the backlog verifier"
+                "ticket_lookup should delegate all-done process verification to the backlog verifier once bootstrap is ready again"
+            )
+        repair_refresh_bootstrap_dest = workspace / "repair-refresh-bootstrap-stale"
+        shutil.copytree(full_dest, repair_refresh_bootstrap_dest)
+        seed_ready_bootstrap(repair_refresh_bootstrap_dest)
+        repair_refresh_bootstrap_workflow_path = (
+            repair_refresh_bootstrap_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        repair_refresh_bootstrap_workflow = json.loads(
+            repair_refresh_bootstrap_workflow_path.read_text(encoding="utf-8")
+        )
+        repair_refresh_bootstrap_result = run_generated_tool(
+            repair_refresh_bootstrap_dest,
+            ".opencode/tools/repair_follow_on_refresh.ts",
+            {
+                "change_summary": "Synthetic repair refresh should invalidate prior bootstrap proof canonically.",
+                "process_version": repair_refresh_bootstrap_workflow["process_version"],
+                "parallel_mode": repair_refresh_bootstrap_workflow["parallel_mode"],
+                "repair_follow_on_json": json.dumps(
+                    {
+                        "outcome": "managed_blocked",
+                        "required_stages": ["ticket-pack-builder"],
+                        "completed_stages": [],
+                        "blocking_reasons": [
+                            "Managed repair refreshed workflow surfaces. Run the full scafforge-repair follow-on flow before resuming normal ticket lifecycle execution."
+                        ],
+                        "verification_passed": False,
+                        "handoff_allowed": False,
+                    }
+                ),
+            },
+        )
+        if repair_refresh_bootstrap_result["repair_follow_on"]["outcome"] != "managed_blocked":
+            raise RuntimeError(
+                "repair_follow_on_refresh should preserve managed_blocked outcome while follow-on stages remain outstanding"
+            )
+        repair_refresh_bootstrap_workflow = json.loads(
+            repair_refresh_bootstrap_workflow_path.read_text(encoding="utf-8")
+        )
+        if repair_refresh_bootstrap_workflow["bootstrap"]["status"] != "stale":
+            raise RuntimeError(
+                "repair_follow_on_refresh should persist bootstrap.status=stale after deterministic repair refresh invalidates the prior bootstrap proof"
             )
         register_current_ticket_artifact(
             executed_lifecycle_dest,
@@ -9057,6 +9759,189 @@ def main() -> int:
         ):
             raise RuntimeError(
                 "ticket_lookup should recommend moving a planned ticket into plan_review next"
+            )
+        blender_delegate_dest = workspace / "executed-blender-implementation-delegate"
+        shutil.copytree(full_dest, blender_delegate_dest)
+        seed_ready_bootstrap(blender_delegate_dest)
+        blender_delegate_manifest_path = blender_delegate_dest / "tickets" / "manifest.json"
+        blender_delegate_workflow_path = (
+            blender_delegate_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        blender_delegate_manifest = json.loads(
+            blender_delegate_manifest_path.read_text(encoding="utf-8")
+        )
+        blender_delegate_workflow = json.loads(
+            blender_delegate_workflow_path.read_text(encoding="utf-8")
+        )
+        blender_delegate_ticket = blender_delegate_manifest["tickets"][0]
+        blender_delegate_ticket["title"] = "Generate sword-projectile via Blender-MCP"
+        blender_delegate_ticket["lane"] = "model-generation"
+        blender_delegate_ticket["stage"] = "plan_review"
+        blender_delegate_ticket["status"] = "plan_review"
+        blender_delegate_ticket["summary"] = (
+            "Generate sword-projectile via blender-agent MCP following assets/briefs/"
+            "sword-projectile.md and export assets/models/sword-projectile.glb."
+        )
+        blender_delegate_ticket["acceptance"] = [
+            "assets/models/sword-projectile.glb exists",
+            "Blender-MCP export follows the saved-blend chain contract.",
+        ]
+        blender_delegate_workflow["active_ticket"] = blender_delegate_ticket["id"]
+        blender_delegate_workflow["stage"] = "plan_review"
+        blender_delegate_workflow["status"] = "plan_review"
+        blender_delegate_workflow["ticket_state"][blender_delegate_ticket["id"]][
+            "approved_plan"
+        ] = True
+        blender_delegate_manifest_path.write_text(
+            json.dumps(blender_delegate_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        blender_delegate_workflow_path.write_text(
+            json.dumps(blender_delegate_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        register_current_ticket_artifact(
+            blender_delegate_dest,
+            ticket_id=blender_delegate_ticket["id"],
+            kind="plan",
+            stage="planning",
+            relative_path=".opencode/state/artifacts/history/setup-001/planning/setup-001-plan.md",
+            summary="Synthetic Blender-routed planning artifact for delegate selection coverage.",
+            content="# Plan\n\nGenerate sword-projectile via Blender-MCP and export GLB.\n",
+        )
+        (
+            blender_delegate_dest
+            / ".opencode"
+            / "agents"
+            / "integration-probe-blender-asset-creator.md"
+        ).write_text(
+            "---\ndescription: Synthetic blender specialist for smoke coverage\n---\n",
+            encoding="utf-8",
+        )
+        blender_delegate_lookup = run_generated_tool(
+            blender_delegate_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {"ticket_id": blender_delegate_ticket["id"]},
+        )
+        if (
+            blender_delegate_lookup["transition_guidance"]["delegate_to_agent"]
+            != "blender-asset-creator"
+        ):
+            raise RuntimeError(
+                "ticket_lookup should delegate Blender-routed model-generation implementation tickets to blender-asset-creator when the repo exposes that specialist"
+            )
+        blocked_implementation_dest = workspace / "blocked-implementation-review-gate"
+        shutil.copytree(full_dest, blocked_implementation_dest)
+        seed_ready_bootstrap(blocked_implementation_dest)
+        blocked_manifest_path = blocked_implementation_dest / "tickets" / "manifest.json"
+        blocked_workflow_path = (
+            blocked_implementation_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        blocked_manifest = json.loads(blocked_manifest_path.read_text(encoding="utf-8"))
+        blocked_workflow = json.loads(blocked_workflow_path.read_text(encoding="utf-8"))
+        blocked_ticket = blocked_manifest["tickets"][0]
+        blocked_ticket["stage"] = "implementation"
+        blocked_ticket["status"] = "in_progress"
+        blocked_workflow["active_ticket"] = blocked_ticket["id"]
+        blocked_workflow["stage"] = "implementation"
+        blocked_workflow["status"] = "in_progress"
+        blocked_workflow["ticket_state"][blocked_ticket["id"]]["approved_plan"] = True
+        blocked_manifest_path.write_text(
+            json.dumps(blocked_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        blocked_workflow_path.write_text(
+            json.dumps(blocked_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        register_current_ticket_artifact(
+            blocked_implementation_dest,
+            ticket_id=blocked_ticket["id"],
+            kind="implementation",
+            stage="implementation",
+            relative_path=".opencode/state/implementations/setup-001-implementation-implementation.md",
+            summary="Synthetic blocked implementation artifact for review-gate coverage.",
+            content=(
+                "# Implementation Artifact\n\n"
+                "## Status: BLOCKED\n\n"
+                "**Blocker**: Managed bridge defect still prevents the implementation from continuing.\n\n"
+                "Command: godot4 --headless --path . --quit\n"
+                "Output:\n```text\nEXIT: 1\nbridge failure\n```\n"
+            ),
+        )
+        blocked_implementation_lookup = run_generated_tool(
+            blocked_implementation_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {"ticket_id": blocked_ticket["id"]},
+        )
+        if (
+            blocked_implementation_lookup["transition_guidance"]["next_action_tool"]
+            != "artifact_write"
+        ):
+            raise RuntimeError(
+                "ticket_lookup should keep a ticket in implementation when the current implementation artifact records a blocking result"
+            )
+        if blocked_implementation_lookup["transition_guidance"]["recommended_ticket_update"] is not None:
+            raise RuntimeError(
+                "ticket_lookup should not recommend review while the current implementation artifact is blocker-shaped"
+            )
+        blocked_review_dest = workspace / "blocked-review-recovery"
+        shutil.copytree(blocked_implementation_dest, blocked_review_dest)
+        blocked_review_manifest_path = blocked_review_dest / "tickets" / "manifest.json"
+        blocked_review_workflow_path = (
+            blocked_review_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        blocked_review_manifest = json.loads(
+            blocked_review_manifest_path.read_text(encoding="utf-8")
+        )
+        blocked_review_workflow = json.loads(
+            blocked_review_workflow_path.read_text(encoding="utf-8")
+        )
+        blocked_review_ticket = blocked_review_manifest["tickets"][0]
+        blocked_review_ticket["stage"] = "review"
+        blocked_review_ticket["status"] = "review"
+        blocked_review_workflow["active_ticket"] = blocked_review_ticket["id"]
+        blocked_review_workflow["stage"] = "review"
+        blocked_review_workflow["status"] = "review"
+        blocked_review_manifest_path.write_text(
+            json.dumps(blocked_review_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        blocked_review_workflow_path.write_text(
+            json.dumps(blocked_review_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        register_current_ticket_artifact(
+            blocked_review_dest,
+            ticket_id=blocked_review_ticket["id"],
+            kind="review",
+            stage="review",
+            relative_path=".opencode/state/reviews/setup-001-review-review.md",
+            summary="Synthetic approved review artifact atop a blocked implementation artifact.",
+            content=(
+                "# Review Artifact\n\n"
+                "Verdict: APPROVED\n\n"
+                "Command: godot4 --headless --path . --quit\n"
+                "Output:\n```text\nEXIT: 0\nreview approved\n```\n"
+            ),
+        )
+        blocked_review_lookup = run_generated_tool(
+            blocked_review_dest,
+            ".opencode/tools/ticket_lookup.ts",
+            {"ticket_id": blocked_review_ticket["id"]},
+        )
+        if blocked_review_lookup["transition_guidance"]["next_action_tool"] != "ticket_update":
+            raise RuntimeError(
+                "ticket_lookup should route review back to implementation when the current implementation artifact is blocker-shaped"
+            )
+        if (
+            blocked_review_lookup["transition_guidance"]["recommended_ticket_update"][
+                "stage"
+            ]
+            != "implementation"
+        ):
+            raise RuntimeError(
+                "ticket_lookup should not allow QA when review sits on top of a blocked implementation artifact"
             )
         remediation_combined_review_dest = workspace / "executed-remediation-combined-review"
         shutil.copytree(full_dest, remediation_combined_review_dest)
@@ -10611,6 +11496,183 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_reconcile should remove parent-linked split children after parent-authoritative reconciliation with historical replacement-source evidence"
             )
+        split_reconcile_alias_dest = workspace / "executed-ticket-reconcile-source-path-alias"
+        shutil.copytree(full_dest, split_reconcile_alias_dest)
+        seed_ready_bootstrap(split_reconcile_alias_dest)
+        split_reconcile_alias_manifest_path = (
+            split_reconcile_alias_dest / "tickets" / "manifest.json"
+        )
+        split_reconcile_alias_workflow_path = (
+            split_reconcile_alias_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        split_reconcile_alias_manifest = json.loads(
+            split_reconcile_alias_manifest_path.read_text(encoding="utf-8")
+        )
+        split_reconcile_alias_workflow = json.loads(
+            split_reconcile_alias_workflow_path.read_text(encoding="utf-8")
+        )
+        split_reconcile_alias_source_id = "EXEC-RECON-ALIAS-SRC"
+        split_reconcile_alias_child_id = "EXEC-RECON-ALIAS-CHILD"
+        split_reconcile_alias_manifest["tickets"].append(
+            {
+                "id": split_reconcile_alias_source_id,
+                "title": "Historical evidence owner with aliased current artifact path",
+                "wave": 2,
+                "lane": "remediation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "closeout",
+                "status": "done",
+                "depends_on": [],
+                "summary": "Completed historical ticket whose current review source path should satisfy reconciliation.",
+                "acceptance": ["Current source_path alias remains usable as reconciliation evidence."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "done",
+                "verification_state": "trusted",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        split_reconcile_alias_manifest["tickets"].append(
+            {
+                "id": split_reconcile_alias_child_id,
+                "title": "Synthetic stale split child backed by aliased evidence",
+                "wave": 3,
+                "lane": "remediation",
+                "parallel_safe": False,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "todo",
+                "depends_on": [],
+                "summary": "Open split child that should be superseded when ticket_reconcile receives a current source_path alias.",
+                "acceptance": ["Parent-authoritative reconciliation accepts current source_path evidence aliases."],
+                "decision_blockers": [],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "source_ticket_id": "SETUP-001",
+                "source_mode": "split_scope",
+                "split_kind": "parallel_independent",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        split_reconcile_alias_root_source = next(
+            ticket
+            for ticket in split_reconcile_alias_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        split_reconcile_alias_root_source["follow_up_ticket_ids"].append(
+            split_reconcile_alias_child_id
+        )
+        split_reconcile_alias_workflow["ticket_state"][split_reconcile_alias_source_id] = {
+            "approved_plan": False,
+            "reopen_count": 0,
+            "needs_reverification": False,
+        }
+        split_reconcile_alias_workflow["ticket_state"][split_reconcile_alias_child_id] = {
+            "approved_plan": False,
+            "reopen_count": 0,
+            "needs_reverification": False,
+        }
+        split_reconcile_alias_manifest_path.write_text(
+            json.dumps(split_reconcile_alias_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        split_reconcile_alias_workflow_path.write_text(
+            json.dumps(split_reconcile_alias_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        split_reconcile_alias_evidence_rel = (
+            ".opencode/state/reviews/exec-recon-alias-src-review-review.md"
+        )
+        run_generated_tool(
+            split_reconcile_alias_dest,
+            ".opencode/tools/artifact_write.ts",
+            {
+                "ticket_id": split_reconcile_alias_source_id,
+                "path": split_reconcile_alias_evidence_rel,
+                "kind": "review",
+                "stage": "review",
+                "content": "# Historical Review\n\nExact command: synthetic-check\n\nRaw output:\nPASS\n\nOverall result: PASS\n",
+            },
+        )
+        split_reconcile_alias_register = run_generated_tool(
+            split_reconcile_alias_dest,
+            ".opencode/tools/artifact_register.ts",
+            {
+                "ticket_id": split_reconcile_alias_source_id,
+                "path": split_reconcile_alias_evidence_rel,
+                "kind": "review",
+                "stage": "review",
+                "summary": "Historical review artifact proving the split child is stale via a current source_path alias.",
+            },
+        )
+        split_reconcile_alias_artifact = split_reconcile_alias_register["latest_artifact"]
+        if split_reconcile_alias_artifact["path"] == split_reconcile_alias_evidence_rel:
+            raise RuntimeError(
+                "artifact_register should snapshot aliased reconciliation evidence into history-backed storage before ticket_reconcile consumes it"
+            )
+        if split_reconcile_alias_artifact.get("source_path") != split_reconcile_alias_evidence_rel:
+            raise RuntimeError(
+                "artifact_register should preserve the current source_path alias for reconciliation evidence"
+            )
+        run_generated_tool(
+            split_reconcile_alias_dest,
+            ".opencode/tools/ticket_claim.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "owner_agent": "smoke-split-reconcile-alias",
+                "allowed_paths": [".opencode/state", "tickets"],
+                "write_lock": True,
+            },
+        )
+        split_reconcile_alias_args = {
+            "source_ticket_id": "SETUP-001",
+            "target_ticket_id": split_reconcile_alias_child_id,
+            "replacement_source_ticket_id": split_reconcile_alias_source_id,
+            "replacement_source_mode": "split_scope",
+            "evidence_artifact_path": split_reconcile_alias_evidence_rel,
+            "reason": "Synthetic stale split child should reconcile when evidence is provided as the current source_path alias emitted by artifact_register.",
+            "supersede_target": True,
+        }
+        run_generated_plugin_before(
+            split_reconcile_alias_dest,
+            ".opencode/plugins/stage-gate-enforcer.ts",
+            "ticket_reconcile",
+            split_reconcile_alias_args,
+        )
+        split_reconcile_alias_result = run_generated_tool(
+            split_reconcile_alias_dest,
+            ".opencode/tools/ticket_reconcile.ts",
+            split_reconcile_alias_args,
+        )
+        if split_reconcile_alias_result["target_ticket_id"] != split_reconcile_alias_child_id:
+            raise RuntimeError(
+                "ticket_reconcile should keep the split child target when reconciliation uses an aliased current source_path"
+            )
+        split_alias_reconciled_manifest = json.loads(
+            split_reconcile_alias_manifest_path.read_text(encoding="utf-8")
+        )
+        split_alias_reconciled_source = next(
+            ticket
+            for ticket in split_alias_reconciled_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        split_alias_reconciled_child = next(
+            ticket
+            for ticket in split_alias_reconciled_manifest["tickets"]
+            if ticket["id"] == split_reconcile_alias_child_id
+        )
+        if split_alias_reconciled_child["resolution_state"] != "superseded":
+            raise RuntimeError(
+                "ticket_reconcile should allow parent-authoritative supersession when the evidence path is the current source_path alias"
+            )
+        if split_reconcile_alias_child_id in split_alias_reconciled_source.get(
+            "follow_up_ticket_ids", []
+        ):
+            raise RuntimeError(
+                "ticket_reconcile should remove superseded split children after consuming aliased current source_path evidence"
+            )
         wildcard_lease_dest = workspace / "wildcard-write-lease"
         shutil.copytree(full_dest, wildcard_lease_dest)
         seed_ready_bootstrap(wildcard_lease_dest)
@@ -11237,7 +12299,6 @@ Overall Result: PASS
                     "#!/usr/bin/env python3",
                     "import sys",
                     'sys.stderr.write(\'SCRIPT ERROR: Parse Error: Identifier \"EnemyBrown\" not declared in the current scope.\\n\')',
-                    'sys.stderr.write(\'ERROR: Failed to load script \"res://scripts/wave_spawner.gd\" with error \"Parse error\".\\n\')',
                     "sys.exit(0)",
                 ]
             )
@@ -11312,16 +12373,13 @@ Overall Result: PASS
                 "command_override": ["python3 scripts/mock_reload_warning.py"],
             },
         )
-        if smoke_reload_warning_result["passed"] is not True:
+        if smoke_reload_warning_result["passed"] is not False:
             raise RuntimeError(
-                "smoke_test should treat exit-0 Godot class reload parse output as a non-blocking tooling warning"
+                "smoke_test should fail when exit-0 Godot class reload parse output records fatal parse diagnostics"
             )
-        if (
-            smoke_reload_warning_result["commands"][0]["failure_classification"]
-            != "tooling_parse_warning"
-        ):
+        if smoke_reload_warning_result["commands"][0]["failure_classification"] != "syntax_error":
             raise RuntimeError(
-                "smoke_test should classify exit-0 Godot class reload parse output as tooling_parse_warning"
+                "smoke_test should classify exit-0 Godot class reload parse output as syntax_error when fatal parse diagnostics are present"
             )
         smoke_reload_warning_artifact = executed_smoke_reload_warning_dest / str(
             smoke_reload_warning_result["smoke_test_artifact"]
@@ -11329,10 +12387,21 @@ Overall Result: PASS
         smoke_reload_warning_artifact_body = smoke_reload_warning_artifact.read_text(
             encoding="utf-8"
         )
-        if "Overall Result: PASS" not in smoke_reload_warning_artifact_body:
+        if "Overall Result: FAIL" not in smoke_reload_warning_artifact_body:
             raise RuntimeError(
-                "smoke_test should persist a passing artifact for the Godot class reload tooling warning path"
+                "smoke_test should persist a failing artifact for fatal Godot class reload parse diagnostics"
             )
+        workflow_warning_artifact = (
+            executed_smoke_reload_warning_dest
+            / ".opencode"
+            / "state"
+            / "artifacts"
+            / "synthetic-tooling-warning-smoke.md"
+        )
+        workflow_warning_artifact.write_text(
+            "# Smoke Test\n\n## Overall Result\n\nOverall Result: PASS\n\n## Commands\n\n### 1. synthetic warning\n\n- failure_classification: tooling_parse_warning\n",
+            encoding="utf-8",
+        )
         workflow_warning_check = subprocess.run(
             [
                 *node_command(),
@@ -11348,7 +12417,7 @@ Overall Result: PASS
                     "console.log(contradiction === null ? 'null' : contradiction);"
                 ),
                 str(executed_smoke_reload_warning_dest),
-                str(smoke_reload_warning_artifact),
+                str(workflow_warning_artifact),
             ],
             cwd=ROOT,
             check=False,
@@ -12102,6 +13171,28 @@ Overall Result: PASS
         if "WFLOW020" not in blocked_split_parent_codes:
             raise RuntimeError(
                 "A repo whose split parent is still marked blocked should emit WFLOW020"
+            )
+        remediation_deadlock_dest = workspace / "remediation-deadlock"
+        shutil.copytree(full_dest, remediation_deadlock_dest)
+        seed_open_parent_remediation_deadlock(remediation_deadlock_dest)
+        remediation_deadlock_audit = run_json(
+            [
+                sys.executable,
+                str(AUDIT),
+                str(remediation_deadlock_dest),
+                "--format",
+                "json",
+                "--no-diagnosis-pack",
+            ],
+            ROOT,
+        )
+        remediation_deadlock_codes = {
+            finding["code"]
+            for finding in remediation_deadlock_audit.get("findings", [])
+        }
+        if "WFLOW034" not in remediation_deadlock_codes:
+            raise RuntimeError(
+                "A repo whose open parent is blocked behind a sequential remediation split child should emit WFLOW034"
             )
 
         redirected_output_dest = workspace / "redirected-output"
@@ -13560,6 +14651,58 @@ Overall Result: PASS
         if refreshed_remediation_ticket.get("split_kind") != "parallel_independent":
             raise RuntimeError(
                 "apply_remediation_follow_up.py should refresh existing EXEC-REMED follow-up tickets to the current split_kind policy"
+            )
+        remediation_blender_manifest = (
+            remediation_follow_up_dest / "diagnosis" / "2099-01-01T00-00-01Z"
+            / "manifest.json"
+        )
+        remediation_blender_manifest.parent.mkdir(parents=True, exist_ok=True)
+        remediation_blender_manifest.write_text(
+            json.dumps(
+                {
+                    "ticket_recommendations": [
+                        {
+                            "id": "REMED-902",
+                            "route": "ticket-pack-builder",
+                            "title": "Repair Blender chaining on active parent",
+                            "description": "Remediate EXEC-BLENDER-001 by rerunning the saved-blend chain correctly.",
+                            "source_finding_code": "EXEC-BLENDER-001",
+                            "source_files": [
+                                "assets/pipeline.json",
+                                ".blender-mcp/audit/audit_2099-01-01.jsonl",
+                            ],
+                        }
+                    ]
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        remediation_blender_result = run_json(
+            [
+                sys.executable,
+                str(remediation_follow_up_script_path),
+                str(remediation_follow_up_dest),
+                "--diagnosis",
+                str(remediation_blender_manifest),
+            ],
+            ROOT,
+        )
+        if "REMED-902" not in remediation_blender_result.get("created_tickets", []):
+            raise RuntimeError(
+                "apply_remediation_follow_up.py should create EXEC-BLENDER follow-up tickets from diagnosis recommendations"
+            )
+        blender_follow_up_ticket = next(
+            ticket
+            for ticket in json.loads(
+                remediation_manifest_path.read_text(encoding="utf-8")
+            )["tickets"]
+            if ticket["id"] == "REMED-902"
+        )
+        if blender_follow_up_ticket.get("split_kind") != "parallel_independent":
+            raise RuntimeError(
+                "apply_remediation_follow_up.py should create open-parent EXEC-BLENDER follow-up tickets as parallel-independent split children"
             )
         if (
             refreshed_remediation_ticket.get("source_ticket_id")
@@ -15842,6 +16985,92 @@ Overall Result: PASS
                 if closed_remediation_pack["manifest"]["recommended_next_step"] != "subject_repo_source_follow_up":
                     raise RuntimeError(
                         "Diagnosis manifest should route closed remediation-evidence gaps to subject_repo_source_follow_up"
+                    )
+
+            with tempfile.TemporaryDirectory(prefix="scafforge-disposition-fixed-godot-") as temp_dir:
+                temp_root = Path(temp_dir) / "repo"
+                temp_root.mkdir(parents=True, exist_ok=True)
+                (temp_root / "tickets").mkdir(parents=True, exist_ok=True)
+                (temp_root / ".opencode" / "tools").mkdir(parents=True, exist_ok=True)
+                (temp_root / "tickets" / "manifest.json").write_text(
+                    json.dumps(
+                        {
+                            "version": 3,
+                            "project": "Synthetic repo",
+                            "active_ticket": "RELEASE-001",
+                            "tickets": [
+                                {
+                                    "id": "FINISH-VALIDATE-001",
+                                    "lane": "finish-validation",
+                                    "status": "done",
+                                    "resolution_state": "done",
+                                },
+                                {
+                                    "id": "RELEASE-001",
+                                    "lane": "release-readiness",
+                                    "status": "done",
+                                    "resolution_state": "done",
+                                },
+                            ],
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                (temp_root / ".opencode" / "tools" / "smoke_test.ts").write_text(
+                    "type Failure = \"tooling_parse_warning\" | \"none\"\n"
+                    "function commandBlocksPass(command: { failure_classification?: Failure | null }) {\n"
+                    "  return command.failure_classification === \"tooling_parse_warning\"\n"
+                    "}\n"
+                    "// failed to load script\n",
+                    encoding="utf-8",
+                )
+                diagnosis_dest = Path(temp_dir) / "diagnosis"
+                fixed_godot_pack = audit_reporting_module.emit_diagnosis_pack(
+                    temp_root,
+                    [
+                        SimpleNamespace(
+                            code="EXEC-GODOT-006",
+                            severity="error",
+                            problem="Synthetic historical Godot smoke false-pass finding after package repair.",
+                            root_cause="Synthetic repo already has the fixed smoke-test tool but still carries stale historical false-pass evidence.",
+                            files=[".opencode/tools/smoke_test.ts"],
+                            safer_pattern="Route the remaining bad runtime state into source follow-up once the fixed smoke-test guard is installed.",
+                            evidence=["synthetic fixed godot smoke evidence"],
+                            provenance="script",
+                        )
+                    ],
+                    diagnosis_dest,
+                    [],
+                    ctx=audit_reporting_module.AuditReportingContext(
+                        package_root=ROOT,
+                        current_package_commit=package_commit(),
+                    ),
+                )
+                fixed_godot_bundle = fixed_godot_pack["manifest"]["disposition_bundle"]
+                fixed_godot_entry = next(
+                    item
+                    for item in fixed_godot_bundle["findings"]
+                    if item["code"] == "EXEC-GODOT-006"
+                )
+                if fixed_godot_entry["disposition_class"] != "source_follow_up":
+                    raise RuntimeError(
+                        "Audit should downgrade EXEC-GODOT-006 to source_follow_up once the repo already has the fixed smoke-test guard installed"
+                    )
+                fixed_recommendation = fixed_godot_pack["manifest"]["ticket_recommendations"][0]
+                if fixed_recommendation["route"] != "ticket-pack-builder":
+                    raise RuntimeError(
+                        "Diagnosis ticket recommendations should route repaired-smoke EXEC-GODOT-006 findings through ticket-pack-builder once the repo already has the fixed smoke-test guard"
+                    )
+                if fixed_godot_pack["manifest"]["recommended_next_step"] != "subject_repo_source_follow_up":
+                    raise RuntimeError(
+                        "Diagnosis manifest should route repaired-smoke EXEC-GODOT-006 findings to subject_repo_source_follow_up"
+                    )
+                fixed_report_four = (diagnosis_dest / "04-live-repo-repair-plan.md").read_text(encoding="utf-8")
+                if "No safe managed-surface repair is still required from the current findings." not in fixed_report_four:
+                    raise RuntimeError(
+                        "Report four should stop demanding another managed repair once EXEC-GODOT-006 only reflects stale source follow-up after the smoke guard is fixed"
                     )
 
             advisory_classes = run_managed_repair_module.classify_verification_findings(

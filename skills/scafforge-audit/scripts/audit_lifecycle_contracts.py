@@ -525,11 +525,11 @@ def audit_smoke_test_artifact_bypass(
             f"{ctx.normalize_path(stage_gate, root)} does not block generic artifact_register for smoke-test stages."
         )
     if (
-        "Do not fabricate a PASS artifact through generic artifact tools."
+        "Do not fabricate the expected smoke-test result through generic artifact tools."
         not in ticket_lookup_text
     ):
         evidence.append(
-            f"{ctx.normalize_path(ticket_lookup, root)} does not warn that smoke-test PASS proof must come from `smoke_test` rather than generic artifact tools."
+            f"{ctx.normalize_path(ticket_lookup, root)} does not warn that the expected smoke-test result must come from `smoke_test` rather than generic artifact tools."
         )
 
     if not evidence:

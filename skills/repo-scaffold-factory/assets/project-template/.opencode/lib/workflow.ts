@@ -1138,7 +1138,11 @@ export function historicalArtifacts(ticket: Ticket, options: Omit<ArtifactMatche
 }
 export function currentRegistryArtifact(registry: ArtifactRegistry, artifactPath: string): ArtifactRegistryEntry | undefined {
   const normalized = normalizeRepoPath(artifactPath)
-  return [...registry.artifacts].reverse().find((artifact) => artifact.path === normalized && artifact.trust_state === "current")
+  return [...registry.artifacts].reverse().find(
+    (artifact) =>
+      artifact.trust_state === "current"
+      && (artifact.path === normalized || artifact.source_path === normalized),
+  )
 }
 export function currentStageArtifactForAlias(ticket: Ticket, stage: string, kind: string, artifactPath: string): Artifact | undefined {
   const normalized = normalizeRepoPath(artifactPath)
@@ -1171,6 +1175,16 @@ function normalizeArtifactVerdictToken(token: string): ArtifactVerdict | null {
 }
 export function isRemediationTicket(ticket: Pick<Ticket, "id" | "lane">): boolean {
   return ticket.lane.trim().toLowerCase() === "remediation" || ticket.id.trim().toUpperCase().startsWith("REMED-")
+}
+const BLOCKING_SMOKE_EXPECTATION_PATTERNS = [
+  /\bsmoke[_ -]?test\b.*\bfail(?:s|ing)?\b/i,
+  /\bfail(?:s|ing)?\b.*\bsmoke[_ -]?test\b/i,
+]
+export function ticketExpectsBlockingSmokeResult(ticket: Pick<Ticket, "acceptance">): boolean {
+  return Array.isArray(ticket.acceptance)
+    && ticket.acceptance.some(
+      (item) => typeof item === "string" && BLOCKING_SMOKE_EXPECTATION_PATTERNS.some((pattern) => pattern.test(item)),
+    )
 }
 const ARTIFACT_VERDICT_LABEL_PATTERN =
   "(?:overall(?:\\s+qa)?(?:\\s+(?:result|verdict))?|qa\\s+(?:result|verdict)|review\\s+(?:result|verdict)|blocker\\s+or\\s+approval\\s+signal|approval\\s+signal|decision|verdict|result)"
@@ -1321,6 +1335,13 @@ export async function validateImplementationArtifactEvidence(ticket: Ticket, roo
   const artifact = latestArtifact(ticket, { stage: "implementation", trust_state: "current" })
   if (!artifact) return "Cannot move to review before an implementation artifact exists."
   const content = await readArtifactContent(artifact, root)
+  const verdict = extractArtifactVerdict(content).verdict
+  if (
+    isBlockingArtifactVerdict(verdict)
+    || /(?:^|\n)##\s*Status:\s*(?:BLOCKED|FAIL|REJECT)\b/i.test(content)
+  ) {
+    return "Current implementation artifact records a blocking result. Keep the ticket in implementation and replace or retire the stale blocker artifact before review."
+  }
   return hasExecutionEvidence(content) ? null : "Implementation artifact must include concrete command output (for example compile, syntax, import-check, headless, or export proof) before review."
 }
 export async function validateReviewArtifactEvidence(ticket: Ticket, root = rootPath()): Promise<string | null> {
@@ -1349,7 +1370,13 @@ export async function validateSmokeTestArtifactEvidence(ticket: Ticket, root = r
   if (!hasExecutionEvidence(content)) return "Smoke-test artifact must include raw command output before closeout."
   const contradiction = smokeArtifactPassContradictionReason(content)
   if (contradiction) return `Smoke-test artifact contradicts its PASS result: ${contradiction}.`
-  return isPassingArtifactVerdict(extractArtifactVerdict(content).verdict) || SMOKE_PASS_RESULT_PATTERN.test(content)
+  const verdict = extractArtifactVerdict(content).verdict
+  if (ticketExpectsBlockingSmokeResult(ticket)) {
+    return isBlockingArtifactVerdict(verdict)
+      ? null
+      : "Smoke-test artifact must record an explicit FAIL, REJECT, or BLOCKED result before closeout because this ticket's acceptance requires blocking smoke-test proof."
+  }
+  return isPassingArtifactVerdict(verdict) || SMOKE_PASS_RESULT_PATTERN.test(content)
     ? null
     : "Smoke-test artifact must record an explicit PASS result before closeout."
 }

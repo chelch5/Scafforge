@@ -581,12 +581,13 @@ function isConfigurationErrorOutput(output: string): boolean {
 function isGodotFatalDiagnosticOutput(output: string): boolean {
   return /SCRIPT ERROR:.*(?:not declared in the current scope|not found in base self|could not parse global class|could not resolve class)/i.test(output)
     || /Parse Error:\s*(?:Could not parse global class|Could not resolve class)/i.test(output)
-    || /Failed to load script "res:\/\//i.test(output)
+    || /Failed to load script/i.test(output)
 }
 
 function isClassNameReloadParseWarning(output: string, exitCode: number): boolean {
-  return exitCode === 0
-    && /Could not parse global class/i.test(output)
+  if (exitCode !== 0) return false
+  if (isGodotFatalDiagnosticOutput(output)) return false
+  return /Could not parse global class/i.test(output)
     && /Could not resolve class/i.test(output)
     && /GDScript::reload/i.test(output)
 }
@@ -603,8 +604,8 @@ function classifyCommandFailure(args: {
   if (args.missingExecutable) return "missing_executable"
   if (args.blockedByPermissions) return "permission_restriction"
   if (args.exitCode === 0) {
-    if (isClassNameReloadParseWarning(output, args.exitCode)) return "tooling_parse_warning"
     if (isGodotFatalDiagnosticOutput(output) || isSyntaxErrorOutput(output)) return "syntax_error"
+    if (isClassNameReloadParseWarning(output, args.exitCode)) return "tooling_parse_warning"
     return undefined
   }
   if (isSyntaxErrorOutput(output)) return "syntax_error"

@@ -1,6 +1,7 @@
 // @ts-ignore - the generated runtime mirrors @opencode-ai/plugin during tool execution.
 import { tool } from "@opencode-ai/plugin"
 import {
+  evaluateBootstrapState,
   loadManifest,
   loadWorkflowState,
   type RepairFollowOnState,
@@ -107,6 +108,10 @@ export default tool({
     workflow.process_last_change_summary = changeSummary
     workflow.pending_process_verification = true
     workflow.repair_follow_on = normalizeRepairFollowOnPayload(repairFollowOn, workflow.repair_follow_on, { processVersion, changedAt })
+    const evaluatedBootstrap = await evaluateBootstrapState(workflow.bootstrap)
+    workflow.bootstrap = evaluatedBootstrap.status === "ready"
+      ? { ...evaluatedBootstrap, status: "stale" }
+      : evaluatedBootstrap
 
     // Auto-resolve managed_blocked only when the cycle is fully clean.
     const rfo = workflow.repair_follow_on

@@ -149,6 +149,18 @@
 - result: the repo can look clean enough to resume normal development even though historical done tickets still need trust restoration under the newer workflow contract
 - why agents miss it: the canonical workflow state does record the verification window, so shallow audits can assume the derived restart and routing surfaces stayed in sync
 
+## Clearable process-verification deadlock (SESSION008 — transcript proves the legal clear path still fails)
+
+- the supporting log shows `ticket_lookup.process_verification.clearable_now = true`, the coordinator calls metadata-only `ticket_update(..., pending_process_verification: false)` on the current writable ticket, and the installed tool still throws a lifecycle transition error such as `Cannot move X to implementation from implementation`
+- result: the repo exposes a supposedly legal cleanup action that cannot actually execute, so agents stop on a fake lifecycle contradiction instead of clearing the stale global verification flag
+- why agents miss it: surface-only audit sees the documented clear path in `ticket_lookup`, `ticket_update`, and the prompts, but without transcript evidence it cannot tell that the installed tool still routes the no-op cleanup through stage-entry validation
+
+## Blender worker misrouting (SESSION009 — transcript proves a Blender-routed ticket stayed on the wrong worker)
+
+- the supporting log says Blender scene-editing tools were unavailable in the current implementation toolset, yet the same transcript names `blender-asset-creator` as the correct next worker before any bridge defect should be accepted
+- result: a Blender-routed asset ticket burns time on the generic implementer or lane-executor, then reports a fake MCP/tool-availability blocker even though the repo already exposes a dedicated Blender specialist
+- why agents miss it: prompt review alone can look correct because the team-leader doc names the Blender specialist, but the installed `ticket_lookup.transition_guidance.delegate_to_agent` still routes implementation to the generic worker unless transcript evidence exposes the contradiction
+
 ## Restart-surface drift (WFLOW010 — derived restart files contradict canonical state)
 
 - `START-HERE.md`, `.opencode/state/context-snapshot.md`, or `.opencode/state/latest-handoff.md` disagrees with `tickets/manifest.json` or `.opencode/state/workflow-state.json` about the active ticket, handoff status, bootstrap status, proof artifact, pending process verification, repair follow-on state, state revision, or lane-lease presence
