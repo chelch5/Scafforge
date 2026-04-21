@@ -3461,6 +3461,30 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     )
     require_contains(
         findings,
+        ROOT / "skills" / "asset-pipeline" / "SKILL.md",
+        "`source-open-curated`",
+    )
+    require_contains(
+        findings,
+        ROOT / "skills" / "asset-pipeline" / "SKILL.md",
+        "`assets/manifest.json`",
+    )
+    require_contains(
+        findings,
+        ROOT / "skills" / "asset-pipeline" / "SKILL.md",
+        "`assets/qa/import-report.json`",
+    )
+    require_contains(
+        findings,
+        ROOT / "skills" / "asset-pipeline" / "SKILL.md",
+        "`.opencode/meta/asset-provenance-lock.json`",
+    )
+    require_script_help_runs(
+        findings,
+        ROOT / "skills" / "asset-pipeline" / "scripts" / "validate_provenance.py",
+    )
+    require_contains(
+        findings,
         TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
         "do not substitute an unrelated brief from `assets/briefs/`",
     )

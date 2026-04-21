@@ -230,11 +230,15 @@
       "owner": "asset-orchestration",
       "modes": ["configure", "configure_if_needed"],
       "inputs": ["canonical brief", "project type", "art style", "platform constraints"],
-      "outputs": ["pipeline.json", "asset directory structure", "PROVENANCE.md", "asset briefs", "blender-mcp subagent config"],
+      "outputs": ["requirements.json", "pipeline.json", "manifest.json", "asset QA surfaces", "PROVENANCE.md", "asset briefs", "blender-mcp subagent config"],
       "required_outputs": [
+        "assets/requirements.json",
         "assets/pipeline.json",
+        "assets/manifest.json",
+        "assets/qa/import-report.json",
+        "assets/qa/license-report.json",
         "assets/PROVENANCE.md",
-        "asset directory structure"
+        ".opencode/meta/asset-provenance-lock.json"
       ],
       "upstreams": ["repo-scaffold-factory", "project-skill-bootstrap"],
       "downstreams": ["ticket-pack-builder", "handoff-brief"]

@@ -248,7 +248,10 @@ def asset_pipeline_surface_findings(repo_root: Path) -> list[object]:
     if not _asset_pipeline_expected(repo_root):
         return []
     required_paths = (
+        "assets/requirements.json",
         "assets/pipeline.json",
+        "assets/manifest.json",
+        "assets/ATTRIBUTION.md",
         "assets/PROVENANCE.md",
         "assets/briefs",
         "assets/models",
@@ -257,10 +260,14 @@ def asset_pipeline_surface_findings(repo_root: Path) -> list[object]:
         "assets/fonts",
         "assets/themes",
         "assets/previews",
+        "assets/workflows",
+        "assets/qa",
         "assets/workfiles",
         "assets/licenses",
-        "assets/import-reports",
+        "assets/qa/import-report.json",
+        "assets/qa/license-report.json",
         ".opencode/meta/asset-pipeline-bootstrap.json",
+        ".opencode/meta/asset-provenance-lock.json",
     )
     missing: list[str] = []
     for relative in required_paths:
@@ -268,7 +275,15 @@ def asset_pipeline_surface_findings(repo_root: Path) -> list[object]:
         if not path.exists():
             missing.append(relative)
     invalid: list[str] = []
-    for relative in ("assets/pipeline.json", ".opencode/meta/asset-pipeline-bootstrap.json"):
+    for relative in (
+        "assets/requirements.json",
+        "assets/pipeline.json",
+        "assets/manifest.json",
+        "assets/qa/import-report.json",
+        "assets/qa/license-report.json",
+        ".opencode/meta/asset-pipeline-bootstrap.json",
+        ".opencode/meta/asset-provenance-lock.json",
+    ):
         path = repo_root / relative
         if not path.exists():
             continue
@@ -295,10 +310,9 @@ def asset_pipeline_surface_findings(repo_root: Path) -> list[object]:
                 "Game repos need deterministic asset pipeline structure, provenance tracking, and route metadata so later "
                 "skills can configure asset work without improvising their own repo layout."
             ),
-            files=missing or ["assets/pipeline.json"],
+            files=missing or ["assets/manifest.json"],
             safer_pattern=(
-                "Seed assets/pipeline.json, assets/PROVENANCE.md, the asset subdirectories, and "
-                ".opencode/meta/asset-pipeline-bootstrap.json during scaffold generation."
+                "Seed the canonical asset requirements, pipeline, manifest, QA, provenance, attribution, and lock surfaces during scaffold generation."
             ),
             evidence=evidence,
         )

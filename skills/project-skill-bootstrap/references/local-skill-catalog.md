@@ -60,6 +60,13 @@ The default full-orchestration profile should expose these lanes, but heavier pa
 - process-version and migration verification state
 - unused or never-seen tool/agent/skill surfaces
 
+## asset-workflow
+
+- `assets/requirements.json`, `assets/pipeline.json`, and `assets/manifest.json` as the canonical asset truth stack when the repo is asset-heavy
+- source-route versus pipeline-stage distinctions for weaker-model-safe asset routing
+- `assets/workflows/`, `assets/previews/`, and `assets/qa/` usage for machine-checkable import and compliance proof
+- `.opencode/meta/asset-provenance-lock.json` as the process-contract lock for asset truth
+
 ## research-delegation
 
 - read-only background research patterns

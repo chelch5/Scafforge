@@ -122,12 +122,12 @@ When the canonical brief includes a Product Finish Contract (section 13) that fo
 
 Do not synthesize a finish-pipeline skill when the finish contract explicitly allows placeholder or procedural output as final output.
 
-When `.opencode/meta/asset-pipeline-bootstrap.json` exists, treat it as the canonical machine-readable summary of the repo's seeded asset routes. Use it to decide whether the repo needs synthesized skills such as:
+When `.opencode/meta/asset-pipeline-bootstrap.json` exists, treat it as the canonical machine-readable summary of the repo's seeded asset routes and asset-truth surfaces. Use it to decide whether the repo needs synthesized skills such as:
 - `asset-description`
 - `blender-mcp-workflow`
 - a stack-specific finish-pipeline or game-content skill
 
-Those synthesized skills must reference the actual seeded repo surfaces (`assets/pipeline.json`, `assets/PROVENANCE.md`, `assets/briefs/`) instead of re-describing a hypothetical directory layout.
+Those synthesized skills must reference the actual seeded repo surfaces (`assets/requirements.json`, `assets/pipeline.json`, `assets/manifest.json`, `assets/workflows/`, `assets/qa/`, `assets/PROVENANCE.md`, `assets/briefs/`) instead of re-describing a hypothetical directory layout.
 When the metadata's `required_skills` includes one of these synthesized skills, that skill is mandatory output for the current generation or repair pass.
 When the metadata's `suggested_skills` includes one of these synthesized skills, treat it as required output unless newer repo evidence proves the route no longer applies.
 
@@ -136,7 +136,7 @@ When synthesizing **`blender-mcp-workflow`** for repos that route assets through
 - require `output_blend` on every mutating call and require the next mutating call to reuse the returned `persistence.saved_blend` as `input_blend`
 - tell agents to stop and retry the same step when a mutating response is ephemeral, omits `output_blend`, or returns no `persistence.saved_blend`
 - require a first-chain proof before any repo declares a Blender-MCP bridge defect: `project_initialize` must save a `.blend`, the next mutating call must reuse that saved path as `input_blend`, and `.blender-mcp/audit/*.jsonl` must show non-null `input_blend` / `output_blend` on the recorded `job_start`
-- use the seeded repo asset surfaces (`assets/briefs/`, `assets/models/`, `assets/PROVENANCE.md`) and the actual MCP tool names present in the repo
+- use the seeded repo asset surfaces (`assets/briefs/`, `assets/models/`, `assets/workflows/`, `assets/manifest.json`, `assets/qa/`, `assets/PROVENANCE.md`) and the actual MCP tool names present in the repo
 - tell agents to use the repo's configured `blender_agent` MCP entry from `opencode.jsonc` rather than inventing an ad hoc launch command when the managed MCP surface already exists
 - classify inline Python as a blocker unless `environment_probe` or current config evidence shows it is enabled
 - avoid invented session-based guidance such as `blender_session_*` tools unless those tools are actually present and documented in the repo

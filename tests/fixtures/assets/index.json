@@ -1,0 +1,20 @@
+{
+  "fixture_version": 1,
+  "source_repo": "Scafforge synthetic assets",
+  "families": [
+    {
+      "slug": "mixed-asset-truth",
+      "title": "Mixed asset truth and QA contract",
+      "flow": "validation",
+      "invariant_focus": [
+        "mixed-source manifest coverage",
+        "machine-checkable provenance and QA"
+      ],
+      "expected_coverage": [
+        "integration:asset-fixtures",
+        "validator:validate_provenance"
+      ],
+      "notes": "Synthetic fixture proving sourced, procedural, and DCC-authored assets can coexist in one canonical manifest."
+    }
+  ]
+}

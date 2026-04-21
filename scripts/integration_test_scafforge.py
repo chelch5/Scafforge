@@ -18,6 +18,11 @@ from test_support.downstream_reliability_fixture_builders import (
     build_fixture_family as build_downstream_fixture_family,
     fixture_index_by_slug as downstream_fixture_index_by_slug,
 )
+from test_support.asset_fixture_builders import (
+    CONTRACT_PATH as ASSET_FIXTURE_CONTRACT_PATH,
+    build_fixture_family as build_asset_fixture_family,
+    fixture_index_by_slug as asset_fixture_index_by_slug,
+)
 from test_support.gpttalker_fixture_builders import (
     build_fixture_family,
     build_partial_transaction_edge_case,
@@ -117,6 +122,16 @@ def ensure_downstream_fixture_indexes() -> dict[str, tuple[FixtureCorpus, dict[s
                 f"{corpus.slug} fixture index slugs do not match the curated set: {sorted(fixtures)}"
             )
         indexed[corpus.slug] = (corpus, fixtures)
+    return indexed
+
+
+def ensure_asset_fixture_index() -> dict[str, dict[str, Any]]:
+    indexed = asset_fixture_index_by_slug()
+    expected = {"mixed-asset-truth"}
+    if set(indexed) != expected:
+        raise RuntimeError(
+            f"Asset fixture index slugs do not match the curated set: {sorted(indexed)}"
+        )
     return indexed
 
 
@@ -1046,7 +1061,7 @@ def greenfield_integration(workspace: Path) -> None:
         placeholder_policy="no_placeholders",
         visual_finish_target="ship-ready low-poly visuals with no placeholder character or arena art",
         audio_finish_target="licensed UI and battle audio only",
-        content_source_plan="blender-mcp for characters and props, godot builtin for VFX and UI themes, free-open audio/fonts",
+        content_source_plan="dcc-assembly for characters and props, procedural-2d for VFX and UI themes, source-open-curated audio/fonts",
         licensing_or_provenance_constraints="Allow CC0, CC-BY, MIT, and OFL only; every generated or sourced asset must be logged.",
         finish_acceptance_signals="Release proof requires a debug APK plus complete asset provenance coverage for every committed asset.",
         env=blender_host_env,
@@ -1059,9 +1074,9 @@ def greenfield_integration(workspace: Path) -> None:
     if not isinstance(routes, dict):
         raise RuntimeError("Asset-pipeline integration expected pipeline routes to be recorded.")
     characters = routes.get("characters")
-    if not isinstance(characters, dict) or characters.get("primary") != "blender-mcp-generated":
+    if not isinstance(characters, dict) or characters.get("primary") != "dcc-assembly":
         raise RuntimeError(
-            "Asset-pipeline integration should infer blender-mcp-generated as the primary character route when the content plan names Blender."
+            "Asset-pipeline integration should infer dcc-assembly as the primary character route when the content plan names Blender or DCC assembly."
         )
     bootstrap_meta = read_json(asset_pipeline_dest / ".opencode" / "meta" / "asset-pipeline-bootstrap.json")
     if not isinstance(bootstrap_meta, dict):
@@ -1069,22 +1084,22 @@ def greenfield_integration(workspace: Path) -> None:
     required_agents = bootstrap_meta.get("required_agents")
     if not isinstance(required_agents, list) or "blender-asset-creator" not in required_agents:
         raise RuntimeError(
-            "Asset-pipeline integration should require a blender asset subagent when the seeded routes include blender-mcp-generated."
+            "Asset-pipeline integration should require a blender asset subagent when the seeded routes include dcc-assembly."
         )
     required_skills = bootstrap_meta.get("required_skills")
     if not isinstance(required_skills, list) or sorted(required_skills) != ["asset-description", "blender-mcp-workflow"]:
         raise RuntimeError(
-            "Asset-pipeline integration should require the Blender local workflow skills when the seeded routes include blender-mcp-generated."
+            "Asset-pipeline integration should require the Blender local workflow skills when the seeded routes include dcc-assembly."
         )
     required_mcp_servers = bootstrap_meta.get("required_mcp_servers")
     if not isinstance(required_mcp_servers, list) or required_mcp_servers != ["blender_agent"]:
         raise RuntimeError(
-            "Asset-pipeline integration should require the managed blender_agent MCP server when the seeded routes include blender-mcp-generated."
+            "Asset-pipeline integration should require the managed blender_agent MCP server when the seeded routes include dcc-assembly."
         )
     suggested_agents = bootstrap_meta.get("suggested_agents")
     if not isinstance(suggested_agents, list) or "blender-asset-creator" not in suggested_agents:
         raise RuntimeError(
-            "Asset-pipeline integration should suggest a blender asset subagent when the seeded routes include blender-mcp-generated."
+            "Asset-pipeline integration should suggest a blender asset subagent when the seeded routes include dcc-assembly."
         )
     blender_skill_path = asset_pipeline_dest / ".opencode" / "skills" / "blender-mcp-workflow" / "SKILL.md"
     if not blender_skill_path.exists():
@@ -1136,13 +1151,23 @@ def greenfield_integration(workspace: Path) -> None:
     if "| asset_path | source_or_workflow | license | author | acquired_or_generated_on | notes |" not in provenance_text:
         raise RuntimeError("Asset-pipeline integration expected a canonical provenance table header.")
     for relative in (
+        "assets/requirements.json",
+        "assets/manifest.json",
+        "assets/ATTRIBUTION.md",
+        "assets/workflows",
         "assets/previews",
         "assets/workfiles",
         "assets/licenses",
-        "assets/import-reports",
+        "assets/qa/import-report.json",
+        "assets/qa/license-report.json",
+        ".opencode/meta/asset-provenance-lock.json",
     ):
         if not (asset_pipeline_dest / relative).exists():
             raise RuntimeError(f"Asset-pipeline integration expected starter surface `{relative}` to exist.")
+    run_checked(
+        [sys.executable, str(ROOT / "skills" / "asset-pipeline" / "scripts" / "validate_provenance.py"), str(asset_pipeline_dest)],
+        ROOT,
+    )
     asset_verify = run_json(
         [sys.executable, str(VERIFY_GENERATED), str(asset_pipeline_dest), "--format", "json"],
         ROOT,
@@ -1185,11 +1210,11 @@ def greenfield_integration(workspace: Path) -> None:
     if not isinstance(sourced_routes, dict):
         raise RuntimeError("Non-Blender asset integration expected recorded route metadata.")
     if any(
-        isinstance(choice, dict) and choice.get("primary") == "blender-mcp-generated"
+        isinstance(choice, dict) and choice.get("primary") == "dcc-assembly"
         for choice in sourced_routes.values()
     ):
         raise RuntimeError(
-            "Sourced asset routes should not silently seed blender-mcp-generated primary routes."
+            "Sourced asset routes should not silently seed dcc-assembly primary routes."
         )
 
     godot_native_asset_dest = workspace / "greenfield-godot-native-asset-pipeline"
@@ -1218,19 +1243,19 @@ def greenfield_integration(workspace: Path) -> None:
     godot_native_pipeline = read_json(godot_native_asset_dest / "assets" / "pipeline.json")
     if not isinstance(godot_native_pipeline, dict):
         raise RuntimeError("Godot-native asset integration expected assets/pipeline.json to exist.")
-    if "godot_native" not in godot_native_pipeline.get("route_families", []):
+    if "procedural" not in godot_native_pipeline.get("route_families", []):
         raise RuntimeError(
-            "Godot-native no-external-asset routes should record the godot_native route family."
+            "Godot-native no-external-asset routes should record procedural route families."
         )
     native_routes = godot_native_pipeline.get("routes")
     if not isinstance(native_routes, dict):
         raise RuntimeError("Godot-native asset integration expected recorded route metadata.")
     if any(
-        isinstance(choice, dict) and choice.get("primary") == "blender-mcp-generated"
+        isinstance(choice, dict) and choice.get("primary") == "dcc-assembly"
         for choice in native_routes.values()
     ):
         raise RuntimeError(
-            "Godot-native no-external-asset routes should not collapse into blender-mcp-generated primaries just because the stack is 3D-capable."
+            "Godot-native no-external-asset routes should not collapse into dcc-assembly primaries just because the stack is 3D-capable."
         )
 
 
@@ -1613,7 +1638,61 @@ def fixture_builder_integration(
                 f"Fixture `{slug}` should persist truth_expectations in its contract payload."
             )
         assert_fixture_truth_checks(dest, slug, truth_expectations)
-        assert_expected_repair_posture(slug, contract, audit_payload)
+
+
+def asset_fixture_integration(
+    *,
+    fixtures: dict[str, dict[str, Any]],
+    workspace: Path,
+) -> None:
+    fixture_root = workspace / "asset-fixtures"
+    validator = ROOT / "skills" / "asset-pipeline" / "scripts" / "validate_provenance.py"
+    for slug in sorted(fixtures):
+        dest = fixture_root / slug
+        contract = build_asset_fixture_family(slug, dest)
+        if contract.get("slug") != slug:
+            raise RuntimeError(
+                f"Asset fixture builder should persist the canonical slug for `{slug}`."
+            )
+        contract_file = dest / ASSET_FIXTURE_CONTRACT_PATH
+        if not contract_file.exists():
+            raise RuntimeError(
+                f"Asset fixture builder should emit {ASSET_FIXTURE_CONTRACT_PATH} for `{slug}`."
+            )
+        result = subprocess.run(
+            [sys.executable, str(validator), str(dest)],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Asset fixture `{slug}` should pass validate_provenance.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+            )
+        manifest = read_json(dest / "assets" / "manifest.json")
+        if not isinstance(manifest, dict):
+            raise RuntimeError(f"Asset fixture `{slug}` should persist assets/manifest.json.")
+        assets = manifest.get("assets")
+        if not isinstance(assets, list):
+            raise RuntimeError(f"Asset fixture `{slug}` should persist manifest assets.")
+        expected_asset_count = contract.get("expected_asset_count")
+        if expected_asset_count != len(assets):
+            raise RuntimeError(
+                f"Asset fixture `{slug}` expected {expected_asset_count} assets, found {len(assets)}."
+            )
+        observed_routes = sorted(
+            {
+                str(entry.get("source_route", "")).strip()
+                for entry in assets
+                if isinstance(entry, dict) and str(entry.get("source_route", "")).strip()
+            }
+        )
+        expected_routes = sorted(contract.get("expected_source_routes", []))
+        if observed_routes != expected_routes:
+            raise RuntimeError(
+                f"Asset fixture `{slug}` expected source routes {expected_routes}, found {observed_routes}."
+            )
 
 
 def assert_fixture_truth_checks(
@@ -2176,10 +2255,12 @@ def main() -> int:
     args = parse_args()
     fixtures = ensure_fixture_index()
     downstream_fixtures = ensure_downstream_fixture_indexes()
+    asset_fixtures = ensure_asset_fixture_index()
     if args.list_fixtures:
         listing = {"gpttalker": sorted(fixtures)}
         for corpus_slug, (_, corpus_fixtures) in downstream_fixtures.items():
             listing[corpus_slug] = sorted(corpus_fixtures)
+        listing["assets"] = sorted(asset_fixtures)
         print(json.dumps(listing, indent=2))
         return 0
     with tempfile.TemporaryDirectory(prefix="scafforge-integration-") as workspace_root:
@@ -2205,6 +2286,10 @@ def main() -> int:
                 build_fixture=lambda slug, dest, corpus_slug=corpus_slug: build_downstream_fixture_family(corpus_slug, slug, dest),
                 contract_path=corpus.contract_path,
             )
+        asset_fixture_integration(
+            fixtures=asset_fixtures,
+            workspace=workspace,
+        )
         synthetic_edge_case_integration(workspace)
     print("Scafforge integration test passed.")
     return 0

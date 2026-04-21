@@ -57,10 +57,14 @@ The script copies files from `assets/project-template/` and substitutes these pl
 Output includes: README.md, AGENTS.md, START-HERE.md, docs/, tickets/, opencode.jsonc, .opencode/ (agents, tools, plugins, commands, skills, config, state), and .opencode/meta/bootstrap-provenance.json.
 
 For Godot Android game stacks, the script also seeds the base asset-pipeline surfaces so later skills start from a real repo layout instead of prose-only guidance:
+- `assets/requirements.json`
 - `assets/pipeline.json`
+- `assets/manifest.json`
+- `assets/ATTRIBUTION.md`
 - `assets/PROVENANCE.md`
-- `assets/briefs/`, `assets/models/`, `assets/sprites/`, `assets/audio/`, `assets/fonts/`, `assets/themes/`
+- `assets/briefs/`, `assets/workflows/`, `assets/previews/`, `assets/qa/`
 - `.opencode/meta/asset-pipeline-bootstrap.json`
+- `.opencode/meta/asset-provenance-lock.json`
 
 The generated workflow layer includes the stack adapter registry inside `environment_bootstrap`, so generated bootstrap guidance should reflect the detected stack instead of assuming a Python-only repo.
 

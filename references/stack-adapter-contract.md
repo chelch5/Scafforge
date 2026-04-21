@@ -147,6 +147,27 @@ The package validators are still `npm run validate:contract`, `npm run validate:
 - They do not replace stack-specific release proof in generated repos.
 - Later proof tickets should point at the stack matrix below when they need the authoritative release command for a given Tier 1 stack.
 
+## Asset-heavy proof addendum
+
+When a generated repo uses the asset pipeline, release proof must keep the asset truth stack machine-checkable in addition to the stack-native build or runtime proof.
+
+Minimum asset-heavy proof surfaces:
+
+- `assets/requirements.json`
+- `assets/pipeline.json`
+- `assets/manifest.json`
+- `assets/qa/import-report.json`
+- `assets/qa/license-report.json`
+- `.opencode/meta/asset-provenance-lock.json`
+
+Rules:
+
+- `assets/manifest.json` owns per-asset truth.
+- `.opencode/meta/asset-provenance-lock.json` owns the pipeline-contract revision and manifest or pipeline digests.
+- stack-specific import success belongs in `assets/qa/import-report.json`, not only in console output.
+- license allowlist, denylist, and attribution review results belong in `assets/qa/license-report.json`, not only in prose.
+- derived summaries such as `assets/ATTRIBUTION.md` and `assets/PROVENANCE.md` must agree with the manifest; they do not outrank it.
+
 ## Tier 1 Proof-Host Matrix
 
 | Stack | Required host/toolchain | Authoritative release-proof command family | Best-effort local check | Truthful degradation |
