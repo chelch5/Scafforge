@@ -14,7 +14,7 @@
 
 ## Open Implementation Dependency
 
-The Meta-Skill-Orchestration repository was named in the brief but no local path was provided in this workspace. Implementation should begin by inventorying that repository explicitly and then applying the same distill-not-copy rule used elsewhere in this program.
+The adjacent `Meta-Skill-Engineering` repository has since been identified and should be inventoried explicitly during implementation, but any resulting Scafforge policy or rubric output must stay portable and must not embed machine-specific path assumptions.
 
 ## Planning Consequence
 

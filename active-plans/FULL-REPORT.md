@@ -5,9 +5,21 @@
 This planning cycle now has two distinct outputs:
 
 1. a cleaned and correctly classified `active-plans/` portfolio
-2. twelve TODO-state implementation plans that are detailed enough to guide real Scafforge work
+2. fourteen numbered implementation plans that are detailed enough to guide real Scafforge work
 
 The first pass only solved the structure problem. The second pass fixed the actual planning problem by rewriting the numbered folders into implementation-grade documents with dependencies, package surfaces, phased work, validation gates, and documentation obligations.
+
+Those numbered plans have now also been through a live `planchecker` pass and follow-up rewrite cycle, so they are no longer generic outline stubs.
+
+A final planning-hygiene closeout pass also locked the portfolio rules in place:
+
+- numbered folders are the canonical execution program
+- plan-local support notes live under each folder's `references/`
+- `_source-material/` remains active in-repo documentation and provenance, not a removal queue
+- root-level files under `active-plans/` are limited to portfolio-wide navigation, policy, reporting, journal, and execution guidance
+- plan-specific intake notes no longer belong at the root; the Meta-Skill-Engineering intake note now lives with plan `13`'s references
+
+A later source-spec audit against the moved `_source-material/` docs tightened the plans further around three areas that were still too implicit: retrieval or vector-index handling, concrete distillation of the asset-research ecosystem into route policy, and the distinction between provider, SDK, and execution-host access paths in the model-router plan.
 
 The central program decision remains unchanged: Scafforge should not scale autonomy until it first closes the reliability, validation, and quality gaps already proven by womanvshorse and spinner.
 
@@ -44,6 +56,8 @@ These plans address both sides of the asset problem: how assets are sourced/gene
 - `09-sdk-model-router-and-provider-strategy`
 - `10-viewer-control-plane-winui`
 - `12-skill-system-expansion-and-meta-skill-engineering`
+- `13-meta-skill-engineering-repo-hardening`
+- `14-blender-agent-repo-hardening`
 
 These plans turn the existing Scafforge package into the core of a larger autonomous factory, but only by wrapping the package with adjacent systems rather than dissolving its boundaries.
 
@@ -68,6 +82,8 @@ Based on current OpenCode, AI SDK, and Apps SDK documentation:
 - OpenCode remains the best fit for existing Scafforge and generated-repo execution contracts.
 - AI SDK is the right fit for new service-side orchestration and provider routing.
 - OpenAI Apps SDK is the right fit for ChatGPT-facing ingress and app surfaces.
+- OpenCode should be treated as an execution host that can front many provider routes, not as a tiny fixed model list.
+- The same model family may legitimately appear in multiple lanes, such as native MiniMax multimodal SDK use for assets and OpenCode-routed use for coding or implementation work.
 
 That means “rewrite Scafforge around AI SDK” is the wrong move for this cycle.
 
@@ -79,7 +95,7 @@ The spec factory, model router, orchestration service, meta-improvement loop, an
 
 ### `01-repo-hygiene-cleanup`
 
-Defines how `active-plans/` works so plans, summaries, and supporting references stay legible. This is the portfolio hygiene plan.
+Defines how `active-plans/` works so plans, summaries, and supporting references stay legible. This is the portfolio hygiene plan, and its implementation locked the numbered-folder versus supporting-reference rule into the root guidance.
 
 ### `02-downstream-reliability-hardening`
 
@@ -125,6 +141,14 @@ Modernizes the package docs so authority, workflow, and context are discoverable
 
 Defines how Scafforge should evolve its skill system from evidence and external research without turning into a random skill warehouse.
 
+### `13-meta-skill-engineering-repo-hardening`
+
+Hardens the separate Meta-Skill-Engineering repository into a complete, agent-usable skill-engineering suite and lifts the right evaluation techniques out of its embedded `plugin-eval` work.
+
+### `14-blender-agent-repo-hardening`
+
+Turns the separate `blender-agent` repository into a clearer, safer dependency by focusing on truthful contracts, QA/export evidence, and headless-ready hardening.
+
 ## Recommended Execution Sequence
 
 1. Land planning hygiene and documentation architecture.
@@ -133,7 +157,7 @@ Defines how Scafforge should evolve its skill system from evidence and external 
 4. Freeze the SDK/router decision.
 5. Build spec intake and downstream orchestration on top of that decision.
 6. Add the package self-improvement loop.
-7. Add disciplined skill evolution.
+7. Add disciplined skill evolution and harden the adjacent Meta-Skill-Engineering and `blender-agent` repos where they underpin the program.
 8. Build the WinUI control plane last, when the backend contracts are real.
 
 ## Final Recommendation

@@ -105,10 +105,11 @@ Use `python3` or `sys.executable` for Python entrypoints in this repository. Do 
 
 `active-plans/` holds implementation planning documents for Scafforge package work.
 
-- Plans are created here as the output of cross-audit analysis sessions.
-- Each plan document includes identified defects, verification steps, implementation instructions, and prevention strategy.
-- When a plan has been fully implemented and verified, move it to `archive/archived-diagnosis-plans/`.
-- Plans must not be marked complete until all verification steps pass.
+- Numbered folders (`NN-kebab-case/`) are the canonical plan containers, and each folder's `README.md` is the authoritative implementation body.
+- Plan-local supporting notes belong under that folder's `references/`, not at the `active-plans/` root.
+- `_source-material/` remains active in-repo supporting documentation and provenance; it is not a disposal queue or a hidden-plan staging area.
+- Root-level files under `active-plans/` are reserved for portfolio-wide navigation, policy, reporting, journal, and execution-guidance surfaces.
+- When a plan has been fully implemented, verified, and reflected in the root summaries, move the numbered folder to `archive/archived-diagnosis-plans/`.
 
 ## Host-side validation hygiene
 
