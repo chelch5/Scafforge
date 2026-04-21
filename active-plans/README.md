@@ -2,14 +2,31 @@
 
 This directory is the active Scafforge implementation program.
 
-It has two layers:
+`active-plans/` uses a two-layer model:
 
-- `_source-material/` contains active supporting references, copied research, and raw inputs that justify the plans.
-- Numbered plan folders contain the canonical TODO-state implementation plans.
+- numbered folders (`NN-kebab-case/`) are the canonical implementation program, and each folder must expose exactly one authoritative `README.md`
+- supporting documentation stays in-repo: plan-local notes go in `NN-kebab-case/references/`, while shared raw inputs and copied research live under `_source-material/`
 
-Every numbered folder should now be treated as a real working plan, not a summary stub. Each primary `README.md` is expected to show:
+`_source-material/` is active documentation, not a disposal queue. Root-level files under `active-plans/` are reserved for portfolio-wide navigation, policy, reporting, journal, or execution guidance.
 
-- explicit `Status: TODO`
+## Path Classification
+
+| Path | Classification | Purpose |
+| --- | --- | --- |
+| `README.md` | root summary | canonical index for the active portfolio |
+| `docscleanup.md` | root summary | placement, naming, and maintenance policy for planning surfaces |
+| `FULL-REPORT.md` | root summary | cross-plan program summary and sequencing rationale |
+| `WORK-JOURNAL.md` | historical provenance | dated record of planning decisions and later corrections |
+| `codexinstructions.md` | supporting reference | execution guide for implementing and reviewing the numbered plans |
+| `NN-kebab-case/README.md` | canonical plan | primary implementation contract for that plan |
+| `NN-kebab-case/references/*.md` | supporting reference | plan-local notes, prompt packs, intake docs, and evidence that support the canonical plan |
+| `_source-material/**` | supporting reference | copied research, raw notes, and source inputs that still inform package decisions |
+
+If `_source-material/` preserves a frozen origin artifact that is only being kept for traceability, treat that file as historical provenance within the supporting library rather than as a hidden plan.
+
+Every numbered folder should be a real working plan, not a summary stub. Its primary `README.md` is expected to show:
+
+- explicit `Status:` (`TODO`, `IN PROGRESS`, or `DONE`)
 - goal and architecture
 - dependencies and unblocks
 - concrete package or adjacent surfaces likely to change
@@ -17,17 +34,48 @@ Every numbered folder should now be treated as a real working plan, not a summar
 - validation gates
 - documentation-update obligations
 
-## Root Files
+The plan set has also been checked back against the moved source-material specs. That follow-up pass tightened:
 
-- `WORK-JOURNAL.md` records planning decisions and corrections made during this planning cycle.
-- `FULL-REPORT.md` summarizes the whole upgrade program and the reasoning behind the sequence.
-- `docscleanup.md` defines how canonical plans and supporting source material coexist inside `active-plans/`.
+- retrieval or vector-index treatment in the spec-factory and archive-intelligence plans
+- asset-research distillation into explicit route policy and fallback choices
+- provider access-path clarity so OpenCode, native SDKs, and compatible adapters are not conflated
+
+## Placement And Naming Rules
+
+1. Start new implementation planning work in a new numbered folder, never as a new root-level markdown file.
+2. Keep the canonical implementation body in that folder's `README.md`.
+3. Put plan-specific support material in `references/` with descriptive kebab-case names such as `route-policy-notes.md`, `validation-matrix-notes.md`, or `agent-caller-prompts.md`.
+4. Put copied docs, raw notes, and cross-plan research under `_source-material/` when they are still useful but would make the canonical plan noisy.
+5. Reserve the `active-plans/` root for the portfolio index, policy/routing notes, reports, journals, and execution guidance that apply across multiple plans.
+6. Do not leave plan-specific intake notes at the root; move them into the relevant numbered folder so readers do not mistake them for portfolio-wide authority.
+
+## Maintenance Checklist
+
+For any future planning edit:
+
+1. Create or update the numbered-folder plan first.
+2. Update `active-plans/README.md` if plan order, plan status, or the portfolio shape changes.
+3. Update `FULL-REPORT.md` if the program summary or sequencing rationale changes.
+4. Update `WORK-JOURNAL.md` when a planning rule, classification decision, or significant correction is made.
+5. Add new `_source-material/` or `references/` documents only when they improve traceability or prevent the canonical plan from becoming noisy.
+
+## Anti-Patterns
+
+- hidden canonical instructions inside `_source-material/` or `references/`
+- plan-specific notes left at the root where they look portfolio-wide
+- duplicate summaries that restate a numbered folder without adding routing value
+- numbered folders with no actionable `README.md`
+- wording that implies `_source-material/` is an automatic removal queue
+
+## Completion And Archival
+
+Keep plan status explicit. A plan may remain in `active-plans/` with `Status: DONE` during implementation review and closeout, but once validation, root index updates, and reporting updates are complete, move the numbered folder to `archive/archived-diagnosis-plans/` and leave the historical context in the report and journal.
 
 ## Implementation Order
 
 | Order | Status | Plan | Why it lands here |
 | --- | --- | --- | --- |
-| 1 | TODO | `01-repo-hygiene-cleanup/` | Locks the portfolio structure so later plans do not regress into document chaos. |
+| 1 | DONE | `01-repo-hygiene-cleanup/` | Locks the portfolio structure so later plans do not regress into document chaos. |
 | 2 | TODO | `11-repository-documentation-sweep/` | Starts immediately and continues alongside every other implementation wave. |
 | 3 | TODO | `02-downstream-reliability-hardening/` | Fixes the proven womanvshorse/spinner failure families before autonomy scales them. |
 | 4 | TODO | `05-completion-validation-matrix/` | Defines what “done” means across web, game, script, service, desktop, and Android repos. |
@@ -37,8 +85,10 @@ Every numbered folder should now be treated as a real working plan, not a summar
 | 8 | TODO | `06-spec-factory-and-intake-mcp/` | Designs the idea-to-approved-brief factory and ChatGPT/MCP ingress. |
 | 9 | TODO | `07-autonomous-downstream-orchestration/` | Wraps Scafforge generation in a PR-based downstream execution service. |
 | 10 | TODO | `08-meta-improvement-loop/` | Turns repeated downstream failures into package-level investigation and fix work. |
-| 11 | TODO | `12-skill-system-expansion-and-meta-skill-engineering/` | Adds a disciplined path for skill evolution and external-skill distillation. |
-| 12 | TODO | `10-viewer-control-plane-winui/` | Builds the operator-facing WinUI control plane after backend contracts are stable. |
+| 11 | TODO | `12-skill-system-expansion-and-meta-skill-engineering/` | Adds a disciplined path for Scafforge’s own skill evolution and external-skill distillation. |
+| 12 | TODO | `13-meta-skill-engineering-repo-hardening/` | Hardens the separate Meta-Skill-Engineering repo into a fully agent-usable suite with a complete CLI surface. |
+| 13 | TODO | `14-blender-agent-repo-hardening/` | Hardens the separate blender-agent repo so Scafforge can rely on it truthfully. |
+| 14 | TODO | `10-viewer-control-plane-winui/` | Builds the operator-facing WinUI control plane after backend contracts are stable. |
 
 ## Program-Level Decisions
 

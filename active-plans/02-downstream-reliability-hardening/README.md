@@ -36,18 +36,22 @@ This plan is not done until both of these statements are true:
 ## Required deliverables
 
 - a concrete failure taxonomy for womanvshorse/spinner-class defects
+- an inventory of existing versus missing Godot audit coverage so implementation does not duplicate checks that already exist
 - seeded regression fixtures for those defect families
 - stronger generation-time proof gates for parse/import/load/layout truth
-- audit outputs that classify `package defect`, `repo-local defect`, and `mixed defect`
+- audit outputs that expose `package defect`, `repo-local defect`, and `mixed defect` language while reusing the existing disposition classes (`managed_blocker`, `source_follow_up`, `manual_prerequisite_blocker`) instead of inventing a second state model
 - repair routing that can regenerate Scafforge-managed surfaces without overclaiming repo health
+- an explicit fixture-builder and harness-discovery contract for new downstream reliability families
 - updated restart/handoff surfaces that name the next legal move after failure or repair
 
 ## Package surfaces likely to change during implementation
 
 - `skills/scafforge-audit/SKILL.md`
 - `skills/scafforge-audit/references/*.md`
+- `skills/scafforge-audit/scripts/audit_contract_surfaces.py`
 - `skills/scafforge-audit/scripts/audit_execution_surfaces.py`
 - `skills/scafforge-audit/scripts/audit_reporting.py`
+- `skills/scafforge-audit/scripts/disposition_bundle.py`
 - `skills/scafforge-audit/scripts/run_audit.py`
 - `skills/scafforge-audit/scripts/target_completion.py`
 - `skills/scafforge-audit/scripts/shared_verifier.py`
@@ -59,7 +63,10 @@ This plan is not done until both of these statements are true:
 - `skills/repo-scaffold-factory/assets/project-template/docs/process/workflow.md`
 - `skills/handoff-brief/assets/templates/START-HERE.template.md`
 - `scripts/smoke_test_scafforge.py`
+- `scripts/test_support/repo_seeders.py`
 - `scripts/validate_scafforge_contract.py`
+- `scripts/validate_gpttalker_migration.py`
+- `scripts/integration_test_scafforge.py`
 - `tests/fixtures/` with new downstream reliability cases
 
 ## Failure families this plan must encode
@@ -71,6 +78,27 @@ This plan is not done until both of these statements are true:
 - false-positive completion claims where evidence is absent or contradictory
 - package-versus-repo ownership confusion during audit and repair
 
+## Current verified Godot coverage and named gaps
+
+The current audit already covers several womanvshorse-class failures. Implementation must start from that fact instead of re-adding the same checks under new names.
+
+- Existing coverage already present in `audit_execution_surfaces.py`:
+  - `EXEC-GODOT-001`: missing autoload scripts
+  - `EXEC-GODOT-002`: broken `res://` scene/resource references
+  - `EXEC-GODOT-003`: missing `extends` base scripts
+  - `EXEC-GODOT-004`: headless Godot load failure
+  - `EXEC-GODOT-007`: unwired signal-style handlers
+  - `EXEC-GODOT-009`: APIs incompatible with declared base type
+- New gaps this plan should add explicitly instead of vaguely:
+  - `EXEC-GODOT-013`: layout/stretch configuration truth in `project.godot`
+    - initial observable: `[display]` / `window/stretch/mode` absent or not `canvas_items` for repos that claim a 2D viewport-first presentation
+  - `EXEC-GODOT-014`: renderer or export-profile mismatch
+    - initial observable: renderer/export profile declared by repo guidance or project config contradicts the actual `project.godot` render path used by the repo
+  - `EXEC-GODOT-015`: malformed input-map event definitions
+    - initial observable: broken event payloads such as invalid deadzone or malformed input event keys in `project.godot`
+
+These code numbers should be treated as the planned identifiers unless a strong collision with existing package conventions is discovered during implementation.
+
 ## Phase plan
 
 ### Phase 1: Convert the current evidence into a real defect model
@@ -79,31 +107,38 @@ This plan is not done until both of these statements are true:
 - [ ] For each family, define the observable signal, the likely Scafforge-owned cause, the likely repo-local cause, and the evidence artifact required to prove the difference.
 - [ ] Record which failures should block handoff immediately versus which should generate follow-up tickets.
 - [ ] Add the resulting taxonomy to this plan folder’s reference notes and mirror the core terms into audit reporting language.
+- [ ] Map the human-facing labels explicitly onto the existing disposition system: `package defect` -> `managed_blocker`, `repo-local defect` -> `source_follow_up`, `mixed defect` -> a combination of both package-managed and source follow-up outputs rather than a brand-new disposition class.
 
 ### Phase 2: Seed reproducible regression fixtures
 
 - [ ] Create new fixture directories under `tests/fixtures/` for at least `womanvshorse` and `spinner`, following the existing fixture style used by `gpttalker`.
 - [ ] For each fixture, write a short `README.md` that states the defect family, expected audit classification, expected repair behavior, and final expected next move.
-- [ ] Add index metadata if needed so the package tests can discover the new fixtures consistently.
+- [ ] Require each new fixture family to ship an `index.json` that follows the existing `tests/fixtures/gpttalker/index.json` contract, including `families[]`, `expected_finding_codes`, and `truth_expectations.checks`.
+- [ ] Add explicit builder registration to `scripts/integration_test_scafforge.py` for the new fixture families in the first implementation pass; do not rely on implicit directory scanning.
+- [ ] Add or extend seeder helpers in `scripts/test_support/repo_seeders.py` so the new families can be built deterministically instead of as hand-authored one-off folders.
 - [ ] Make sure the fixtures represent package evidence, not only one-off downstream accidents.
 
 ### Phase 3: Strengthen greenfield proof before handoff
 
 - [ ] Extend generation-time verification so a repo cannot be handed off on file presence alone.
 - [ ] Add explicit gate expectations for parse success, import success, load success, and first-screen truth where the stack supports them.
-- [ ] Update the generated stage-gate and restart surfaces so a repo that fails these checks cannot present itself as “ready to continue.”
+- [ ] Implement the new greenfield guard as a pre-handoff proof step that emits canonical current-cycle proof artifacts before `handoff_publish`; do not make the generated stage gate parse diagnosis packs directly.
+- [ ] Update `handoff_publish`, the generated stage-gate, and restart surfaces so repos with blocking pre-handoff proof artifacts cannot present themselves as “ready to continue.”
 - [ ] Ensure the proof ladder is cheap-first but truthful: static checks before runtime, runtime before visual approval, visual approval before completion claims.
 
 ### Phase 4: Upgrade audit classification
 
 - [ ] Update audit evidence collection so failure families appear as first-class findings rather than generic drift.
-- [ ] Teach the audit output to label whether the root cause is primarily package-owned, repo-local, or mixed.
+- [ ] Add the named missing finding codes unless implementation discovers an unavoidable numbering conflict: `EXEC-GODOT-013` for stretch/layout config truth, `EXEC-GODOT-014` for renderer/profile mismatch, and `EXEC-GODOT-015` for malformed input-map data.
+- [ ] Define the mechanical observable for each new code in the implementation notes and fixtures rather than leaving those checks as prose-only guidance.
+- [ ] Teach the audit output to label whether the root cause is primarily package-owned, repo-local, or mixed by reusing the existing disposition bundle classes and reporting language.
 - [ ] Ensure the audit report points to the exact Scafforge surface that likely allowed the failure through: template, validator, generated guidance, or repair logic.
 - [ ] Add explicit restart-language guidance so the failure report still leaves one legal next move.
 
 ### Phase 5: Upgrade repair routing
 
 - [ ] Update repair logic so Scafforge-managed defects trigger regeneration or package follow-up instead of pretending the repo is clean.
+- [ ] Explicitly keep repo-local Godot code defects such as `EXEC-GODOT-001`, `002`, and `003` in `source_follow_up`; the package-managed fix is the proof gate and detection contract, not automatic regeneration of broken downstream gameplay scripts.
 - [ ] Separate “repair managed surfaces now” from “create repo-local remediation ticket” so downstream agents know what remains.
 - [ ] Ensure restart regeneration reflects the post-repair truth and does not publish stale success claims.
 - [ ] Preserve evidence bundles so the same failure family can later feed the meta-improvement loop.
@@ -111,7 +146,7 @@ This plan is not done until both of these statements are true:
 ### Phase 6: Lock the regression story
 
 - [ ] Add package validation coverage for the new fixture families.
-- [ ] Run `npm run validate:contract`, `npm run validate:smoke`, and `python3 scripts/integration_test_scafforge.py` with the new fixtures in scope.
+- [ ] Run `npm run validate:contract`, `npm run validate:smoke`, `python3 scripts/integration_test_scafforge.py`, and `python3 scripts/validate_gpttalker_migration.py` with the new fixtures and disposition changes in scope.
 - [ ] Confirm that a seeded bad fixture produces the right audit finding and the right repair posture.
 - [ ] Confirm that a healthy fixture does not get downgraded by the stronger gates.
 

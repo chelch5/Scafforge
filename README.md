@@ -47,7 +47,7 @@ Historical implementation-planning context for the reliability re-architecture i
 
 `active-audits/` collects diagnosis packs and agent log files copied from generated repositories for package-level analysis. Each generated repo gets its own named subfolder (`gpttalker/`, `spinner/`, `glitch/`, etc.). When an audit has been consumed by a Scafforge patch, its contents move to `archive/archived-audits/`.
 
-`active-plans/` holds Scafforge implementation planning documents produced from cross-audit analysis. Plans include defect descriptions, verification steps, implementation instructions, and prevention strategy. Completed and verified plans move to `archive/archived-diagnosis-plans/`.
+`active-plans/` is the live package-planning portfolio. Numbered folders are the canonical implementation plans, each folder `README.md` is the working program, plan-local support notes live under `references/`, and copied research or raw notes live under `_source-material/`. Root-level files in `active-plans/` are portfolio navigation, policy, reporting, journal, or execution-guidance surfaces only. Completed and verified plan folders move to `archive/archived-diagnosis-plans/` after the root summaries are updated.
 
 See `AGENTS.md` for the full lifecycle rules governing both folders.
 

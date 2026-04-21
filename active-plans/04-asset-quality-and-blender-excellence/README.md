@@ -5,12 +5,12 @@
 **Status:** TODO
 **Goal:** Raise the visual quality bar for generated repos so Scafforge stops accepting technically present but visually embarrassing assets, menus, scenes, and motion.
 
-**Architecture:** Quality is a contract, not a vibe. This plan introduces explicit visual review criteria, screenshot/render evidence requirements, truthful Blender support limits, and distilled design guidance for generated interactive repos. Asset acquisition stays in `03`; this plan defines whether the resulting output actually looks acceptable.
+**Architecture:** Quality is a contract, not a vibe. This plan introduces explicit visual review criteria, screenshot/render evidence requirements, a conditional visual-proof gate for the repo types that need it, truthful Blender support limits, and distilled design guidance for generated interactive repos. Asset acquisition stays in `03`; this plan defines whether the resulting output actually looks acceptable.
 
-**Tech Stack / Surfaces:** `skills/asset-pipeline/`, `skills/project-skill-bootstrap/`, generated template skills/plugins/docs, the external `C:\Users\PC\Documents\GitHub\blender-agent` repo, copied Game Studio and Remotion source material.
-**Depends On:** `03-asset-pipeline-architecture` for canonical asset state surfaces; can start discovery in parallel.
+**Tech Stack / Surfaces:** `skills/asset-pipeline/`, `skills/project-skill-bootstrap/`, generated template skills/plugins/docs, the adjacent `blender-agent` repository, copied Game Studio and Remotion source material.
+**Depends On:** `03-asset-pipeline-architecture` for canonical asset state surfaces and manifest schema; discovery can start earlier, but schema-bearing Blender evidence rules must align to `03`.
 **Unblocks:** stronger completion gating in `05-completion-validation-matrix`, better downstream UX quality in `07-autonomous-downstream-orchestration`, and truthful Blender usage throughout the system.
-**Primary Sources:** spinner critique in `_source-material/asset-pipeline/assetsplanning/spinner.md`, copied Game Studio/Remotion notes under `_source-material/asset-pipeline/assetsplanning/pipeline/stolenfromcodex/`, `C:\Users\PC\Documents\GitHub\blender-agent`, visual quality research notes in this folder.
+**Primary Sources:** spinner critique in `_source-material/asset-pipeline/assetsplanning/spinner.md`, copied Game Studio/Remotion notes under `_source-material/asset-pipeline/assetsplanning/pipeline/stolenfromcodex/`, the adjacent `blender-agent` repo, visual quality research notes in this folder.
 
 ---
 
@@ -23,6 +23,7 @@ Scafforge currently lacks a clear contract for:
 - intentional style direction
 - Blender output quality and support limits
 - screenshot/render review before a repo can claim completion
+- how visual proof becomes machine-checkable without breaking non-visual repos
 
 That is why downstream repos can be “working” while obviously looking wrong.
 
@@ -30,22 +31,27 @@ That is why downstream repos can be “working” while obviously looking wrong.
 
 - a visual acceptance rubric for generated repos
 - screenshot and render evidence requirements
+- a conditional visual-proof gate design for the stacks and repo types that need it
 - a Blender capability/support matrix based on the real `blender-agent` surface
 - generated-repo guidance for menu/layout quality, especially for game and interactive repos
 - distilled Scafforge-owned guidance extracted from external plugin material instead of copied bundles
+- a fixture and harness contract for visually broken examples
 
 ## Package and adjacent surfaces likely to change during implementation
 
 - `skills/asset-pipeline/SKILL.md`
 - `skills/project-skill-bootstrap/references/blender-mcp-workflow-reference.md`
+- `skills/project-skill-bootstrap/references/blender-support-matrix.md`
 - `skills/project-skill-bootstrap/references/local-skill-catalog.md`
 - `skills/repo-scaffold-factory/assets/project-template/.opencode/plugins/stage-gate-enforcer.ts`
 - `skills/repo-scaffold-factory/assets/project-template/.opencode/skills/stack-standards/`
 - `skills/repo-scaffold-factory/assets/project-template/docs/process/workflow.md`
-- `skills/repo-scaffold-factory/assets/project-template/docs/process/model-matrix.md`
 - `skills/agent-prompt-engineering/references/examples.md`
 - `skills/agent-prompt-engineering/references/prompt-contracts.md`
-- documentation and integration notes that point to `C:\Users\PC\Documents\GitHub\blender-agent`
+- `scripts/validate_scafforge_contract.py`
+- `scripts/integration_test_scafforge.py`
+- `tests/fixtures/visual-proof/`
+- package docs and integration notes that refer to the adjacent `blender-agent` repo by logical identity, never by an absolute local filesystem path
 
 ## Quality dimensions this plan must own
 
@@ -56,6 +62,31 @@ That is why downstream repos can be “working” while obviously looking wrong.
 - 3D silhouette, material readability, and finish
 - animation/motion “juice” where the product type requires it
 - screenshot/render evidence sufficient for review
+
+## Visual-proof gate design target
+
+This plan should not add a universal screenshot requirement to every generated repo.
+
+- Visual proof is required only for repo types that claim visually reviewable output: games, interactive apps, UI-heavy products, and asset-heavy repos.
+- The repo should advertise that need through a machine-readable flag such as `requires_visual_proof` in bootstrap provenance or a closely related generated truth surface.
+- The gate should extend existing evidence checks in `stage-gate-enforcer.ts` rather than inventing a parallel approval system.
+- The first implementation should treat visual proof as a structured artifact or artifact field, not as an implicit human assumption.
+
+## Blender contract output location
+
+Phase 3 must write its support matrix to:
+
+- `skills/project-skill-bootstrap/references/blender-support-matrix.md`
+
+`blender-mcp-workflow-reference.md` should remain the procedural workflow note and link to the matrix rather than being overloaded into both roles.
+
+## Distillation guardrail
+
+Source material may mention paid or proprietary tooling. Package output must not inherit that by accident.
+
+- Generated guidance must only recommend free/open-source design and art tools by default.
+- Paid-tool references in source material, such as Affinity Designer in the spinner critique, must not appear in package or generated output.
+- Distilled output should prefer tools such as Inkscape, Krita, GIMP, Blender, and other free/open alternatives unless a later plan explicitly scopes an exception.
 
 ## Phase plan
 
@@ -71,13 +102,15 @@ That is why downstream repos can be “working” while obviously looking wrong.
 - [ ] Update generated template guidance so repos know what “screen-fit,” “menu centered,” “visual hierarchy,” and “proof of appearance” actually mean.
 - [ ] Add layout guidance for common interactive surfaces such as menus, title screens, HUDs, and modal overlays.
 - [ ] Require generated repos to capture screenshots or short visual summaries at specific checkpoints where visual regression matters.
-- [ ] Ensure the stage-gate plugin has a hook for visual proof requirements, not only code/test proof.
+- [ ] Extend `stage-gate-enforcer.ts` through an explicit visual-proof hook that checks structured visual-evidence artifacts only when the repo is marked as requiring visual proof.
+- [ ] Reuse existing evidence-validation flow where possible instead of adding a second approval path that could drift.
 
 ### Phase 3: Define a truthful Blender contract
 
 - [ ] Audit the real `blender-agent` capability surface and document what it can currently prove, not what we wish it did.
 - [ ] Split Blender usage into supported lanes such as hard-surface prop work, basic material/lookdev, export, and QA, versus unsupported or experimental lanes.
 - [ ] Define what evidence a Blender-derived asset must emit before it can be considered usable in a generated repo.
+- [ ] Coordinate those Blender evidence fields with plan `03` so they align to `assets/manifest.json` and related asset-truth surfaces rather than inventing a conflicting schema.
 - [ ] Document where the asset pipeline should stop and fall back to sourced assets or simpler routes instead of pretending the Blender path is magical.
 
 ### Phase 4: Distill useful external design knowledge into Scafforge-owned guidance
@@ -85,13 +118,15 @@ That is why downstream repos can be “working” while obviously looking wrong.
 - [ ] Review the copied Game Studio and Remotion materials and extract only the concepts that materially improve Scafforge guidance.
 - [ ] Re-express those concepts in Scafforge language and file locations instead of copying external bundles wholesale.
 - [ ] Decide which ideas belong in generated template skills, which belong in package references, and which remain only as source material.
+- [ ] Keep all resulting tool recommendations free/open-source by default and exclude proprietary tool references from shipped output.
 - [ ] Ensure the resulting guidance is narrow enough for weak models to follow and does not create redundant skill sprawl.
 
 ### Phase 5: Add visual review to validation and audit
 
 - [ ] Define when screenshot or render evidence is mandatory by repo type.
 - [ ] Ensure visual failures can show up in validation, audit, and handoff language as first-class blockers.
-- [ ] Add at least one intentionally ugly fixture or screenshot set to prove the review lane catches real failures.
+- [ ] Add at least one intentionally ugly fixture pack under `tests/fixtures/visual-proof/` with metadata that states the expected rubric failures.
+- [ ] Extend `scripts/integration_test_scafforge.py` to exercise that fixture contract, even if the first pass validates file presence, metadata, and artifact wiring rather than image analysis.
 - [ ] Confirm the system cannot mark a visually broken repo “complete” just because tests pass.
 
 ## Validation and proof requirements
@@ -100,12 +135,14 @@ That is why downstream repos can be “working” while obviously looking wrong.
 - spinner-style screen-fit failures are caught by the quality rubric
 - Blender-derived assets are assessed against a truthful support matrix
 - copied external plugin ideas are distilled into Scafforge-owned guidance instead of being treated as shipped product behavior
+- `scripts/validate_scafforge_contract.py` and `scripts/integration_test_scafforge.py` both know about the visual-proof contract where applicable
 
 ## Risks and guardrails
 
 - Do not confuse style choice with quality. The contract should judge intent, readability, and finish, not only realism.
 - Do not promise that Blender can make everything. Document supported lanes and stop there.
 - Do not build a generic “art critic” with no evidence model. Every failure category needs concrete review language.
+- Do not let absolute local repo paths leak into package or generated documentation.
 - Keep design guidance concise enough for generated repos; do not dump giant art-theory essays into template skills.
 
 ## Documentation updates required when this plan is implemented

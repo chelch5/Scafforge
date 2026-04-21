@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** TODO
+**Status:** DONE
 **Goal:** Turn `active-plans/` into a stable, low-ambiguity planning system where canonical plans, supporting references, and root summaries are easy for both humans and weak models to distinguish.
 
 **Architecture:** Keep `active-plans/` as a two-layer system. Numbered folders and root summaries are the canonical execution program; `_source-material/` remains in-repo as active supporting documentation. The work here is not “archive cleanup.” It is information architecture, placement rules, and contributor hygiene for future Scafforge planning.
@@ -64,38 +64,38 @@ This plan therefore owns:
 
 ### Phase 1: Classify the current planning surfaces
 
-- [ ] Build a path-by-path inventory of everything under `active-plans/` grouped as `canonical plan`, `root summary`, `supporting reference`, or `historical provenance`.
-- [ ] Confirm every numbered folder has exactly one primary implementation plan document and that the document is identifiable at a glance.
-- [ ] Review root-level markdown files and remove any wording that implies `_source-material/` is disposable or external-only.
-- [ ] Record any files that still act like hidden canonical plans and either promote them into a numbered folder or relabel them as references.
+- [x] Build a path-by-path inventory of everything under `active-plans/` grouped as `canonical plan`, `root summary`, `supporting reference`, or `historical provenance`.
+- [x] Confirm every numbered folder has exactly one primary implementation plan document and that the document is identifiable at a glance.
+- [x] Review root-level markdown files and remove any wording that implies `_source-material/` is disposable or external-only.
+- [x] Record any files that still act like hidden canonical plans and either promote them into a numbered folder or relabel them as references.
 
 ### Phase 2: Codify the placement rules
 
-- [ ] Document the rule that new implementation planning work starts in a numbered folder, not at the root.
-- [ ] Document the rule that research dumps, copied docs, and raw notes go into `_source-material/` or a plan-local `references/` note, never directly into the canonical plan body.
-- [ ] Document the rule that root-level files are reserved for portfolio-wide navigation, reporting, or journal entries.
-- [ ] Add a naming convention for new plan folders and their companion reference files so future additions do not regress into ad hoc labels.
+- [x] Document the rule that new implementation planning work starts in a numbered folder, not at the root.
+- [x] Document the rule that research dumps, copied docs, and raw notes go into `_source-material/` or a plan-local `references/` note, never directly into the canonical plan body.
+- [x] Document the rule that root-level files are reserved for portfolio-wide navigation, policy, reporting, journal entries, or execution guidance.
+- [x] Add a naming convention for new plan folders and their companion reference files so future additions do not regress into ad hoc labels.
 
 ### Phase 3: Align package docs with the planning layout
 
-- [ ] Update `AGENTS.md` so its `active-plans/` description matches the two-layer structure and clearly states that `_source-material/` is still active in-repo documentation.
-- [ ] Update any root docs that still imply `active-plans/` is a loose scratch area.
-- [ ] Add a concise “where planning material belongs” note to the package contributor documentation path.
-- [ ] Ensure the package docs never describe numbered plan folders as optional summaries; they are the working program.
+- [x] Update `AGENTS.md` so its `active-plans/` description matches the two-layer structure and clearly states that `_source-material/` is still active in-repo documentation.
+- [x] Update any root docs that still imply `active-plans/` is a loose scratch area.
+- [x] Add a concise “where planning material belongs” note to the package contributor documentation path.
+- [x] Ensure the package docs never describe numbered plan folders as optional summaries; they are the working program.
 
 ### Phase 4: Add contributor and agent hygiene rules
 
-- [ ] Add a maintenance checklist for future planning edits: create/update the numbered folder plan, update the root index if sequencing changes, update the report if the program shape changes, and add source material only where it improves traceability.
-- [ ] Add an anti-pattern list covering: hidden canonical plans in `_source-material/`, duplicate summaries at the root, and plan folders with no actionable implementation body.
-- [ ] Require every plan folder to show status explicitly so “active but not started” versus “implemented and archived” is obvious.
-- [ ] Define how completed plans leave `active-plans/` and where their historical copies live, while keeping the active set readable.
+- [x] Add a maintenance checklist for future planning edits: create/update the numbered folder plan, update the root index if sequencing changes, update the report if the program shape changes, and add source material only where it improves traceability.
+- [x] Add an anti-pattern list covering: hidden canonical plans in `_source-material/`, duplicate summaries at the root, and plan folders with no actionable implementation body.
+- [x] Require every plan folder to show status explicitly so “active but not started” versus “implemented and archived” is obvious.
+- [x] Define how completed plans leave `active-plans/` and where their historical copies live, while keeping the active set readable.
 
 ### Phase 5: Verify that the planning area is actually usable
 
-- [ ] Run a newcomer-context check using only `active-plans/README.md` and one numbered folder to confirm the portfolio is navigable.
-- [ ] Run a wording pass to eliminate contradictory phrases like `archive candidate`, `temporary staging area`, or `future removal` from authored docs.
-- [ ] Verify that every numbered folder has a clear summary, dependencies, and TODO status.
-- [ ] Record the final rule set in `WORK-JOURNAL.md` and summarize the outcome in `FULL-REPORT.md`.
+- [x] Run a newcomer-context check using only `active-plans/README.md` and one numbered folder to confirm the portfolio is navigable.
+- [x] Run a wording pass to eliminate contradictory phrases like `archive candidate`, `temporary staging area`, or `future removal` from authored docs.
+- [x] Verify that every numbered folder has a clear summary, dependencies, and explicit status.
+- [x] Record the final rule set in `WORK-JOURNAL.md` and summarize the outcome in `FULL-REPORT.md`.
 
 ## Validation and proof requirements
 
@@ -121,7 +121,7 @@ This plan therefore owns:
 
 ## Completion criteria
 
-- every numbered plan folder has a clearly marked TODO-state implementation plan
+- every numbered plan folder has a clearly marked implementation plan with explicit status
 - root planning docs agree on the canonical-versus-supporting-reference model
 - no hidden canonical instructions remain buried in supporting material
 - future contributors can tell where to add plans, reports, and source notes without guessing
