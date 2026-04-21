@@ -212,26 +212,32 @@ The module conflates several responsibilities (command detection, execution, fai
 
 ## Asset Pipeline
 
-Extends Scafforge with game/creative asset support via 4 acquisition routes:
+Extends Scafforge with game/creative asset support via explicit source routes plus required pipeline stages:
 
-| Route family | Source | Example |
+| Capability | Kind | Example |
 |-------|--------|---------|
-| Procedural / repo-authored | Repo code, procedural rendering, generated shapes, authored engine resources | Procedural sprites, repo-authored shaders |
-| Third-party open / licensed | CC0, attribution, commercial, or internal licensed packs | Kenney sprites, OpenGameArt audio |
-| Blender-MCP generated | Blender toolchain plus model/workflow provenance | Low-poly GLB props |
-| Godot-native authored | Godot-native particle, theme, tilemap, shader, or CSG work | Shaders, particles, CSG |
-| Hybrid mixed-route | Explicit category-level blend of the above | Sourced UI + Blender props + procedural VFX |
+| `source-open-curated` | curated open sourcing | Kenney sprites, Quaternius props, Google Fonts |
+| `source-mixed-license` | sourced assets with attribution or commercial-policy review | OpenGameArt audio, Freesound clips |
+| `procedural-2d` / `procedural-layout` / `procedural-world` | repo-authored deterministic generation | shaders, particles, TileMap/WFC, terrain noise |
+| `local-ai-2d` / `local-ai-audio` | local/open AI generation | pinned local image or audio workflows |
+| `reconstruct-3d` / `dcc-assembly` | reconstruction, DCC cleanup, and Blender export | low-poly GLB props, reconstructed meshes |
 
-All routes require provenance tracking in `assets/PROVENANCE.md`.
-Managed game repos also carry machine-readable route metadata and starter capture surfaces:
+All routes require machine-checkable provenance and QA. Managed game repos also carry machine-readable asset truth and starter capture surfaces:
+- `assets/requirements.json`
 - `assets/pipeline.json`
+- `assets/manifest.json`
+- `assets/ATTRIBUTION.md`
+- `assets/PROVENANCE.md`
 - `.opencode/meta/asset-pipeline-bootstrap.json`
+- `.opencode/meta/asset-provenance-lock.json`
+- `assets/workflows/`
 - `assets/previews/`
 - `assets/workfiles/`
 - `assets/licenses/`
-- `assets/import-reports/`
+- `assets/qa/import-report.json`
+- `assets/qa/license-report.json`
 
-`opencode.jsonc` must enable `blender_agent` only when the current route map requires Blender-MCP and the current host exposes the Blender MCP prerequisites.
+`opencode.jsonc` must enable `blender_agent` only when the current route map requires `dcc-assembly` and the current host exposes the Blender MCP prerequisites.
 
 ## Testing
 

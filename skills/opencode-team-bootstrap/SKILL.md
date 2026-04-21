@@ -69,9 +69,9 @@ For CLI/library projects:
 
 For game or asset-heavy projects:
 - Read `.opencode/meta/asset-pipeline-bootstrap.json` if it exists before finalizing the agent set.
-- If the metadata says `required_agents` includes `blender-asset-creator` or the seeded routes include `blender-mcp`, add a dedicated `blender-asset-creator` implementer/subagent scoped to Blender-MCP work.
-- If the seeded routes include `free-open`, consider an `asset-sourcer` specialist for license-aware sourcing and import prep.
-- If the repo relies on Godot-native finish work, ensure at least one implementer prompt explicitly owns theme/VFX/import polish under the repo's asset pipeline.
+- If the metadata says `required_agents` includes `blender-asset-creator` or the seeded routes include `dcc-assembly`, add a dedicated `blender-asset-creator` implementer/subagent scoped to Blender-MCP work.
+- If the seeded routes include `source-open-curated` or `source-mixed-license`, consider an `asset-sourcer` specialist for license-aware sourcing and import prep.
+- If the seeded routes include procedural capabilities, ensure at least one implementer prompt explicitly owns theme/VFX/import polish under the repo's asset pipeline.
 
 You may create multiple implementer-type agents for different domains within a single project, but keep the total agent count conservative unless the canonical brief proves genuinely disjoint domains.
 
@@ -99,7 +99,7 @@ For EVERY agent, rewrite the generic prompt to be project-specific:
 - **Skill allowlists**: reference only repo-local skills that already exist
 - **Task allowlists**: reference the actual agents that exist (including any new ones)
 - **Bash allowlists**: add project-specific commands (e.g., `cargo test*` for Rust, `flutter test*` for Flutter)
-- When asset-pipeline metadata exists, delegation briefs must mention the seeded asset surfaces and route-specific ownership instead of generic "art/content" wording.
+- When asset-pipeline metadata exists, delegation briefs must mention the seeded asset surfaces (`assets/requirements.json`, `assets/pipeline.json`, `assets/manifest.json`, `assets/workflows/`, `assets/qa/`) and route-specific ownership instead of generic "art/content" wording.
 - When Blender is a required route, the `blender-asset-creator` prompt must explicitly:
   - allow `asset-description` and `blender-mcp-workflow`
   - call `skill_ping("blender-mcp-workflow")` before any Blender-MCP mutating call

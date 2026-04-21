@@ -6535,14 +6535,20 @@ def main() -> int:
             env=fake_blender_env,
         )
         for relative in (
+            "assets/requirements.json",
             "assets/pipeline.json",
+            "assets/manifest.json",
+            "assets/ATTRIBUTION.md",
             "assets/PROVENANCE.md",
             "assets/briefs/README.md",
+            "assets/workflows/README.md",
             "assets/previews",
             "assets/workfiles",
             "assets/licenses",
-            "assets/import-reports",
+            "assets/qa/import-report.json",
+            "assets/qa/license-report.json",
             ".opencode/meta/asset-pipeline-bootstrap.json",
+            ".opencode/meta/asset-provenance-lock.json",
             "android/scafforge-managed.json",
         ):
             if not (legacy_asset_dest / relative).exists():
@@ -6647,14 +6653,20 @@ def main() -> int:
             allow_returncodes={0, 3},
         )
         for relative in (
+            "assets/requirements.json",
             "assets/pipeline.json",
+            "assets/manifest.json",
+            "assets/ATTRIBUTION.md",
             "assets/PROVENANCE.md",
             "assets/briefs/README.md",
+            "assets/workflows/README.md",
             "assets/previews",
             "assets/workfiles",
             "assets/licenses",
-            "assets/import-reports",
+            "assets/qa/import-report.json",
+            "assets/qa/license-report.json",
             ".opencode/meta/asset-pipeline-bootstrap.json",
+            ".opencode/meta/asset-provenance-lock.json",
         ):
             if not (public_legacy_asset_dest / relative).exists():
                 raise RuntimeError(

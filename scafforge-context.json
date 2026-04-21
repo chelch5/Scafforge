@@ -78,7 +78,7 @@
 
   "asset_pipeline": {
     "skill": "skills/asset-pipeline/",
-    "routes": ["codex-derived", "free-open", "blender-mcp", "godot-builtin"],
+    "routes": ["source-open-curated", "source-mixed-license", "procedural-2d", "procedural-layout", "procedural-world", "local-ai-2d", "local-ai-audio", "reconstruct-3d", "dcc-assembly"],
     "blender_agent": "/home/pc/projects/blender-agent",
     "blender_binary": "/home/pc/blender-4.5.0/blender",
     "provenance_validator": "skills/asset-pipeline/scripts/validate_provenance.py"
