@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,7 +72,7 @@ Review methodology:
 
 Comment requirements:
 - Post exactly one top-level PR comment with `gh pr comment`.
-- Start with a short reviewer banner naming the model.
+- Start the comment with the exact reviewer banner `{{REVIEWER_BANNER}}`.
 - Include: verdict, numbered findings (or “no material issues found”), open questions, and any residual risk.
 - Do not approve or request changes through GitHub review state; post a normal comment only.
 """
@@ -179,33 +180,37 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     configure_stdio()
-    args = parse_args()
-    repo_root = detect_repo_root(Path(args.repo_root).resolve() if args.repo_root else Path.cwd())
-    plan_dir = resolve_plan(repo_root, args.plan)
-    prompt_file = Path(args.prompt_file).resolve() if args.prompt_file else plan_dir / "references" / PROMPT_PACK_NAME
-    if not prompt_file.exists():
-        raise SystemExit(f"Prompt pack not found: {prompt_file}")
-    workdir = Path(args.cwd).resolve() if args.cwd else repo_root
+    try:
+        args = parse_args()
+        repo_root = detect_repo_root(Path(args.repo_root).resolve() if args.repo_root else Path.cwd())
+        plan_dir = resolve_plan(repo_root, args.plan)
+        prompt_file = Path(args.prompt_file).resolve() if args.prompt_file else plan_dir / "references" / PROMPT_PACK_NAME
+        if not prompt_file.exists():
+            raise AgentCallerError(f"Prompt pack not found: {prompt_file}")
+        workdir = Path(args.cwd).resolve() if args.cwd else repo_root
 
-    if args.command == "planchecker":
-        result = run_planchecker(repo_root, plan_dir, prompt_file, workdir, args)
-    elif args.command == "planimplementer":
-        result = run_planimplementer(repo_root, plan_dir, prompt_file, workdir, args)
-    else:
-        result = run_pr_reviewers(repo_root, plan_dir, prompt_file, workdir, args)
+        if args.command == "planchecker":
+            result = run_planchecker(repo_root, plan_dir, prompt_file, workdir, args)
+        elif args.command == "planimplementer":
+            result = run_planimplementer(repo_root, plan_dir, prompt_file, workdir, args)
+        else:
+            result = run_pr_reviewers(repo_root, plan_dir, prompt_file, workdir, args)
 
-    if args.json:
-        print(json.dumps(result, indent=2))
-    elif isinstance(result, dict) and result.get("dry_run"):
-        print(json.dumps(result, indent=2))
-    elif isinstance(result, dict) and "stdout" in result:
-        if result["stdout"]:
-            print(result["stdout"], end="" if result["stdout"].endswith("\n") else "\n")
-        if result.get("stderr"):
-            print(result["stderr"], file=sys.stderr, end="" if result["stderr"].endswith("\n") else "\n")
-    else:
-        print(json.dumps(result, indent=2))
-    return 0
+        if args.json:
+            print(json.dumps(result, indent=2))
+        elif isinstance(result, dict) and result.get("dry_run"):
+            print(json.dumps(result, indent=2))
+        elif isinstance(result, dict) and "stdout" in result:
+            if result["stdout"]:
+                print(result["stdout"], end="" if result["stdout"].endswith("\n") else "\n")
+            if result.get("stderr"):
+                print(result["stderr"], file=sys.stderr, end="" if result["stderr"].endswith("\n") else "\n")
+        else:
+            print(json.dumps(result, indent=2))
+        return result_exit_code(result)
+    except (AgentCallerError, FileNotFoundError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
 
 def detect_repo_root(start: Path) -> Path:
@@ -223,7 +228,7 @@ def resolve_plan(repo_root: Path, plan_ref: str) -> Path:
     if not plans_root.exists():
         raise AgentCallerError(f"Missing {plans_root}")
     normalized = plan_ref.strip().lower()
-    numbered = [path for path in plans_root.iterdir() if path.is_dir() and re.match(r"^\d{2}-", path.name)]
+    numbered = [path for path in plans_root.iterdir() if path.is_dir() and re.match(r"^\d+-", path.name)]
     if normalized.isdigit():
         prefix = f"{int(normalized):02d}-"
         for path in numbered:
@@ -346,12 +351,14 @@ def run_pr_reviewers(repo_root: Path, plan_dir: Path, prompt_file: Path, workdir
     methodology = get_required_section(sections, "planprreviewer methodology")
     jobs = []
     for profile in selected:
+        reviewer_banner = f"[planprreviewer:{profile.key}:{uuid.uuid4().hex[:8]}]"
         extra = {
             "PR_NUMBER": str(args.pr),
             "OWNER_REPO": owner_repo,
             "REVIEWER_KEY": profile.key,
             "REVIEWER_MODEL": profile.model,
             "REVIEWER_VARIANT": profile.variant or "",
+            "REVIEWER_BANNER": reviewer_banner,
             "REVIEW_METHODOLOGY": methodology,
         }
         prompt = render_section(
@@ -369,23 +376,29 @@ def run_pr_reviewers(repo_root: Path, plan_dir: Path, prompt_file: Path, workdir
         ]
         if profile.variant:
             command.extend(["--variant", profile.variant])
-        jobs.append((profile, command))
+        jobs.append((profile, command, reviewer_banner))
 
     results: list[dict[str, object]] = []
     if args.sequential or args.dry_run:
-        for profile, command in jobs:
+        for profile, command, reviewer_banner in jobs:
             result = execute_command(profile.key, command, workdir, args.dry_run)
+            if not args.dry_run:
+                verify_reviewer_comment(result, owner_repo, args.pr, reviewer_banner, workdir)
             result["reviewer"] = profile.key
+            result["reviewer_banner"] = reviewer_banner
             results.append(result)
     else:
         with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
             future_map = {
-                executor.submit(execute_command, profile.key, command, workdir, False): profile.key
-                for profile, command in jobs
+                executor.submit(execute_command, profile.key, command, workdir, False): (profile.key, reviewer_banner)
+                for profile, command, reviewer_banner in jobs
             }
             for future in as_completed(future_map):
                 result = future.result()
-                result["reviewer"] = future_map[future]
+                reviewer_key, reviewer_banner = future_map[future]
+                verify_reviewer_comment(result, owner_repo, args.pr, reviewer_banner, workdir)
+                result["reviewer"] = reviewer_key
+                result["reviewer_banner"] = reviewer_banner
                 results.append(result)
     return {
         "command": "planprreviewer",
@@ -465,6 +478,54 @@ def execute_command(label: str, command: Iterable[str], cwd: Path, dry_run: bool
     }
 
 
+def fetch_issue_comments(owner_repo: str, pr_number: int, cwd: Path) -> list[dict[str, object]]:
+    command = [
+        "gh",
+        "api",
+        f"repos/{owner_repo}/issues/{pr_number}/comments",
+        "--paginate",
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=sanitized_env(),
+    )
+    if completed.returncode != 0:
+        raise AgentCallerError(f"Could not fetch PR comments with gh api: {completed.stderr.strip()}")
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise AgentCallerError(f"Could not parse PR comments JSON: {exc}") from exc
+    if not isinstance(payload, list):
+        raise AgentCallerError("Unexpected PR comments payload shape from gh api")
+    return payload
+
+
+def verify_reviewer_comment(
+    result: dict[str, object],
+    owner_repo: str,
+    pr_number: int,
+    reviewer_banner: str,
+    cwd: Path,
+) -> None:
+    comments = fetch_issue_comments(owner_repo, pr_number, cwd)
+    posted = any(reviewer_banner in str(comment.get("body", "")) for comment in comments)
+    result["comment_verified"] = posted
+    if posted:
+        return
+    stderr = str(result.get("stderr", "") or "")
+    if stderr:
+        stderr = f"{stderr.rstrip()}\n"
+    stderr += f"Reviewer did not post the required PR comment banner: {reviewer_banner}\n"
+    result["stderr"] = stderr
+    result["returncode"] = int(result.get("returncode", 0) or 0) or 1
+
+
 def sanitized_env() -> dict[str, str]:
     env = os.environ.copy()
     env.setdefault("PYTHONUTF8", "1")
@@ -481,6 +542,14 @@ def resolve_command_executable(command: list[str]) -> list[str]:
         if resolved:
             command[0] = resolved
     return command
+
+
+def result_exit_code(result: dict[str, object]) -> int:
+    if result.get("dry_run"):
+        return 0
+    if "results" in result:
+        return max(int(item.get("returncode", 0) or 0) for item in result["results"])
+    return int(result.get("returncode", 0) or 0)
 
 
 if __name__ == "__main__":

@@ -50,7 +50,7 @@ Without this plan, any “meta skill engineering” effort becomes a license for
 
 - package-generated evidence from audits, reviews, and repair loops
 - copied reference material under `_source-material/asset-pipeline/assetsplanning/pipeline/stolenfromcodex/`
-- the external Meta-Skill-Orchestration repository at `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering`
+- the adjacent `Meta-Skill-Engineering` repository
 - public docs or skill ecosystems used as research inputs
 
 The key rule is that researched material is input, not shippable output.
@@ -80,7 +80,7 @@ Plan `08` owns the intake, escalation, and evidence packaging for audit-derived 
 - [ ] Create a checklist for evaluating external skill sources: fit to Scafforge mission, originality needed, overlap risk, weak-model navigability, and licensing/provenance.
 - [ ] Publish that checklist and decision model at `active-plans/12-skill-system-expansion-and-meta-skill-engineering/references/external-source-evaluation-rubric.md`.
 - [ ] Require copied bundles and researched repos to be distilled into Scafforge-owned language rather than copied verbatim.
-- [ ] Evaluate the Meta-Skill-Orchestration repository at `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering` with the same rubric rather than treating its location as unknown.
+- [ ] Evaluate the adjacent `Meta-Skill-Engineering` repository with the same rubric rather than treating its location as unknown.
 - [ ] Treat that evaluation as a local operator exercise that produces portable package policy docs; the resulting rubric and conclusions must not depend on machine-specific paths.
 - [ ] Use `references/competence-contract.md` as the canonical bar for weak-model navigability and operational clarity.
 - [ ] Define an explicit reject/quarantine path for failed provenance or licensing checks, using `active-plans/12-skill-system-expansion-and-meta-skill-engineering/references/rejected-sources.md` as the staging record until plan `11` finalizes a durable home.

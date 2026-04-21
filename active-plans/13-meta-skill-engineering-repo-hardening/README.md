@@ -57,14 +57,14 @@ This plan should decide which of those belong repo-wide and which stay specializ
 
 ## Adjacent repo surfaces likely to change during implementation
 
-- `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering\README.md`
-- `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering\AGENTS.md`
-- `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering\scripts\meta-skill-studio.py`
-- `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering\scripts\meta_skill_studio\app.py`
-- `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering\scripts\meta_skill_studio\tui.py`
-- `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering\scripts\meta_skill_studio\gui.py`
-- `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering\scripts\meta_skill_studio\opencode_sdk_bridge.mjs`
-- `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering\windows-wpf\`
+- the adjacent `Meta-Skill-Engineering` repo's `README.md`
+- the adjacent `Meta-Skill-Engineering` repo's `AGENTS.md`
+- the adjacent `Meta-Skill-Engineering` repo's `scripts/meta-skill-studio.py`
+- the adjacent `Meta-Skill-Engineering` repo's `scripts/meta_skill_studio/app.py`
+- the adjacent `Meta-Skill-Engineering` repo's `scripts/meta_skill_studio/tui.py`
+- the adjacent `Meta-Skill-Engineering` repo's `scripts/meta_skill_studio/gui.py`
+- the adjacent `Meta-Skill-Engineering` repo's `scripts/meta_skill_studio/opencode_sdk_bridge.mjs`
+- the adjacent `Meta-Skill-Engineering` repo's `windows-wpf/` surface
 - repo automation scripts under `scripts/`
 - the embedded `plugin-eval` bundle and any repo-wide evaluation surfaces derived from it
 

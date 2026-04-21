@@ -14,7 +14,7 @@
 
 ## Open Implementation Dependency
 
-The Meta-Skill-Orchestration repository path has since been resolved as `C:\Users\PC\Documents\GitHub\Meta-Skill-Engineering`. Implementation should inventory that repository explicitly, but any resulting Scafforge policy or rubric output must stay portable and must not embed machine-specific path assumptions.
+The adjacent `Meta-Skill-Engineering` repository has since been identified and should be inventoried explicitly during implementation, but any resulting Scafforge policy or rubric output must stay portable and must not embed machine-specific path assumptions.
 
 ## Planning Consequence
 
