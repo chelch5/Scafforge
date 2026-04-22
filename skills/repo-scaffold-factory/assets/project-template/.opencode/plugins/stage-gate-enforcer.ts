@@ -1,6 +1,7 @@
 import { type Plugin } from "@opencode-ai/plugin"
 import {
   allowsPreBootstrapWriteClaim,
+  completionValidationBlockerReason,
   extractArtifactVerdict,
   getTicket,
   getProcessVerificationState,
@@ -583,6 +584,10 @@ export const StageGateEnforcer: Plugin = async () => {
         const acceptanceRefreshTickets = manifest.tickets.filter((ticket) => getTicketWorkflowState(workflow, ticket.id).needs_acceptance_refresh)
         if (acceptanceRefreshTickets.length > 0) {
           throw new Error(`Cannot publish handoff while canonical acceptance refresh remains pending for: ${acceptanceRefreshTickets.map((ticket) => ticket.id).join(", ")}.`)
+        }
+        const completionProofBlocker = completionValidationBlockerReason(manifest)
+        if (completionProofBlocker) {
+          throw new Error(completionProofBlocker)
         }
       }
     },

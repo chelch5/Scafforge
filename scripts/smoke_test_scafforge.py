@@ -13,6 +13,7 @@ from typing import Any
 
 from test_support.repo_seeders import (
     make_stack_skill_non_placeholder,
+    read_json,
     seed_all_tickets_closed,
     seed_bootstrap_command_layout_mismatch,
     seed_completed_repair_follow_on_verification_block,
@@ -1412,6 +1413,7 @@ def seed_closed_ticket_with_blocked_dependent(dest: Path) -> None:
     proof_path.write_text("# Ready Bootstrap\n", encoding="utf-8")
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    seed_passing_completion_proof(dest)
 
 
 def seed_finish_claim_with_open_finish_ticket(dest: Path) -> None:
@@ -1746,6 +1748,7 @@ def seed_closed_ticket_needing_explicit_reverification(dest: Path) -> None:
     proof_path.write_text("# Ready Bootstrap\n", encoding="utf-8")
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    seed_passing_completion_proof(dest)
 
 
 def seed_reopened_ticket_needing_explicit_reverification(dest: Path) -> None:
@@ -1821,6 +1824,7 @@ def seed_closed_ticket_needing_reconciliation(dest: Path) -> None:
     proof_path.write_text("# Ready Bootstrap\n", encoding="utf-8")
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    seed_passing_completion_proof(dest)
 
 
 def seed_legacy_smoke_test_tool(dest: Path) -> None:
@@ -2655,6 +2659,67 @@ def seed_truthful_process_verification(dest: Path) -> None:
         "process_version": workflow["process_version"],
     }
     workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+    seed_passing_completion_proof(dest)
+
+
+def seed_passing_completion_proof(dest: Path) -> None:
+    provenance = read_json(dest / ".opencode" / "meta" / "bootstrap-provenance.json")
+    validation_bundle = (
+        provenance.get("validation_proof_bundle") if isinstance(provenance, dict) else None
+    )
+    stack_label = (
+        str(provenance.get("stack_label", "")).strip()
+        if isinstance(provenance, dict)
+        else ""
+    )
+    if isinstance(validation_bundle, dict):
+        for family_entry in validation_bundle.get("families", []):
+            if not isinstance(family_entry, dict):
+                continue
+            family = str(family_entry.get("family", "")).strip()
+            artifact_rel = str(family_entry.get("required_artifact_path", "")).strip()
+            if not family or not artifact_rel:
+                continue
+            evidence_rel = f".opencode/state/artifacts/history/demo/closeout/proof-{family}.md"
+            evidence_path = dest / evidence_rel
+            evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            evidence_path.write_text(
+                f"# Completion Proof\n\n- family: {family}\n- result: PASS\n",
+                encoding="utf-8",
+            )
+            steps = []
+            for step in family_entry.get("steps", []):
+                if not isinstance(step, dict):
+                    continue
+                step_id = str(step.get("id", "")).strip()
+                artifact_kind = str(step.get("artifact_kind", "")).strip() or "command-output"
+                if not step_id:
+                    continue
+                steps.append(
+                    {
+                        "step_id": step_id,
+                        "status": "passed",
+                        "summary": f"{step_id} passed in synthetic smoke coverage.",
+                        "artifact_kind": artifact_kind,
+                        "artifact_path": evidence_rel,
+                    }
+                )
+            proof_payload = {
+                "family": family,
+                "stack_label": stack_label,
+                "proof_tier": "synthetic-smoke-proof",
+                "passed": True,
+                "checked_at": "2026-03-27T01:44:04Z",
+                "artifact_path": evidence_rel,
+                "artifact_kind": "command-output",
+                "summary": f"Synthetic smoke proof for {family}.",
+                "steps": steps,
+            }
+            proof_path = dest / artifact_rel
+            proof_path.parent.mkdir(parents=True, exist_ok=True)
+            proof_path.write_text(
+                json.dumps(proof_payload, indent=2) + "\n", encoding="utf-8"
+            )
 
 
 def seed_process_verification_clear_deadlock(
@@ -4036,6 +4101,27 @@ def main() -> int:
         if "code_quality_status" not in generated_handoff_publish:
             raise RuntimeError(
                 "Generated handoff_publish.ts should expose code quality status counts"
+            )
+        if "completion_proof_status" not in generated_handoff_publish:
+            raise RuntimeError(
+                "Generated handoff_publish.ts should expose completion proof status"
+            )
+
+        bootstrap_provenance = read_json(
+            full_dest / ".opencode" / "meta" / "bootstrap-provenance.json"
+        )
+        validation_bundle = (
+            bootstrap_provenance.get("validation_proof_bundle")
+            if isinstance(bootstrap_provenance, dict)
+            else None
+        )
+        if not isinstance(validation_bundle, dict):
+            raise RuntimeError(
+                "Generated bootstrap-provenance.json should include a validation_proof_bundle"
+            )
+        if not isinstance(validation_bundle.get("artifact_paths"), list):
+            raise RuntimeError(
+                "Generated validation_proof_bundle should include canonical artifact paths"
             )
 
         generated_smoke_tool = (
@@ -11913,6 +11999,10 @@ def main() -> int:
             raise RuntimeError(
                 "context_snapshot should return verification metadata for the written snapshot"
             )
+        if "## Completion Proof" not in context_snapshot_text:
+            raise RuntimeError(
+                "context_snapshot should summarize completion proof state"
+            )
         handoff_publish_result = run_generated_tool(
             executed_context_handoff_dest,
             ".opencode/tools/handoff_publish.ts",
@@ -11941,6 +12031,15 @@ def main() -> int:
             raise RuntimeError(
                 "handoff_publish should return verification metadata for the published restart surfaces"
             )
+        completion_proof_status = handoff_publish_result.get("completion_proof_status")
+        if (
+            not isinstance(completion_proof_status, dict)
+            or completion_proof_status.get("primary_family") is None
+            or completion_proof_status.get("completion_claim_active") is not False
+        ):
+            raise RuntimeError(
+                "handoff_publish should return the resolved completion proof summary"
+            )
         if (
             "Keep SETUP-001 as the foreground ticket and continue its lifecycle from planning."
             not in start_here_text
@@ -11948,12 +12047,20 @@ def main() -> int:
             raise RuntimeError(
                 "handoff_publish should publish the requested next_action into START-HERE"
             )
+        if "completion_proof_status:" not in start_here_text:
+            raise RuntimeError(
+                "START-HERE should summarize completion proof status"
+            )
         if (
             "Keep SETUP-001 as the foreground ticket and continue its lifecycle from planning."
             not in latest_handoff_text
         ):
             raise RuntimeError(
                 "handoff_publish should publish the requested next_action into the latest handoff copy"
+            )
+        if "completion_proof_status:" not in latest_handoff_text:
+            raise RuntimeError(
+                "latest-handoff should summarize completion proof status"
             )
         invalid_handoff_dest = workspace / "executed-invalid-handoff"
         shutil.copytree(full_dest, invalid_handoff_dest)
@@ -11966,6 +12073,20 @@ def main() -> int:
         if "pending_process_verification" not in invalid_handoff_error:
             raise RuntimeError(
                 "handoff_publish should reject clean-state claims while pending_process_verification remains true"
+            )
+
+        missing_completion_proof_dest = workspace / "executed-missing-completion-proof"
+        shutil.copytree(full_dest, missing_completion_proof_dest)
+        seed_all_tickets_closed(missing_completion_proof_dest)
+        seed_ready_bootstrap(missing_completion_proof_dest)
+        missing_completion_proof_error = run_generated_tool_error(
+            missing_completion_proof_dest,
+            ".opencode/tools/handoff_publish.ts",
+            {},
+        )
+        if "Completion claims require the active validation proof bundle to pass before handoff publication." not in missing_completion_proof_error:
+            raise RuntimeError(
+                "handoff_publish should block completion claims when required proof artifacts are missing"
             )
 
         executed_environment_bootstrap_dest = (

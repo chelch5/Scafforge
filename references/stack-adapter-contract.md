@@ -101,6 +101,13 @@ Adapters must be able to answer:
 
 This target-completion metadata is internal package contract state. It should inform bootstrap warnings, ticket generation, repair follow-up, audit routing, and greenfield verification without changing the normalized `environment_bootstrap` output schema.
 
+Repo-family completion proof is defined separately in [references/validation-proof-matrix.json](validation-proof-matrix.json).
+
+- Tier 1 stack proof stays the baseline host and toolchain contract.
+- Repo-family proof layers on top of that baseline when the shipped experience needs behavior, visual, HTTP, emulator, or device evidence.
+- Generated repos should consume the resolved family bundle from `.opencode/meta/bootstrap-provenance.json -> validation_proof_bundle` and publish canonical proof artifacts at `.opencode/state/artifacts/proof-<family>.json`.
+- If the matrix has no validator for a claimed family, treat that as an explicit blocker instead of silently skipping proof.
+
 ### Godot Android target-completion expectations
 
 **Repo-managed surfaces** (owned by Scafforge scaffold and managed repair):

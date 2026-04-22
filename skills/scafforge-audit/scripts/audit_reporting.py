@@ -121,6 +121,8 @@ def infer_surface(finding: Finding) -> str:
         return "scafforge-audit transcript chronology and causal diagnosis surfaces"
     if finding.code.startswith("REF"):
         return "generated repo reference integrity and configuration surfaces"
+    if finding.code.startswith("PROOF"):
+        return "generated repo completion-validation matrix and proof-artifact surfaces"
     if finding.code.startswith("BOOT"):
         return "managed bootstrap tool and bootstrap-facing workflow guidance"
     if finding.code.startswith("ENV"):
@@ -203,6 +205,8 @@ def prevention_action(finding: Finding) -> str:
         return "Create open-parent remediation follow-up tickets as `split_scope + parallel_independent`, keep `issue_intake` reserved for completed historical tickets, and audit the parent-FAIL plus sequential-child deadlock before live runs stall on it."
     if finding.code == "WFLOW035":
         return "Publish a canonical current-cycle handoff proof into workflow state, make restart surfaces render that proof truthfully, and reject ready/complete claims that outrun failed or missing proof."
+    if finding.code.startswith("PROOF"):
+        return "Drive completion claims through the shared validation matrix, require canonical `proof-<family>.json` artifacts for active proof families, and surface unsupported families as explicit blockers instead of silent skips."
     if finding.code == "WFLOW026":
         return "Teach the shared artifact verdict extractor to accept markdown-emphasized labels, compact `## QA PASS` / `## Review APPROVE` headings, `## Decision` headings with the verdict on the next line, and plain `**Overall**: PASS` labels, then route ticket_lookup and ticket_update through that single parser."
     if finding.code == "WFLOW027":
@@ -466,7 +470,7 @@ def build_ticket_recommendations(findings: list[Finding], ctx: AuditReportingCon
         elif finding.code.startswith(("SESSION", "SKILL", "MODEL")):
             route = "scafforge-repair"
             repair_class = "safe Scafforge package change"
-        elif finding.code.startswith(("EXEC", "REF")):
+        elif finding.code.startswith(("EXEC", "REF", "PROOF")):
             route = "ticket-pack-builder"
             repair_class = "generated-repo remediation ticket"
         elif finding.code == "WFLOW024":
@@ -631,7 +635,7 @@ def ownership_classification(finding: Finding) -> str:
         return "host prerequisite or package boundary"
     if finding.code.startswith(("BOOT", "REF")):
         return "generated repo source and configuration surfaces"
-    if finding.code.startswith("EXEC"):
+    if finding.code.startswith(("EXEC", "PROOF")):
         return "generated repo execution surface"
     if finding.code.startswith(("SKILL", "MODEL")):
         return "project skill or prompt surface"
@@ -804,6 +808,8 @@ def _next_free_remed_id(existing_ids: set[str], used_ids: set[str]) -> str:
 def validation_target_for_finding(finding: Finding) -> str:
     if finding.code in {"EXEC-GODOT-013", "EXEC-GODOT-014", "EXEC-GODOT-015", "WFLOW035"}:
         return "rerun contract validation, smoke, integration coverage, and the curated womanvshorse/spinner downstream fixture families"
+    if finding.code.startswith("PROOF"):
+        return "rerun contract validation, smoke, and multi-stack proof integration coverage across the validation-matrix families"
     if finding.code.startswith("EXEC"):
         return "rerun the generated-tool execution smoke coverage plus the relevant GPTTalker fixture family"
     if finding.code.startswith("ENV"):
@@ -816,8 +822,8 @@ def validation_target_for_finding(finding: Finding) -> str:
 def render_report_one(root: Path, findings: list[Finding], generated_at: str, logs: list[Path]) -> str:
     grouped = findings_by_severity(findings)
     result_state = diagnosis_result_state(findings)
-    workflow_findings = [finding for finding in findings if not finding.code.startswith(("EXEC", "REF"))]
-    code_quality_findings = [finding for finding in findings if finding.code.startswith(("EXEC", "REF"))]
+    workflow_findings = [finding for finding in findings if not finding.code.startswith(("EXEC", "REF", "PROOF"))]
+    code_quality_findings = [finding for finding in findings if finding.code.startswith(("EXEC", "REF", "PROOF"))]
     lines = [
         "# Initial Codebase Review",
         "",

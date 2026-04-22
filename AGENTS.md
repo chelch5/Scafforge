@@ -237,6 +237,7 @@ These refinements govern the package contract and implementation priorities:
 - `scaffold-kickoff` remains the single public entrypoint for greenfield, retrofit, pivot, managed-repair or update, and diagnosis or review flows
 - the greenfield path is one-shot: one batched blocking-decision round, one uninterrupted same-session generation pass, then direct handoff into development
 - the greenfield handoff must be immediately continuable: one legal next move, one named owner, no bootstrap-first ambiguity, and zero unresolved stack-specific execution or canonical-reference failures
+- what "done" means per repo family must be explicit, machine-readable, and tied to proof artifacts instead of agent self-report
 - the generated repo must have a structured truth hierarchy with exact canonical owners for facts, queue state, transient workflow state, artifacts, provenance, and restart surfaces
 - the generated repo must always expose one legal next move with one named owner and one blocker return path
 - the initial backlog should be implementation-ready where decisions are resolved, while unresolved major choices become explicit blocked or decision tickets instead of fabricated detail

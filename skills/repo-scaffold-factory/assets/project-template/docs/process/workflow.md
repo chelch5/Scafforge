@@ -89,6 +89,19 @@ Rules:
 - before closeout: a passing `smoke-test` artifact produced by `smoke_test` must exist
 - before a ready or finished handoff claim: the current-cycle `handoff_proof` state in `.opencode/state/workflow-state.json` must be `passed`
 - if `handoff_proof.status` is `failed` or `missing`, restart surfaces must stay blocked on proof rather than claiming ready state
+- when the repo reaches a completion claim, use `.opencode/meta/bootstrap-provenance.json -> validation_proof_bundle` plus `.opencode/state/artifacts/proof-<family>.json` to prove the active repo-family bundle instead of relying on self-report
+- required completion proof follows the cheapest truthful ladder first: process or build truth -> HTTP or runtime truth -> virtual-display screenshot -> full browser, emulator, or device interaction
+
+## Completion proof bundle
+
+Completion validation is family-based and supplements the Tier 1 stack proof instead of replacing it.
+
+- canonical package matrix: `references/validation-proof-matrix.json` in the Scafforge package
+- repo-local resolved bundle: `.opencode/meta/bootstrap-provenance.json -> validation_proof_bundle`
+- repo-local proof artifacts: `.opencode/state/artifacts/proof-<family>.json`
+- proof step status values should stay explicit: `passed`, `failed`, `degraded`, or `not_applicable`
+- if a family validator does not exist yet, treat that as a blocker-shaped gap rather than silently skipping proof
+- desktop and web repos should record headless degradation explicitly when they had to stop at process or HTTP truth instead of screenshot or browser/device proof
 
 ## Visual proof block
 

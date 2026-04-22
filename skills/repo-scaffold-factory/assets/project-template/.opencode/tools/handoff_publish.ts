@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import {
   bootstrapProvenancePath,
+  completionProofSummary,
   ensureRequiredFile,
   loadWorkflowState,
   mergeStartHere,
@@ -56,6 +57,7 @@ export default tool({
       nextAction: args.next_action,
       backlogVerifierAgent,
     })
+    const completionProof = completionProofSummary(manifest)
     const expectedStartHere = mergeStartHere(startHereBefore, renderedHandoff)
     const actualStartHere = await readFile(startHerePath(), "utf-8")
     const actualLatestHandoff = await readFile(latestHandoffPath(), "utf-8")
@@ -76,6 +78,7 @@ export default tool({
         handoff_proof_status: workflow.handoff_proof.status,
         handoff_proof_artifact: workflow.handoff_proof.proof_artifact,
         handoff_proof_blocking_codes: workflow.handoff_proof.blocking_codes,
+        completion_proof_status: completionProof,
         pending_process_verification: workflow.pending_process_verification,
         code_quality_status: {
           open_remediation_tickets: openRemediationTickets.length,

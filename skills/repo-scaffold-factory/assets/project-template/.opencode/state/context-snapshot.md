@@ -22,6 +22,14 @@ __PROJECT_NAME__
 - last_verified_at: Not yet verified.
 - proof_artifact: None
 
+## Completion Proof
+
+- primary_family: cli-script
+- overlay_families: none
+- completion_claim_active: false
+- blocking: false
+- family_statuses: cli-script=inactive [static-contract:not_required, build-or-bootstrap:not_required, command-runtime:not_required, visual-review:not_required]
+
 ## Process State
 
 - process_version: 7

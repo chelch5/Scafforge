@@ -48,6 +48,11 @@ The repo is operating under the managed OpenCode workflow. Use the canonical sta
 - repair_follow_on_updated_at: Not yet recorded.
 - bootstrap_status: missing
 - bootstrap_proof: None
+- completion_primary_family: cli-script
+- completion_overlay_families: none
+- completion_claim_active: false
+- completion_proof_blocking: false
+- completion_proof_status: cli-script=inactive [static-contract:not_required, build-or-bootstrap:not_required, command-runtime:not_required, visual-review:not_required]
 
 ## Post-Generation Audit Status
 

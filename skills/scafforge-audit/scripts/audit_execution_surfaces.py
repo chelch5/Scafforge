@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from shared_verifier_types import Finding
 from target_completion import (
+    completion_validation_summary,
     debug_apk_path,
     declares_godot_android_target,
     deliverable_proof_path,
@@ -2006,6 +2007,129 @@ def audit_godot_execution(root: Path, findings: list[Finding], ctx: ExecutionSur
             )
 
 
+def audit_completion_validation_proof(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
+    manifest = load_manifest(root)
+    summary = completion_validation_summary(root, manifest)
+    provenance_path = root / ".opencode" / "meta" / "bootstrap-provenance.json"
+    brief_path = root / "docs" / "spec" / "CANONICAL-BRIEF.md"
+
+    if summary.get("supported") is not True:
+        if summary.get("completion_claim_active") is not True:
+            return
+        _add_execution_finding(
+            findings,
+            ctx,
+            code="PROOF004",
+            severity="error",
+            problem="Repo claims completion without a supported completion-validation family mapping.",
+            root_cause=(
+                "The repo reached a completion claim, but the package-owned validation matrix could not map the repo to a "
+                "supported completion family. That leaves the proof contract undefined instead of explicit."
+            ),
+            files=[brief_path, provenance_path],
+            safer_pattern=(
+                "Keep unsupported stacks explicit: classify the repo into a supported validation family or record the package "
+                "gap before allowing completion claims."
+            ),
+            evidence=[
+                f"completion_claim_active = {summary.get('completion_claim_active')}",
+                f"primary_family = {summary.get('primary_family')}",
+                f"overlay_families = {', '.join(summary.get('overlay_families', [])) or 'none'}",
+            ],
+            root=root,
+        )
+        return
+
+    for family in summary.get("families", []):
+        if not isinstance(family, dict) or family.get("activation_required") is not True:
+            continue
+        artifact_rel = str(family.get("artifact_path", "")).strip()
+        artifact_path = root / artifact_rel if artifact_rel else root
+        step_states = [
+            f"{step.get('id')}={step.get('status')}"
+            for step in family.get("steps", [])
+            if isinstance(step, dict)
+        ]
+        files = [brief_path, provenance_path]
+        if artifact_rel:
+            files.append(artifact_path)
+        status = str(family.get("status", "")).strip() or "missing"
+        title = str(family.get("title", family.get("family", "completion proof"))).strip()
+        if status == "missing":
+            _add_execution_finding(
+                findings,
+                ctx,
+                code="PROOF001",
+                severity="error",
+                problem=f"{title} is missing its required completion proof artifact.",
+                root_cause=(
+                    "The repo activated a family-level completion proof requirement, but the canonical proof artifact was never "
+                    "published. That leaves handoff and audit without machine-readable completion evidence."
+                ),
+                files=files,
+                safer_pattern=(
+                    f"Publish {artifact_rel or 'the canonical proof artifact'} with the required family proof steps before "
+                    "claiming completion or release readiness."
+                ),
+                evidence=[
+                    f"family = {family.get('family')}",
+                    f"artifact_path = {artifact_rel or 'missing'}",
+                    f"required_artifact_kinds = {', '.join(family.get('required_artifact_kinds', [])) or 'none'}",
+                    f"step_status = {', '.join(step_states) or 'none recorded'}",
+                ],
+                root=root,
+            )
+            continue
+        if status == "invalid":
+            _add_execution_finding(
+                findings,
+                ctx,
+                code="PROOF002",
+                severity="error",
+                problem=f"{title} has an invalid completion proof artifact schema.",
+                root_cause=(
+                    "The family proof artifact exists, but it does not match the package-owned completion proof schema. "
+                    "Audit and handoff cannot trust malformed proof payloads."
+                ),
+                files=files,
+                safer_pattern=(
+                    "Keep proof artifacts concise and structured: use the required top-level schema fields and machine-readable "
+                    "step statuses instead of ad hoc logs."
+                ),
+                evidence=[
+                    f"family = {family.get('family')}",
+                    *[str(item) for item in family.get('schema_errors', [])[:6]],
+                ],
+                root=root,
+            )
+            continue
+        if family.get("blocking") is True:
+            _add_execution_finding(
+                findings,
+                ctx,
+                code="PROOF003",
+                severity="error",
+                problem=f"{title} records failing or unsupported completion proof status.",
+                root_cause=(
+                    "The repo published a family proof artifact, but at least one required proof tier is missing, failed, "
+                    "degraded outside the allowed rules, or still lacks a concrete validator path."
+                ),
+                files=files,
+                safer_pattern=(
+                    "Rerun only the named proof tiers for this repo family, publish the updated proof artifact, and keep "
+                    "completion blocked until every required step is passed or explicitly allowed to degrade."
+                ),
+                evidence=[
+                    f"family = {family.get('family')}",
+                    f"status = {status}",
+                    f"top_level_summary = {family.get('top_level_summary') or 'missing'}",
+                    f"blocking_reasons = {', '.join(family.get('blocking_reasons', [])) or 'none'}",
+                    f"step_status = {', '.join(step_states) or 'none recorded'}",
+                ],
+                root=root,
+            )
+
+
 def audit_godot_project_version(root: Path, findings: list[Finding], ctx: ExecutionSurfaceAuditContext) -> None:
     project_file = root / "project.godot"
     if not project_file.exists():
@@ -2229,5 +2353,6 @@ def run_execution_surface_audits(root: Path, findings: list[Finding], ctx: Execu
     audit_java_android_execution(root, findings, ctx)
     audit_cpp_execution(root, findings, ctx)
     audit_dotnet_execution(root, findings, ctx)
+    audit_completion_validation_proof(root, findings, ctx)
     audit_placeholder_runtime_sources(root, findings, ctx)
     audit_reference_integrity(root, findings, ctx)
