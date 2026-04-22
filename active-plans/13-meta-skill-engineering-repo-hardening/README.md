@@ -2,7 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** TODO
+**Status:** DONE
+**Implementation Outcome:** The adjacent `Meta-Skill-Engineering` repo was hardened on 2026-04-22 and merged through PR `#19`, including the expanded Studio CLI contract, evaluation-methodology docs, and validation coverage.
 **Goal:** Harden the separate `Meta-Skill-Engineering` repository into a fully agent-usable skill-engineering platform with a complete CLI surface, stronger evaluation methodology, and clearer automation workflows.
 
 **Architecture:** Treat Meta-Skill-Engineering as its own product, not as an abstract extension of Scafforge. The repo already has a partial Studio CLI/TUI/GUI and a broad skill suite. This plan turns that into a complete, automatable, headless-friendly control surface, while also adapting useful evaluation techniques from the embedded `plugin-eval` work into the wider suite.

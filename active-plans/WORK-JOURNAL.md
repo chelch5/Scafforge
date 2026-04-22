@@ -294,3 +294,43 @@ The last ambiguous root note was also fixed: the Meta-Skill-Engineering extra-in
 ### Entry 28: Newcomer-context check passed
 
 Using only `active-plans/README.md` and one numbered folder (`02-downstream-reliability-hardening/README.md`), a newcomer can now identify the active portfolio, tell which documents are canonical versus supporting, see the implementation order, and confirm that numbered folders expose status, goal, dependencies, and actionable phases immediately at the top.
+
+### Entry 29: Plan 12 needed one more contract-alignment pass before merge
+
+The plan `12` PR was substantively correct, but the review pass exposed one real gap: the skill-governance flow documented rejected external sources without a first-class resolution path. That was fixed by:
+
+- adding explicit resolution workflow guidance to `references/rejected-sources.md`
+- extending the contract validator so it checks for the rejected-source resolution path directly
+- aligning `AGENTS.md` so the durable skill-evolution reference set names that document explicitly
+
+This was a useful reminder that Scafforge’s validator-pinned documentation needs the same rigor as code surfaces when a plan is closing.
+
+### Entry 30: Plan 13 required direct Copilot recovery instead of the wrapper path
+
+The interrupted `planimplementer` run in the `Meta-Skill-Engineering` repo could not be resumed cleanly through the normal wrapper loop, so I used direct `copilot -p` with the full interrupted-work context instead. That preserved the existing dirty implementation state and avoided throwing away useful partial work.
+
+The resulting adjacent-repo hardening landed through PR `#19` and confirmed the real definition of “fully agent-usable” for MSE:
+
+- the Studio CLI now exposes a durable, machine-readable action contract
+- the evaluation-methodology docs are explicit enough for automation rather than only human interpretation
+- the Python CLI is the cross-platform execution surface, with WPF kept as a convenience shell rather than the authoritative path
+
+### Entry 31: Plan 14 proved the cross-repo Blender handoff needed machine-readable evidence
+
+The `blender-agent` hardening work landed through PR `#3`, but the Scafforge-side lesson was broader than just better adjacent-repo docs. The trust boundary only became solid once the adjacent repo emitted machine-readable authority:
+
+- `mcp-server/capability-contract.json`
+- `HARDENING-PROOF.json`
+- `mcp-server/tests/headless/results.json`
+
+Those artifacts now anchor Scafforge’s own Blender support notes, which is meaningfully better than letting the package rely on prose summaries or outdated skill claims.
+
+### Entry 32: Final portfolio sync exposed the one real remaining open plan
+
+After plans `13` and `14` landed, the root portfolio docs still implied that most of the numbered plans were unfinished. A direct history check showed the opposite:
+
+- plans `02` through `09`, `11`, and `12` are already merged in Scafforge
+- plan `13` is merged in `Meta-Skill-Engineering`
+- plan `14` is merged in `blender-agent`
+
+The only genuinely open plan is `10-viewer-control-plane-winui`. Its Scafforge-side contract pack is merged, but Phase 6 remains open because it requires the live backend-connected WinUI app build and proof pass, not just package-side contract documents. That distinction matters because the user’s definition of done is “all plans fully implemented to 100%,” and the portfolio needs to say plainly when one plan is still active.

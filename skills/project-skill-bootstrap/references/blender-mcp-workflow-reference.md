@@ -12,6 +12,7 @@ For current support levels and stop points, pair this workflow note with [`blend
 - If a mutating response says the work was ephemeral, omits `output_blend`, or returns no `persistence.saved_blend`, stop and retry that same step correctly before continuing.
 - Before claiming a bridge defect, prove one successful chain explicitly: `project_initialize(output_blend=...)` must save a file, the next mutating call must reuse that path as `input_blend`, and `.blender-mcp/audit/*.jsonl` must record non-null `input_blend` / `output_blend` on the corresponding `job_start`.
 - Do not claim the bridge is broken just because a call was made with `input_blend: null` or `output_blend: null`. First verify the call honored the stateless chaining contract.
+- Treat `blender-agent/mcp-server/capability-contract.json` and `blender-agent/HARDENING-PROOF.json` as the machine-readable authority for default-v1, preview-v2, and headless-proof claims.
 
 ## Default tool sequence
 
@@ -41,3 +42,4 @@ Before a Blender-derived asset is treated as usable in a generated repo, keep th
 - `assets/previews/<asset>.*` render or preview evidence
 - `assets/manifest.json` with `source_route`, `source_type`, `workflow_ref`, `tool_chain`, `preview_path`, `import_report_ref`, and `license_report_ref`
 - repo-local import QA proving the exported asset survives the target engine path
+- the upstream Blender proof references: `blender-agent/HARDENING-PROOF.json` and `blender-agent/mcp-server/tests/headless/results.json`

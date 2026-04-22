@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** TODO
+**Status:** DONE
 **Goal:** Replace the current coarse asset-route concept with a real Scafforge asset operating framework that can classify, generate, source, validate, and prove asset truth in generated repositories.
 
 **Architecture:** Move from four vague route labels to a capability-based asset system with explicit source routes, explicit pipeline stages, and machine-readable provenance ownership. Generated repos should receive canonical asset requirements, manifests, workflow locks, provenance/compliance records, optimization reports, and import QA surfaces. The pipeline must prefer deterministic and curated free/open paths first, local/open AI generation second, and DCC cleanup/export where necessary.
