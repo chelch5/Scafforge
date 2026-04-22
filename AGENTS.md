@@ -113,9 +113,16 @@ Use `python3` or `sys.executable` for Python entrypoints in this repository. Do 
 `active-audits/` holds diagnosis packs copied from generated repositories for cross-repo analysis and Scafforge package improvement work.
 
 - Each generated repo gets its own subfolder named after the repo (e.g., `active-audits/gpttalker/`, `active-audits/spinner/`, `active-audits/glitch/`).
-- Each subfolder contains the full `diagnosis/` folder from the subject repo plus the agent log file from the audit run.
+- Each subfolder contains copied raw audit evidence under `raw/`, including the staged diagnosis pack and any copied audit logs.
+- The canonical package-side sidecars under each repo folder are:
+  - `evidence-manifest.json`
+  - `investigator/report.md`
+  - `investigator/report.json`
+  - `fixer/package-fix-record.json`
+  - `revalidation/resume-ready.json`
 - When an audit has been fully consumed by a Scafforge patch, move the subfolder contents to `archive/archived-audits/`.
-- Do not edit copied audit files; they are evidence, not working documents.
+- Do not edit copied raw audit files in place; they are evidence, not working documents.
+- Any archive index for logs, session files, or database exports must stay derived and non-authoritative relative to the copied raw evidence and sidecar manifests.
 
 `active-plans/` holds implementation planning documents for Scafforge package work.
 
@@ -381,12 +388,15 @@ Owns workflow diagnosis, review validation, and diagnosis-pack generation.
 It must remain read-only.
 It should validate PR or review evidence against the actual repo before treating anything as canonical.
 It should emit code-quality findings for stack-specific execution and canonical reference-integrity failures, not just workflow-surface drift.
+It also owns the package-evidence bundle and the staged `active-audits/` inputs that feed package-side investigation, while keeping the copied raw audit pack immutable.
+Package investigator and fixer helpers remain bounded package-maintainer scripts, not public skills; they may write sidecar artifacts under `active-audits/`, but they must not mutate package code directly.
 
 ### `scafforge-repair`
 
 Owns workflow repair execution and post-audit follow-up.
 
 It should consume audit outputs, apply safe managed-surface repairs, leave explicit provenance and verification state, record backup and diff summaries, and create remediation tickets when source-layer follow-up remains.
+It must not open package-fix PRs or claim package-side `resume-ready`; those stay in package-side evidence artifacts and orchestration-owned state until fresh downstream revalidation lands.
 
 ### `scafforge-pivot`
 

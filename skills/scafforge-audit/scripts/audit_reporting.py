@@ -18,6 +18,7 @@ from disposition_bundle import (
     evidence_grade_for_finding,
     repo_has_godot_smoke_guard,
 )
+from package_evidence import PACKAGE_EVIDENCE_BUNDLE_NAME, build_package_evidence_bundle
 from shared_verifier_types import Finding
 
 
@@ -1210,6 +1211,7 @@ def emit_diagnosis_pack(
 ) -> dict[str, Any]:
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     destination.mkdir(parents=True, exist_ok=True)
+    diagnosis_kind = str((manifest_overrides or {}).get("diagnosis_kind", "initial_diagnosis")).strip() or "initial_diagnosis"
     recommendations = build_ticket_recommendations(findings, ctx, root)
     disposition_bundle = build_disposition_bundle(
         findings,
@@ -1219,6 +1221,20 @@ def emit_diagnosis_pack(
         audit_package_commit=ctx.current_package_commit,
     )
     next_step = recommended_next_step(findings, recommendations, disposition_bundle)
+    report_paths = {key: value for key, value in DIAGNOSIS_REPORTS.items()}
+    package_evidence_bundle = build_package_evidence_bundle(
+        package_root=ctx.package_root,
+        repo_root=root,
+        diagnosis_destination=destination,
+        generated_at=generated_at,
+        diagnosis_kind=diagnosis_kind,
+        disposition_bundle=disposition_bundle,
+        recommendations=recommendations,
+        recommended_next_step=next_step,
+        package_work_required_first=package_work_required_first(recommendations),
+        report_paths=report_paths,
+        source_surface_map={finding.code: infer_surface(finding) for finding in findings},
+    )
     reports = {
         DIAGNOSIS_REPORTS["report_1"]: render_report_one(root, findings, generated_at, logs),
         DIAGNOSIS_REPORTS["report_2"]: render_report_two(findings),
@@ -1229,6 +1245,9 @@ def emit_diagnosis_pack(
         (destination / filename).write_text(content + "\n", encoding="utf-8")
     disposition_bundle_name = "disposition-bundle.json"
     (destination / disposition_bundle_name).write_text(json.dumps(disposition_bundle, indent=2) + "\n", encoding="utf-8")
+    (destination / PACKAGE_EVIDENCE_BUNDLE_NAME).write_text(
+        json.dumps(package_evidence_bundle, indent=2) + "\n", encoding="utf-8"
+    )
 
     manifest: dict[str, Any] = {
         "generated_at": generated_at,
@@ -1244,12 +1263,14 @@ def emit_diagnosis_pack(
             if finding.code in bundle_source_follow_up_codes(disposition_bundle)
         ],
         "result_state": diagnosis_result_state(findings),
-        "diagnosis_kind": "initial_diagnosis",
+        "diagnosis_kind": diagnosis_kind,
         "evidence_mode": "transcript_backed" if logs else "current_state_only",
         "audit_package_commit": ctx.current_package_commit,
-        "report_files": {key: value for key, value in DIAGNOSIS_REPORTS.items()},
+        "report_files": report_paths,
         "disposition_bundle_file": disposition_bundle_name,
         "disposition_bundle": disposition_bundle,
+        "package_evidence_bundle_file": PACKAGE_EVIDENCE_BUNDLE_NAME,
+        "package_evidence_bundle": package_evidence_bundle,
         "ticket_recommendations": recommendations,
         "package_work_required_first": package_work_required_first(recommendations),
         "recommended_next_step": next_step,

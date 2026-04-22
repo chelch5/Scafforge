@@ -189,11 +189,12 @@
       "owner": "diagnosis-disposition",
       "modes": ["full-diagnosis", "audit_then_route_repair_if_needed", "review_and_emit_diagnosis_pack"],
       "inputs": ["repo workflow surfaces", "contract docs", "template outputs", "optional PR/review evidence"],
-      "outputs": ["diagnosis", "validated review findings", "four-report pack", "ticket recommendations"],
+      "outputs": ["diagnosis", "validated review findings", "four-report pack", "ticket recommendations", "package evidence bundle"],
       "required_outputs": [
         "authoritative disposition bundle",
         "evidence-backed finding ownership",
-        "code-quality findings for execution and reference-integrity failures"
+        "code-quality findings for execution and reference-integrity failures",
+        "package evidence bundle and escalation decision when package work is implicated"
       ],
       "upstreams": ["repo-scaffold-factory", "opencode-team-bootstrap", "agent-prompt-engineering", "project-skill-bootstrap", "scaffold-kickoff"],
       "downstreams": ["scafforge-repair", "ticket-pack-builder", "handoff-brief"]
@@ -206,7 +207,8 @@
       "required_outputs": [
         "repair_follow_on outcome derived from the authoritative disposition bundle",
         "verified final snapshot before restart publication",
-        "non-destructive provenance for any managed-surface replacement"
+        "non-destructive provenance for any managed-surface replacement",
+        "truthful restart publication that still waits on fresh post-package revalidation when package work had to land first"
       ],
       "upstreams": ["scafforge-audit", "scaffold-kickoff", "opencode-team-bootstrap"],
       "downstreams": ["ticket-pack-builder", "handoff-brief"]

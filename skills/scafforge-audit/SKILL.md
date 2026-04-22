@@ -9,6 +9,7 @@ Use this skill to inspect an existing repository in full diagnostic mode without
 
 This is the host-side diagnosis surface. It replaces the old mixed doctor-plus-bridge behavior by keeping diagnosis, review evidence intake, and report generation together in one non-mutating skill.
 Every audit run produces the full four-report diagnosis pack.
+Every diagnosis pack also persists `disposition-bundle.json` and `package-evidence-bundle.json` so package work can be staged into `active-audits/` without inventing a second artifact family.
 Use [../../references/competence-contract.md](../../references/competence-contract.md) as the package-level bar for whether the workflow is actually competent.
 This skill now emits code-quality findings as well as workflow findings, including EXEC families for stack-specific execution failures and REF families for broken canonical references.
 
@@ -149,6 +150,8 @@ Required outputs:
 - Report 2: `02-scafforge-process-failures.md`
 - Report 3: `03-scafforge-prevention-actions.md`
 - Report 4: `04-live-repo-repair-plan.md`
+- `disposition-bundle.json`
+- `package-evidence-bundle.json`
 
 At minimum, the pack must capture:
 - validated findings, severity, evidence grade, and file references
@@ -163,6 +166,7 @@ At minimum, the pack must capture:
 - Scafforge prevention actions needed in the package repo
 - live-repo repair actions that can happen only after the package changes are available
 - a clear split between historical session truth and current repo truth whenever the repo changed after the logged session
+- the package-evidence bundle fields needed for package investigation: repo name, diagnosis kind, triggering finding codes, disposition summary, audit-pack path, report paths, restart-surface refs, workflow-state ref, provenance refs, and candidate package surfaces
 
 Report 4 must:
 - distinguish safe repairs from intent-changing repairs
@@ -171,6 +175,34 @@ Report 4 must:
 - include ticket recommendations for post-repair or source-layer follow-up, especially when EXEC or REF findings require remediation tickets instead of repair-time source edits
 - optionally emit a machine-readable recommended-ticket payload when useful
 
+### 5a. Stage package evidence and investigation inputs
+
+When Report 4 says package work must happen first, stop at the diagnosis pack and move into the package-side evidence chain.
+
+1. Stage the raw diagnosis pack into the package workspace:
+
+```sh
+python3 skills/scafforge-audit/scripts/stage_active_audit.py <diagnosis-dir-or-manifest> --agent-log <audit-log>
+```
+
+2. Treat `active-audits/<repo>/evidence-manifest.json` as the machine-readable package investigation input. The current escalation matrix is intentionally conservative:
+   - severity `error` managed-surface contradictions are always eligible package evidence
+   - severity `warning` package-managed families escalate only when the same failure family is already present in at least one other distinct repo under `active-audits/`, or when the current diagnosis still says Scafforge package work is required first
+   - repo-local `EXEC*` and `REF*` findings stay subject-repo follow-up unless the authoritative bundle marks them as package-managed
+3. Write the investigator outputs under `active-audits/<repo>/investigator/`:
+
+```sh
+python3 skills/scafforge-audit/scripts/write_investigator_report.py active-audits/<repo> --symptom-summary "..." --cause-hypothesis "..." --prevented-by "..." --surface <path> --revalidation-step "..."
+```
+
+4. After a normal reviewed package PR exists, record the package-fix linkage under `active-audits/<repo>/fixer/`:
+
+```sh
+python3 skills/scafforge-audit/scripts/write_package_fix_record.py active-audits/<repo> --status open --package-pr <pr-ref> --package-issue <issue-ref> --validation "npm run validate:contract=passed" --validation "npm run validate:smoke=passed" --validation "python3 scripts/integration_test_scafforge.py=passed" --validation "python3 scripts/validate_gpttalker_migration.py=passed"
+```
+
+These investigator and fixer commands are bounded package-maintainer scripts, not public skills. They write evidence sidecars and review metadata under `active-audits/`; they do not mutate package code or generated repos directly, so separate skill-manifest registration is not required.
+
 ### 6. Decide the next workspace, then stop
 
 This skill is non-mutating.
@@ -178,9 +210,9 @@ This skill is non-mutating.
 - If no repair is needed, record a clean diagnosis result
 - If the diagnosis identifies a Scafforge package defect or prevention gap, stop after writing the diagnosis pack
 - When an adjacent orchestration wrapper is in play, package-owned findings move the job into `package-change-pending` outside the repo, while safe repo-local repair findings move it into `repo-repair-pending`
-- Tell the user to manually copy the diagnosis pack from the subject repo into the Scafforge dev repo
+- Stage the diagnosis pack from the subject repo into `active-audits/<repo>/` with `stage_active_audit.py`; keep the copied raw evidence immutable
 - Apply Scafforge package changes in the Scafforge dev repo before recommending repair
-- Return to the subject repo and run exactly one fresh `post_package_revalidation` audit against the updated package before recommending repair
+- Return to the subject repo and run exactly one fresh `post_package_revalidation` audit against the updated package before recommending repair; stage that pack again so `active-audits/<repo>/revalidation/resume-ready.json` can carry the downstream resume truth
 - Route to `../scafforge-repair/SKILL.md` only from that fresh revalidation pack once package work is no longer the next required step
 - If safe workflow repair is needed but no package work is required and the current repair surface already matches Report 4, repair may be the next separate step
 - If only source-layer follow-up is needed, recommend tickets through `ticket-pack-builder`
@@ -198,7 +230,7 @@ Keep those responsibilities separate.
 ## After this step
 
 - Continue to `../handoff-brief/SKILL.md` after a clean audit
-- Ask the user to manually move the diagnosis pack into the Scafforge dev repo when Report 4 identifies Scafforge package work
+- Ask the user to stage the diagnosis pack into `active-audits/` when Report 4 identifies Scafforge package work
 - Continue to `../scafforge-repair/SKILL.md` only after those package changes are implemented and the subject repo is back in scope
 
 ## Required outputs

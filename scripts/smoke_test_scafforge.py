@@ -17016,6 +17016,169 @@ Overall Result: PASS
                     raise RuntimeError(
                         "Audit prevention guidance should map SKILL003 to the Blender-route operating surfaces"
                     )
+                with tempfile.TemporaryDirectory(prefix="scafforge-active-audit-stage-") as stage_dir:
+                    package_root = Path(stage_dir) / "package"
+                    (package_root / "active-audits").mkdir(parents=True, exist_ok=True)
+                    staged = subprocess.run(
+                        [
+                            sys.executable,
+                            str(
+                                ROOT
+                                / "skills"
+                                / "scafforge-audit"
+                                / "scripts"
+                                / "stage_active_audit.py"
+                            ),
+                            str(diagnosis_dest),
+                            "--package-root",
+                            str(package_root),
+                        ],
+                        cwd=ROOT,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    staged_payload = json.loads(staged.stdout)
+                    active_audit_root = Path(staged_payload["active_audit_root"])
+                    staged_manifest = json.loads(
+                        (active_audit_root / "evidence-manifest.json").read_text(encoding="utf-8")
+                    )
+                    if staged_manifest["copied_raw_evidence_immutable"] is not True:
+                        raise RuntimeError(
+                            "Active-audits staging should mark copied raw evidence as immutable side-input"
+                        )
+                    if "EXEC-GODOT" not in staged_manifest["tracked_failure_families"]:
+                        raise RuntimeError(
+                            "Active-audits evidence manifest should persist tracked failure families for recurrence checks"
+                        )
+                    subprocess.run(
+                        [
+                            sys.executable,
+                            str(
+                                ROOT
+                                / "skills"
+                                / "scafforge-audit"
+                                / "scripts"
+                                / "write_investigator_report.py"
+                            ),
+                            str(active_audit_root),
+                            "--symptom-summary",
+                            "Synthetic downstream repo reproduced the package-managed workflow contradiction.",
+                            "--cause-hypothesis",
+                            "Diagnosis-pack disposition stayed package-managed but lacked the package-side review chain.",
+                            "--prevented-by",
+                            "Stage the package evidence, require a reviewed package PR, then rerun downstream revalidation.",
+                            "--surface",
+                            "skills/scafforge-audit/scripts/audit_reporting.py",
+                            "--revalidation-step",
+                            "npm run validate:contract",
+                            "--revalidation-step",
+                            "python3 skills/scafforge-audit/scripts/run_audit.py <repo-root> --diagnosis-kind post_package_revalidation",
+                        ],
+                        cwd=ROOT,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    investigator_report = json.loads(
+                        (
+                            active_audit_root / "investigator" / "report.json"
+                        ).read_text(encoding="utf-8")
+                    )
+                    if investigator_report["no_action_required"] is not False:
+                        raise RuntimeError(
+                            "Investigator output should record an explicit no_action_required decision"
+                        )
+                    merged_commit = package_commit()
+                    subprocess.run(
+                        [
+                            sys.executable,
+                            str(
+                                ROOT
+                                / "skills"
+                                / "scafforge-audit"
+                                / "scripts"
+                                / "write_package_fix_record.py"
+                            ),
+                            str(active_audit_root),
+                            "--status",
+                            "merged",
+                            "--package-pr",
+                            "#123",
+                            "--package-commit",
+                            merged_commit,
+                            "--validation",
+                            "npm run validate:contract=passed",
+                            "--validation",
+                            "npm run validate:smoke=passed",
+                            "--validation",
+                            "python3 scripts/integration_test_scafforge.py=passed",
+                            "--validation",
+                            "python3 scripts/validate_gpttalker_migration.py=passed",
+                        ],
+                        cwd=ROOT,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    fix_record = json.loads(
+                        (
+                            active_audit_root / "fixer" / "package-fix-record.json"
+                        ).read_text(encoding="utf-8")
+                    )
+                    if fix_record["package_validation_passed"] is not True:
+                        raise RuntimeError(
+                            "Package-fix records should require all canonical package validation commands before merged state"
+                        )
+                    revalidation_dest = Path(stage_dir) / "revalidation-pack"
+                    audit_reporting_module.emit_diagnosis_pack(
+                        temp_root,
+                        [],
+                        revalidation_dest,
+                        [],
+                        ctx=audit_reporting_module.AuditReportingContext(
+                            package_root=ROOT,
+                            current_package_commit=package_commit(),
+                        ),
+                        manifest_overrides={"diagnosis_kind": "post_package_revalidation"},
+                    )
+                    revalidation_stage = subprocess.run(
+                        [
+                            sys.executable,
+                            str(
+                                ROOT
+                                / "skills"
+                                / "scafforge-audit"
+                                / "scripts"
+                                / "stage_active_audit.py"
+                            ),
+                            str(revalidation_dest),
+                            "--package-root",
+                            str(package_root),
+                        ],
+                        cwd=ROOT,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    revalidation_payload = json.loads(revalidation_stage.stdout)
+                    if revalidation_payload.get("resume_ready") is not True:
+                        raise RuntimeError(
+                            "Post-package revalidation staging should emit a true resume-ready signal once package review and validation have passed"
+                        )
+                    resume_ready = json.loads(
+                        (
+                            active_audit_root / "revalidation" / "resume-ready.json"
+                        ).read_text(encoding="utf-8")
+                    )
+                    if resume_ready["package_commit"] != merged_commit:
+                        raise RuntimeError(
+                            "Resume-ready signal should carry the merged package commit from the package-fix record"
+                        )
+                    if resume_ready["remaining_repo_local_work"] != []:
+                        raise RuntimeError(
+                            "A clean post-package revalidation should not invent repo-local follow-up in resume-ready output"
+                        )
 
             with tempfile.TemporaryDirectory(prefix="scafforge-disposition-open-ticket-") as temp_dir:
                 temp_root = Path(temp_dir) / "repo"
