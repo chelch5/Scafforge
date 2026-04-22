@@ -86,6 +86,8 @@ Generated repos may expose derived helper fields such as a local `scaffoldVerifi
 - `repo-repair-pending` begins only after the authoritative diagnosis disposition says safe repo-local repair is the next step.
 - `package-change-pending` begins only when the diagnosis disposition says Scafforge package work must land before downstream repair may resume.
 - `resume-ready` requires current revalidation evidence plus freshly published restart surfaces from the verified final snapshot.
+- The recommended machine-readable carrier for package-defect resume is `active-audits/<repo>/revalidation/resume-ready.json`.
+- That carrier must include at least `repo_name`, `package_commit`, `revalidation_audit_timestamp`, `resume_ready`, and `remaining_repo_local_work`, and it must stay derived from the staged evidence bundle plus package-fix record rather than becoming new canonical repo truth.
 - Resume must preserve causality by retaining the job's triggering diagnosis pack, the related downstream PR or commit, any package-fix PR or commit, and the revalidation pack that cleared the blocker.
 - At minimum, the retained evidence pointers for resume should include the diagnosis pack, audit disposition, downstream PR or commit, package-fix PR or commit when relevant, current revalidation proof, and the restart publication that re-established the legal next move.
 - The package-defect wait state remains orchestration-owned state; do not encode `package-change-pending` inside generated repo canonical workflow state.

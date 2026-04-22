@@ -20,6 +20,7 @@ Every report should include:
 - result state: `validated failures found`, `no validated failures found`, or `inconclusive or partially verified`
 - evidence grades where claims are discussed
 - explicit file references or workflow-surface references
+- package-evidence linkage when the diagnosis says Scafforge package work is required first
 
 ## Report 1 template
 
@@ -82,6 +83,7 @@ Each action should include:
 - why it prevents recurrence
 - whether it is safe or intent-changing
 - how it should be validated
+- whether GitHub issue and PR linkage is required for the package-fix path
 
 ## Report 4 template
 
@@ -109,4 +111,4 @@ Each repair item should include:
 
 ## Manifest expectations
 
-`manifest.json` should map the fixed report filenames, summarize the result state, and list any ticket recommendations or supporting logs.
+`manifest.json` should map the fixed report filenames, summarize the result state, record `diagnosis_kind`, `recommended_next_step`, `package_work_required_first`, `disposition_bundle_file`, and `package_evidence_bundle_file`, and list any ticket recommendations or supporting logs.

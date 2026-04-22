@@ -718,6 +718,16 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, orchestration_wrapper, "`resume-ready`")
     require_contains(
         findings,
+        orchestration_wrapper,
+        "`active-audits/<repo>/revalidation/resume-ready.json`",
+    )
+    require_contains(
+        findings,
+        orchestration_wrapper,
+        "`repo_name`, `package_commit`, `revalidation_audit_timestamp`, `resume_ready`, and `remaining_repo_local_work`",
+    )
+    require_contains(
+        findings,
         spec_factory_ingress,
         "MCP is the transport and artifact-exposure layer",
     )
@@ -3742,6 +3752,8 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, audit_reporting, '"diagnosis_kind"')
     require_contains(findings, audit_reporting, '"package_work_required_first"')
     require_contains(findings, audit_reporting, '"recommended_next_step"')
+    require_contains(findings, audit_reporting, '"package_evidence_bundle_file"')
+    require_contains(findings, audit_reporting, '"package_evidence_bundle"')
     require_contains(
         findings, audit_skill / "scripts" / "audit_repo_process.py", "--diagnosis-kind"
     )
@@ -3771,6 +3783,25 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     )
     require_script_help_runs(
         findings, repair_skill / "scripts" / "apply_repo_process_repair.py"
+    )
+    require_paths(
+        findings,
+        [
+            ROOT / "active-audits",
+            audit_skill / "scripts" / "package_evidence.py",
+            audit_skill / "scripts" / "stage_active_audit.py",
+            audit_skill / "scripts" / "write_investigator_report.py",
+            audit_skill / "scripts" / "write_package_fix_record.py",
+        ],
+    )
+    require_script_help_runs(
+        findings, audit_skill / "scripts" / "stage_active_audit.py"
+    )
+    require_script_help_runs(
+        findings, audit_skill / "scripts" / "write_investigator_report.py"
+    )
+    require_script_help_runs(
+        findings, audit_skill / "scripts" / "write_package_fix_record.py"
     )
     require_contains(
         findings,
@@ -4215,7 +4246,22 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
         "If the repair basis includes transcript-backed smoke-scope drift",
     )
     require_contains(
-        findings, audit_skill / "SKILL.md", "manually copy the diagnosis pack"
+        findings, audit_skill / "SKILL.md", "stage_active_audit.py"
+    )
+    require_contains(
+        findings, audit_skill / "SKILL.md", "write_investigator_report.py"
+    )
+    require_contains(
+        findings, audit_skill / "SKILL.md", "write_package_fix_record.py"
+    )
+    require_contains(
+        findings, audit_skill / "SKILL.md", "severity `error` managed-surface contradictions are always eligible package evidence"
+    )
+    require_contains(
+        findings, audit_skill / "SKILL.md", "at least one other distinct repo under `active-audits/`"
+    )
+    require_contains(
+        findings, audit_skill / "SKILL.md", "`package-evidence-bundle.json`"
     )
     require_contains(
         findings,
@@ -4270,7 +4316,12 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
     require_contains(
         findings,
         repair_skill / "SKILL.md",
-        "manually copy that pack into the Scafforge dev repo first",
+        "active-audits/<repo>/fixer/package-fix-record.json",
+    )
+    require_contains(
+        findings,
+        repair_skill / "SKILL.md",
+        "active-audits/<repo>/revalidation/resume-ready.json",
     )
     require_contains(
         findings,
@@ -4330,6 +4381,25 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
         findings,
         repair_skill / "SKILL.md",
         "same incompatible command trace after managed refresh",
+    )
+    require_contains(
+        findings,
+        AGENTS := ROOT / "AGENTS.md",
+        "`evidence-manifest.json`",
+    )
+    require_contains(findings, AGENTS, "`investigator/report.md`")
+    require_contains(findings, AGENTS, "`fixer/package-fix-record.json`")
+    require_contains(findings, AGENTS, "`revalidation/resume-ready.json`")
+    require_contains(findings, AGENTS, "derived and non-authoritative")
+    require_contains(
+        findings,
+        FLOW_MANIFEST,
+        "package evidence bundle and escalation decision when package work is implicated",
+    )
+    require_contains(
+        findings,
+        FLOW_MANIFEST,
+        "truthful restart publication that still waits on fresh post-package revalidation when package work had to land first",
     )
     require_absent(
         findings,

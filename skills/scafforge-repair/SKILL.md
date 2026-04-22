@@ -28,8 +28,9 @@ Prefer to enter this skill with:
 - confirmation that any required Scafforge package changes have already been implemented before this repair run
 
 If those inputs do not exist, run or request an audit first unless the requested repair is trivially local and already evidenced.
-If the diagnosis pack lives in a generated repo and package work is required, the user should manually copy that pack into the Scafforge dev repo first, complete the package changes there, then return to the subject repo for repair.
+If the diagnosis pack lives in a generated repo and package work is required, stage that pack into `active-audits/<repo>/` with `python3 skills/scafforge-audit/scripts/stage_active_audit.py <diagnosis-dir-or-manifest>`, complete the package changes there, then return to the subject repo for repair.
 When an adjacent orchestration wrapper is in play, treat `resume-ready` as an external state that only becomes legal after current repair revalidation and refreshed restart publication converge on one legal next move again.
+`scafforge-repair` does not open package-fix PRs or record package review state. Package-side PR linkage belongs in `active-audits/<repo>/fixer/package-fix-record.json`, and downstream resume only becomes legal after a fresh post-package revalidation audit updates `active-audits/<repo>/revalidation/resume-ready.json`.
 
 ## Procedure
 
@@ -223,6 +224,7 @@ Every repair pass must leave explicit state.
 - if the process layer materially changed, set `pending_process_verification: true`
 - regenerate the derived restart surfaces and record why they were regenerated
 - do not let repair alone publish a "ready for continued development" restart narrative before audit verification reruns
+- do not treat merged package work by itself as downstream resume proof; require the staged `post_package_revalidation` audit plus `active-audits/<repo>/revalidation/resume-ready.json`
 
 ### 8. Route backlog follow-up
 

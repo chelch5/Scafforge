@@ -13,7 +13,7 @@ from audit_repo_process import main as audit_repo_process_main
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Standalone entry point for the full Scafforge audit suite. Pass a repo path and optional diagnosis-pack output directory."
+        description="Standalone entry point for the full Scafforge audit suite. Pass a repo path and optional diagnosis-pack output directory to emit the four-report pack plus the package-evidence bundle."
     )
     parser.add_argument("repo_root", help="Repository root to audit.")
     parser.add_argument("--supporting-log", action="append", default=[], help="Optional supporting log or transcript path. May be repeated.")

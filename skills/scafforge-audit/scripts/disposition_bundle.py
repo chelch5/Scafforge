@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,17 @@ DISPOSITION_CLASSES = (
     "advisory",
 )
 PACKAGE_MANAGED_EXEC_CODES = {"EXEC-GODOT-006"}
+
+
+def failure_family_for_code(code: str) -> str:
+    normalized = code.strip().upper()
+    if not normalized:
+        return "UNKNOWN"
+    if normalized.startswith("EXEC-"):
+        match = re.match(r"^(EXEC-[A-Z0-9]+)", normalized)
+        return match.group(1) if match else "EXEC"
+    match = re.match(r"^([A-Z]+)", normalized)
+    return match.group(1) if match else normalized
 
 
 def evidence_grade_for_finding(finding: Finding) -> str:
@@ -226,6 +238,7 @@ def build_disposition_bundle(
         recommendation = recommendation_map.get(code, {})
         entry = {
             "code": code,
+            "failure_family": failure_family_for_code(code),
             "severity": getattr(finding, "severity", ""),
             "disposition_class": disposition_class,
             "defect_label": defect_label_for_class(disposition_class),
