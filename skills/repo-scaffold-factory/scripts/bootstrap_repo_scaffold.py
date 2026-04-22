@@ -68,6 +68,9 @@ DEFAULT_LICENSING_OR_PROVENANCE_CONSTRAINTS = "record any asset or content prove
 DEFAULT_FINISH_ACCEPTANCE_SIGNALS = (
     "record the explicit finish-proof signals that must be met before the repo is treated as finished"
 )
+VALIDATION_PROOF_MATRIX_PATH = (
+    Path(__file__).resolve().parents[3] / "references" / "validation-proof-matrix.json"
+)
 INTERACTIVE_FINISH_PROOF_ACCEPTANCE = (
     "Finish proof includes explicit user-observable interaction evidence (controls/input, visible gameplay state or feedback, "
     "and the brief-specific progression or content surfaces), not just export/install success."
@@ -82,6 +85,146 @@ WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
         "release-facing milestones must confirm shipped content matches the recorded finish bar for the product.",
     }
 )
+
+
+def load_validation_proof_matrix() -> dict[str, object]:
+    try:
+        payload = json.loads(VALIDATION_PROOF_MATRIX_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _string_items(values: object) -> list[str]:
+    return [str(item).strip() for item in values if isinstance(item, str) and str(item).strip()] if isinstance(values, list) else []
+
+
+def _match_any(haystack: str, needles: list[str]) -> bool:
+    lowered = haystack.lower()
+    return any(needle.lower() in lowered for needle in needles if needle)
+
+
+def resolve_validation_proof_bundle(
+    *,
+    stack_label: str,
+    deliverable_kind: str,
+    visual_finish_target: str,
+    finish_acceptance_signals: str,
+) -> dict[str, object]:
+    matrix = load_validation_proof_matrix()
+    families = matrix.get("families")
+    if not isinstance(families, dict):
+        return {
+            "matrix_version": 0,
+            "matrix_path": "references/validation-proof-matrix.json",
+            "primary_family": None,
+            "overlay_families": [],
+            "families": [],
+            "artifact_paths": [],
+        }
+
+    signals = {
+        "stack_label": stack_label,
+        "deliverable_kind": deliverable_kind,
+        "visual_finish_target": visual_finish_target,
+        "finish_acceptance_signals": finish_acceptance_signals,
+    }
+
+    def family_matches(entry: dict[str, object]) -> bool:
+        match = entry.get("match")
+        if not isinstance(match, dict):
+            return False
+        return any(
+            [
+                _match_any(signals["stack_label"], _string_items(match.get("stack_label_any"))),
+                _match_any(signals["deliverable_kind"], _string_items(match.get("deliverable_any"))),
+                _match_any(signals["visual_finish_target"], _string_items(match.get("visual_any"))),
+                _match_any(signals["finish_acceptance_signals"], _string_items(match.get("finish_any"))),
+            ]
+        )
+
+    primary_family: str | None = None
+    for family in _string_items(matrix.get("primary_family_order")):
+        entry = families.get(family)
+        if isinstance(entry, dict) and family_matches(entry):
+            primary_family = family
+            break
+    if primary_family is None:
+        primary_family = next(
+            (
+                family
+                for family, entry in families.items()
+                if isinstance(entry, dict) and entry.get("fallback") is True
+            ),
+            None,
+        )
+
+    overlay_families = [
+        family
+        for family, entry in families.items()
+        if isinstance(entry, dict)
+        and entry.get("overlay_capable") is True
+        and family != primary_family
+        and family_matches(entry)
+    ]
+
+    selected_families: list[dict[str, object]] = []
+    for family in [primary_family, *overlay_families]:
+        if not isinstance(family, str):
+            continue
+        entry = families.get(family)
+        if not isinstance(entry, dict):
+            continue
+        steps = []
+        for step in entry.get("proof_tiers", []):
+            if not isinstance(step, dict):
+                continue
+            steps.append(
+                {
+                    "id": str(step.get("id", "")).strip(),
+                    "label": str(step.get("label", "")).strip(),
+                    "requirement": str(step.get("requirement", "")).strip(),
+                    "condition": str(step.get("condition", "")).strip() or None,
+                    "validator_status": str(step.get("validator_status", "")).strip(),
+                    "artifact_kind": str(step.get("artifact_kind", "")).strip(),
+                    "tool_bundles": _string_items(step.get("tool_bundles")),
+                }
+            )
+        selected_families.append(
+            {
+                "family": family,
+                "title": str(entry.get("title", family)).strip() or family,
+                "activation": str(entry.get("activation", "repo_completion")).strip(),
+                "required_artifact_path": f".opencode/state/artifacts/proof-{family}.json",
+                "required_artifact_kinds": _string_items(entry.get("required_artifact_kinds")),
+                "allowed_degradation_rules": _string_items(entry.get("allowed_degradation_rules")),
+                "headless_degradation_order": _string_items(
+                    entry.get("headless_degradation_order") or matrix.get("headless_degradation_order")
+                ),
+                "tool_bundles": sorted(
+                    {
+                        bundle
+                        for step in steps
+                        for bundle in (
+                            step.get("tool_bundles", [])
+                            if isinstance(step.get("tool_bundles", []), list)
+                            else []
+                        )
+                        if isinstance(bundle, str) and bundle.strip()
+                    }
+                ),
+                "steps": steps,
+            }
+        )
+
+    return {
+        "matrix_version": matrix.get("matrix_version", 0),
+        "matrix_path": "references/validation-proof-matrix.json",
+        "primary_family": primary_family,
+        "overlay_families": overlay_families,
+        "artifact_paths": [item["required_artifact_path"] for item in selected_families],
+        "families": selected_families,
+    }
 ASSET_PIPELINE_INIT_PATH = (
     Path(__file__).resolve().parents[2] / "asset-pipeline" / "scripts" / "init_asset_pipeline.py"
 )
@@ -1192,6 +1335,12 @@ def write_bootstrap_provenance(
         "stack_label": stack_label,
         "deliverable_kind": deliverable_kind,
         "requires_visual_proof": visual_proof_required,
+        "validation_proof_bundle": resolve_validation_proof_bundle(
+            stack_label=stack_label,
+            deliverable_kind=deliverable_kind,
+            visual_finish_target=visual_finish_target,
+            finish_acceptance_signals=finish_acceptance_signals,
+        ),
         "deliverable_artifact_path": (
             f"build/android/{project_slug}-release.apk"
             if renders_godot_android_assets(stack_label) and requires_packaged_android_delivery(deliverable_kind)

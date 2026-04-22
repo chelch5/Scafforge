@@ -26,6 +26,8 @@ Package validation runs are separate from subject-repo release proof.
 - Package validation entrypoints are `npm run validate:contract`, `npm run validate:smoke`, `python3 scripts/integration_test_scafforge.py`, and `python3 scripts/validate_gpttalker_migration.py`.
 - The package validators prove the Scafforge package itself; they do not substitute for stack-specific release proof in generated repos.
 - The authoritative Tier 1 proof-host matrix and command contract live in [references/stack-adapter-contract.md](references/stack-adapter-contract.md).
+- The package-owned answer for what "done" means per repo family lives in [references/validation-proof-matrix.json](references/validation-proof-matrix.json).
+- Generated repos consume a resolved family proof bundle from `.opencode/meta/bootstrap-provenance.json -> validation_proof_bundle` and publish family proof artifacts at `.opencode/state/artifacts/proof-<family>.json`.
 - If a host is missing a Tier 1 toolchain, report the blocker truthfully instead of treating package smoke checks as release proof.
 
 ## Installation

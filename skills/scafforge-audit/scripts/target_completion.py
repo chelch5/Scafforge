@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -257,3 +258,297 @@ def release_lane_started_or_done(manifest: dict[str, Any]) -> bool:
         if str(ticket.get("stage", "")).strip() not in {"planning", ""}:
             return True
     return False
+
+
+VALIDATION_PROOF_MATRIX_PATH = (
+    Path(__file__).resolve().parents[3] / "references" / "validation-proof-matrix.json"
+)
+
+
+@lru_cache(maxsize=1)
+def load_validation_proof_matrix() -> dict[str, Any]:
+    payload = read_json(VALIDATION_PROOF_MATRIX_PATH)
+    return payload if isinstance(payload, dict) else {}
+
+
+def validation_matrix_version() -> int:
+    payload = load_validation_proof_matrix()
+    value = payload.get("matrix_version")
+    return value if isinstance(value, int) else 0
+
+
+def canonical_family_proof_relpath(family: str) -> str:
+    return f".opencode/state/artifacts/proof-{family}.json"
+
+
+def _string_items(values: Any) -> list[str]:
+    return [str(item).strip() for item in values if isinstance(item, str) and str(item).strip()] if isinstance(values, list) else []
+
+
+def _match_any(haystack: str, needles: list[str]) -> bool:
+    lowered = haystack.lower()
+    return any(needle.lower() in lowered for needle in needles if needle)
+
+
+def _repo_signal_map(root: Path) -> dict[str, str]:
+    provenance = bootstrap_provenance(root)
+    finish_contract = provenance.get("product_finish_contract")
+    finish_contract = finish_contract if isinstance(finish_contract, dict) else {}
+    return {
+        "stack_label": stack_label(root),
+        "deliverable_kind": str(provenance.get("deliverable_kind", "")).strip(),
+        "visual_finish_target": str(finish_contract.get("visual_finish_target", "")).strip(),
+        "finish_acceptance_signals": str(finish_contract.get("finish_acceptance_signals", "")).strip(),
+        "brief": canonical_brief_text(root),
+    }
+
+
+def repo_requires_visual_proof(root: Path) -> bool:
+    provenance = bootstrap_provenance(root)
+    if provenance.get("requires_visual_proof") is True:
+        return True
+    finish_contract = provenance.get("product_finish_contract")
+    if isinstance(finish_contract, dict):
+        return finish_contract.get("requires_visual_proof") is True
+    return False
+
+
+def _family_matches(signals: dict[str, str], entry: dict[str, Any]) -> bool:
+    match = entry.get("match")
+    if not isinstance(match, dict):
+        return False
+    return any(
+        [
+            _match_any(signals["stack_label"], _string_items(match.get("stack_label_any"))),
+            _match_any(signals["deliverable_kind"], _string_items(match.get("deliverable_any"))),
+            _match_any(signals["visual_finish_target"], _string_items(match.get("visual_any"))),
+            _match_any(signals["finish_acceptance_signals"], _string_items(match.get("finish_any"))),
+            _match_any(signals["brief"], _string_items(match.get("brief_any"))),
+        ]
+    )
+
+
+def resolve_validation_profile(root: Path) -> dict[str, Any]:
+    matrix = load_validation_proof_matrix()
+    families = matrix.get("families")
+    if not isinstance(families, dict):
+        return {
+            "matrix_version": validation_matrix_version(),
+            "primary_family": None,
+            "overlay_families": [],
+            "families": [],
+            "supported": False,
+        }
+
+    signals = _repo_signal_map(root)
+    primary_family: str | None = None
+    primary_order = _string_items(matrix.get("primary_family_order"))
+    for family in primary_order:
+        entry = families.get(family)
+        if isinstance(entry, dict) and _family_matches(signals, entry):
+            primary_family = family
+            break
+    if primary_family is None:
+        primary_family = next(
+            (
+                family
+                for family, entry in families.items()
+                if isinstance(entry, dict) and entry.get("fallback") is True
+            ),
+            None,
+        )
+
+    overlay_families = [
+        family
+        for family, entry in families.items()
+        if isinstance(entry, dict)
+        and entry.get("overlay_capable") is True
+        and family != primary_family
+        and _family_matches(signals, entry)
+    ]
+    active_families = []
+    if primary_family and isinstance(families.get(primary_family), dict):
+        active_families.append({"family": primary_family, **families[primary_family]})
+    for family in overlay_families:
+        entry = families.get(family)
+        if isinstance(entry, dict):
+            active_families.append({"family": family, **entry})
+    return {
+        "matrix_version": validation_matrix_version(),
+        "primary_family": primary_family,
+        "overlay_families": overlay_families,
+        "families": active_families,
+        "supported": primary_family is not None,
+    }
+
+
+def _proof_activation(entry: dict[str, Any], manifest: dict[str, Any], root: Path) -> bool:
+    activation = str(entry.get("activation", "repo_completion")).strip()
+    if activation == "always":
+        return True
+    if activation == "release_lane_or_completion":
+        return release_lane_started_or_done(manifest) or repo_claims_completion(manifest)
+    return repo_claims_completion(manifest)
+
+
+def load_family_proof_artifact(root: Path, family: str) -> dict[str, Any] | None:
+    payload = read_json(root / canonical_family_proof_relpath(family))
+    return payload if isinstance(payload, dict) else None
+
+
+def _proof_artifact_errors(payload: dict[str, Any], family: str) -> list[str]:
+    matrix = load_validation_proof_matrix()
+    artifact_schema = matrix.get("artifact_schema")
+    artifact_schema = artifact_schema if isinstance(artifact_schema, dict) else {}
+    errors: list[str] = []
+    required_fields = _string_items(artifact_schema.get("required_top_level_fields"))
+    for field in required_fields:
+        if field not in payload:
+            errors.append(f"missing top-level field `{field}`")
+    if payload.get("family") != family:
+        errors.append(f"family field should be `{family}`")
+    if "passed" in payload and not isinstance(payload.get("passed"), bool):
+        errors.append("`passed` must be a boolean")
+    if "artifact_path" in payload and payload.get("artifact_path") is not None and not isinstance(payload.get("artifact_path"), str):
+        errors.append("`artifact_path` must be a string or null")
+    if "log_excerpt" in payload and not isinstance(payload.get("log_excerpt"), list):
+        errors.append("`log_excerpt` must be an array when present")
+    steps = payload.get("steps")
+    if steps is not None and not isinstance(steps, list):
+        errors.append("`steps` must be an array when present")
+    if isinstance(steps, list):
+        step_schema = artifact_schema.get("step_result_fields")
+        step_schema = step_schema if isinstance(step_schema, dict) else {}
+        required_step_fields = _string_items(step_schema.get("required"))
+        for index, item in enumerate(steps):
+            if not isinstance(item, dict):
+                errors.append(f"step {index} must be an object")
+                continue
+            for field in required_step_fields:
+                if field not in item:
+                    errors.append(f"step {index} missing field `{field}`")
+            status = str(item.get("status", "")).strip()
+            if status and status not in {"passed", "failed", "degraded", "not_applicable"}:
+                errors.append(f"step {index} has unsupported status `{status}`")
+    return errors
+
+
+def _infer_artifact_status(payload: dict[str, Any]) -> str:
+    if isinstance(payload.get("not_applicable_reason"), str) and payload.get("not_applicable_reason", "").strip():
+        return "not_applicable"
+    if payload.get("passed") is False:
+        return "failed"
+    if isinstance(payload.get("degraded_reason"), str) and payload.get("degraded_reason", "").strip():
+        return "degraded"
+    return "passed"
+
+
+def _condition_applies(condition: str | None, root: Path) -> bool:
+    if not condition:
+        return True
+    if condition == "requires_visual_proof":
+        return repo_requires_visual_proof(root)
+    if condition == "requires_packaged_android_product":
+        return requires_packaged_android_product(root)
+    return False
+
+
+def completion_validation_summary(root: Path, manifest: dict[str, Any] | None = None) -> dict[str, Any]:
+    manifest_payload = manifest if isinstance(manifest, dict) else load_manifest(root)
+    profile = resolve_validation_profile(root)
+    completion_claim = repo_claims_completion(manifest_payload)
+    summaries: list[dict[str, Any]] = []
+    for family_entry in profile.get("families", []):
+        if not isinstance(family_entry, dict):
+            continue
+        family = str(family_entry.get("family", "")).strip()
+        if not family:
+            continue
+        artifact_rel = canonical_family_proof_relpath(family)
+        artifact_payload = load_family_proof_artifact(root, family)
+        activation_required = _proof_activation(family_entry, manifest_payload, root)
+        step_summaries: list[dict[str, Any]] = []
+        artifact_errors = _proof_artifact_errors(artifact_payload, family) if artifact_payload else []
+        top_level_status = _infer_artifact_status(artifact_payload) if artifact_payload and not artifact_errors else "missing"
+        steps_by_id = {
+            str(item.get("step_id", "")).strip(): item
+            for item in (artifact_payload.get("steps", []) if isinstance(artifact_payload, dict) else [])
+            if isinstance(item, dict) and str(item.get("step_id", "")).strip()
+        }
+        blocking = False
+        blocking_reasons: list[str] = []
+        for step in family_entry.get("proof_tiers", []):
+            if not isinstance(step, dict):
+                continue
+            step_id = str(step.get("id", "")).strip()
+            requirement = str(step.get("requirement", "required")).strip() or "required"
+            validator_status = str(step.get("validator_status", "implemented")).strip() or "implemented"
+            condition = str(step.get("condition", "")).strip() or None
+            active = requirement == "required" or (
+                requirement == "conditional" and _condition_applies(condition, root)
+            )
+            if validator_status == "not_required" or not active:
+                status = "not_required"
+            elif validator_status == "no_validator_yet":
+                status = "validator_gap"
+            elif artifact_errors:
+                status = "invalid"
+            elif artifact_payload is None:
+                status = "missing"
+            else:
+                record = steps_by_id.get(step_id)
+                if isinstance(record, dict):
+                    status = str(record.get("status", "")).strip() or "missing"
+                else:
+                    status = top_level_status
+            if active and status in {"missing", "failed", "invalid", "validator_gap"}:
+                blocking = True
+                blocking_reasons.append(f"{step_id}:{status}")
+            if active and status == "degraded" and not _string_items(family_entry.get("allowed_degradation_rules")):
+                blocking = True
+                blocking_reasons.append(f"{step_id}:degraded")
+            step_summaries.append(
+                {
+                    "id": step_id,
+                    "label": str(step.get("label", step_id)).strip() or step_id,
+                    "requirement": requirement,
+                    "validator_status": validator_status,
+                    "status": status,
+                    "artifact_kind": str(step.get("artifact_kind", "")).strip(),
+                    "tool_bundles": _string_items(step.get("tool_bundles")),
+                }
+            )
+        if artifact_errors:
+            blocking = activation_required
+            blocking_reasons.extend(artifact_errors)
+            family_status = "invalid"
+        elif artifact_payload is None:
+            family_status = "missing" if activation_required else "inactive"
+        else:
+            family_status = top_level_status
+        summaries.append(
+            {
+                "family": family,
+                "title": str(family_entry.get("title", family)).strip() or family,
+                "activation_required": activation_required,
+                "artifact_path": artifact_rel,
+                "artifact_exists": artifact_payload is not None,
+                "status": family_status,
+                "blocking": blocking if activation_required else False,
+                "blocking_reasons": blocking_reasons,
+                "required_artifact_kinds": _string_items(family_entry.get("required_artifact_kinds")),
+                "allowed_degradation_rules": _string_items(family_entry.get("allowed_degradation_rules")),
+                "steps": step_summaries,
+                "schema_errors": artifact_errors,
+                "top_level_summary": str(artifact_payload.get("summary", "")).strip() if artifact_payload else "",
+                "proof_tier": str(artifact_payload.get("proof_tier", "")).strip() if artifact_payload else "",
+            }
+        )
+    return {
+        "matrix_version": profile.get("matrix_version", 0),
+        "primary_family": profile.get("primary_family"),
+        "overlay_families": profile.get("overlay_families", []),
+        "supported": profile.get("supported", False),
+        "completion_claim_active": completion_claim,
+        "families": summaries,
+    }

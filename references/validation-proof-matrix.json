@@ -1,0 +1,696 @@
+{
+  "matrix_version": 1,
+  "artifact_schema": {
+    "storage_path_pattern": ".opencode/state/artifacts/proof-<family>.json",
+    "format": "json",
+    "required_top_level_fields": [
+      "family",
+      "stack_label",
+      "proof_tier",
+      "passed",
+      "checked_at",
+      "artifact_path",
+      "artifact_kind",
+      "summary"
+    ],
+    "optional_top_level_fields": [
+      "command",
+      "exit_code",
+      "url",
+      "screenshot_path",
+      "log_excerpt",
+      "degraded_reason",
+      "not_applicable_reason",
+      "steps"
+    ],
+    "step_result_fields": {
+      "required": [
+        "step_id",
+        "status",
+        "summary",
+        "artifact_kind",
+        "artifact_path"
+      ],
+      "optional": [
+        "degraded_reason",
+        "not_applicable_reason",
+        "tool_bundle",
+        "url",
+        "screenshot_path"
+      ]
+    }
+  },
+  "headless_degradation_order": [
+    "process_health",
+    "http_or_runtime_truth",
+    "virtual_display_screenshot",
+    "full_browser_or_device_interaction"
+  ],
+  "tool_bundles": {
+    "runtime-command": {
+      "title": "Runtime command and process proof",
+      "tools": [
+        "repo-native test/build command",
+        "process exit status",
+        "log capture"
+      ],
+      "validator_status": "implemented"
+    },
+    "structured-output": {
+      "title": "Structured output comparison",
+      "tools": [
+        "JSON or text diff",
+        "golden output check"
+      ],
+      "validator_status": "implemented"
+    },
+    "http-probe": {
+      "title": "HTTP and network probe proof",
+      "tools": [
+        "curl",
+        "Invoke-WebRequest",
+        "repo-native health endpoint probe"
+      ],
+      "validator_status": "implemented"
+    },
+    "browser-automation": {
+      "title": "Browser automation proof",
+      "tools": [
+        "Playwright",
+        "headless browser screenshot"
+      ],
+      "validator_status": "implemented"
+    },
+    "desktop-visual": {
+      "title": "Desktop launch and screenshot proof",
+      "tools": [
+        "ImageMagick",
+        "ffmpeg",
+        "virtual display screenshot"
+      ],
+      "validator_status": "implemented"
+    },
+    "game-visual": {
+      "title": "Game boot, screenshot, and input smoke proof",
+      "tools": [
+        "Godot headless launch",
+        "ImageMagick",
+        "ffmpeg",
+        "Vulkan or graphics capability check"
+      ],
+      "validator_status": "implemented"
+    },
+    "android-runtime": {
+      "title": "Android build, emulator, and device proof",
+      "tools": [
+        "Gradle",
+        "adb",
+        "logcat",
+        "Android emulator",
+        "Android SDK CLI"
+      ],
+      "validator_status": "implemented"
+    },
+    "native-build": {
+      "title": "Native desktop build proof",
+      "tools": [
+        "CMake",
+        "compiler toolchain"
+      ],
+      "validator_status": "implemented"
+    },
+    "bootstrap-check": {
+      "title": "Bootstrap and prerequisite proof",
+      "tools": [
+        "repo-native package manager",
+        "toolchain presence check"
+      ],
+      "validator_status": "implemented"
+    },
+    "language-server-advice": {
+      "title": "Language-server assistance",
+      "tools": [
+        "language server"
+      ],
+      "validator_status": "advisory_only"
+    }
+  },
+  "primary_family_order": [
+    "game",
+    "web",
+    "desktop",
+    "android",
+    "service",
+    "cli-script"
+  ],
+  "families": {
+    "cli-script": {
+      "title": "CLI and script repos",
+      "supplements_tier1_stack_proof": true,
+      "activation": "repo_completion",
+      "overlay_capable": false,
+      "fallback": true,
+      "match": {
+        "stack_label_any": [
+          "python",
+          "rust",
+          "go",
+          "cli",
+          "script",
+          "c-cpp",
+          "dotnet"
+        ],
+        "finish_any": [
+          "cli",
+          "script",
+          "automation",
+          "batch"
+        ],
+        "brief_any": [
+          "command line",
+          "script repo"
+        ]
+      },
+      "stack_adapters": [
+        "python",
+        "rust",
+        "go",
+        "node",
+        "c-cpp",
+        "dotnet"
+      ],
+      "required_artifact_kinds": [
+        "config-report",
+        "command-output"
+      ],
+      "allowed_degradation_rules": [
+        "Degraded proof is not allowed for CLI and script repos; record a blocking failure instead."
+      ],
+      "proof_tiers": [
+        {
+          "id": "static-contract",
+          "label": "Static contract and config checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "config-report",
+          "tool_bundles": [
+            "bootstrap-check"
+          ]
+        },
+        {
+          "id": "build-or-bootstrap",
+          "label": "Build, install, or bootstrap checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "command-output",
+          "tool_bundles": [
+            "runtime-command"
+          ]
+        },
+        {
+          "id": "command-runtime",
+          "label": "Command exit and output truth",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "command-output",
+          "tool_bundles": [
+            "runtime-command",
+            "structured-output"
+          ]
+        },
+        {
+          "id": "visual-review",
+          "label": "Visual review",
+          "requirement": "not_required",
+          "validator_status": "not_required",
+          "artifact_kind": "none",
+          "tool_bundles": []
+        }
+      ]
+    },
+    "service": {
+      "title": "Backend and service repos",
+      "supplements_tier1_stack_proof": true,
+      "activation": "repo_completion",
+      "overlay_capable": false,
+      "fallback": false,
+      "match": {
+        "stack_label_any": [
+          "api",
+          "service",
+          "backend",
+          "server",
+          "http"
+        ],
+        "finish_any": [
+          "service",
+          "api",
+          "backend",
+          "health endpoint"
+        ],
+        "brief_any": [
+          "service repo",
+          "health endpoint",
+          "backend service"
+        ]
+      },
+      "stack_adapters": [
+        "python",
+        "node",
+        "go",
+        "rust",
+        "java-android",
+        "dotnet"
+      ],
+      "required_artifact_kinds": [
+        "config-report",
+        "process-health",
+        "http-response"
+      ],
+      "allowed_degradation_rules": [
+        "If the host cannot expose the declared port, record the blocker explicitly instead of downgrading to browser or screenshot proof."
+      ],
+      "proof_tiers": [
+        {
+          "id": "static-contract",
+          "label": "Static contract and config checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "config-report",
+          "tool_bundles": [
+            "bootstrap-check"
+          ]
+        },
+        {
+          "id": "build-or-bootstrap",
+          "label": "Build, install, or bootstrap checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "command-output",
+          "tool_bundles": [
+            "runtime-command"
+          ]
+        },
+        {
+          "id": "process-health",
+          "label": "Runtime or process health checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "process-health",
+          "tool_bundles": [
+            "runtime-command"
+          ]
+        },
+        {
+          "id": "contract-probe",
+          "label": "Health endpoint or contract probe",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "http-response",
+          "tool_bundles": [
+            "http-probe"
+          ]
+        }
+      ]
+    },
+    "web": {
+      "title": "Web and browser-heavy repos",
+      "supplements_tier1_stack_proof": true,
+      "activation": "repo_completion",
+      "overlay_capable": false,
+      "fallback": false,
+      "match": {
+        "stack_label_any": [
+          "web",
+          "frontend",
+          "browser",
+          "react",
+          "next",
+          "vue",
+          "svelte"
+        ],
+        "visual_any": [
+          "web",
+          "browser",
+          "website",
+          "dashboard",
+          "landing page",
+          "frontend"
+        ],
+        "finish_any": [
+          "web app",
+          "website",
+          "browser"
+        ],
+        "brief_any": [
+          "browser-heavy",
+          "web app"
+        ]
+      },
+      "stack_adapters": [
+        "node",
+        "python",
+        "dotnet",
+        "java-android"
+      ],
+      "required_artifact_kinds": [
+        "config-report",
+        "http-response"
+      ],
+      "allowed_degradation_rules": [
+        "Use process health and HTTP proof before screenshot proof.",
+        "Headless screenshot degradation is allowed when no display server exists and HTTP or runtime truth already passed."
+      ],
+      "headless_degradation_order": [
+        "process_health",
+        "http_or_runtime_truth",
+        "virtual_display_screenshot",
+        "full_browser_or_device_interaction"
+      ],
+      "proof_tiers": [
+        {
+          "id": "static-contract",
+          "label": "Static contract and config checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "config-report",
+          "tool_bundles": [
+            "bootstrap-check"
+          ]
+        },
+        {
+          "id": "build-or-bootstrap",
+          "label": "Build, install, or bootstrap checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "command-output",
+          "tool_bundles": [
+            "runtime-command"
+          ]
+        },
+        {
+          "id": "runtime-health",
+          "label": "Runtime or process health checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "process-health",
+          "tool_bundles": [
+            "runtime-command",
+            "http-probe"
+          ]
+        },
+        {
+          "id": "http-proof",
+          "label": "HTTP or browser behavior check",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "http-response",
+          "tool_bundles": [
+            "http-probe"
+          ]
+        },
+        {
+          "id": "visual-proof",
+          "label": "Screenshot or browser automation proof",
+          "requirement": "conditional",
+          "condition": "requires_visual_proof",
+          "validator_status": "implemented",
+          "artifact_kind": "screenshot",
+          "tool_bundles": [
+            "browser-automation",
+            "desktop-visual"
+          ]
+        }
+      ]
+    },
+    "desktop": {
+      "title": "Desktop apps on Windows and Linux",
+      "supplements_tier1_stack_proof": true,
+      "activation": "repo_completion",
+      "overlay_capable": false,
+      "fallback": false,
+      "match": {
+        "stack_label_any": [
+          "desktop",
+          "electron",
+          "tauri",
+          "wpf",
+          "winui",
+          "gtk",
+          "qt"
+        ],
+        "visual_any": [
+          "desktop",
+          "window",
+          "launcher"
+        ],
+        "finish_any": [
+          "desktop",
+          "windowed"
+        ],
+        "brief_any": [
+          "desktop app",
+          "windows app",
+          "linux app"
+        ]
+      },
+      "stack_adapters": [
+        "node",
+        "dotnet",
+        "c-cpp",
+        "java-android",
+        "python"
+      ],
+      "required_artifact_kinds": [
+        "config-report",
+        "process-health"
+      ],
+      "allowed_degradation_rules": [
+        "Prefer launch verification and process truth before screenshot proof.",
+        "Headless screenshot degradation is allowed when the repo still proves launch, process, and log truth."
+      ],
+      "headless_degradation_order": [
+        "process_health",
+        "http_or_runtime_truth",
+        "virtual_display_screenshot",
+        "full_browser_or_device_interaction"
+      ],
+      "proof_tiers": [
+        {
+          "id": "static-contract",
+          "label": "Static contract and config checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "config-report",
+          "tool_bundles": [
+            "bootstrap-check",
+            "native-build"
+          ]
+        },
+        {
+          "id": "build-or-bootstrap",
+          "label": "Build, install, or bootstrap checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "command-output",
+          "tool_bundles": [
+            "runtime-command",
+            "native-build"
+          ]
+        },
+        {
+          "id": "launch-proof",
+          "label": "Launch verification and process truth",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "process-health",
+          "tool_bundles": [
+            "runtime-command",
+            "desktop-visual"
+          ]
+        },
+        {
+          "id": "ui-visual-proof",
+          "label": "Screenshot proof when UI exists",
+          "requirement": "conditional",
+          "condition": "requires_visual_proof",
+          "validator_status": "implemented",
+          "artifact_kind": "screenshot",
+          "tool_bundles": [
+            "desktop-visual"
+          ]
+        }
+      ]
+    },
+    "game": {
+      "title": "Godot and game repos",
+      "supplements_tier1_stack_proof": true,
+      "activation": "repo_completion",
+      "overlay_capable": false,
+      "fallback": false,
+      "match": {
+        "stack_label_any": [
+          "godot",
+          "game",
+          "playable",
+          "toy",
+          "toddler"
+        ],
+        "finish_any": [
+          "game",
+          "playable",
+          "core loop",
+          "input"
+        ],
+        "brief_any": [
+          "engine is godot",
+          "game repo"
+        ]
+      },
+      "stack_adapters": [
+        "godot"
+      ],
+      "required_artifact_kinds": [
+        "config-report",
+        "engine-boot",
+        "runtime-proof"
+      ],
+      "allowed_degradation_rules": [
+        "Use engine boot and gameplay truth before screenshot capture.",
+        "Screenshot degradation is allowed only when the proof artifact records why no display-capable capture route was available."
+      ],
+      "proof_tiers": [
+        {
+          "id": "static-contract",
+          "label": "Static contract and asset checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "config-report",
+          "tool_bundles": [
+            "bootstrap-check"
+          ]
+        },
+        {
+          "id": "build-or-bootstrap",
+          "label": "Engine boot or import checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "engine-boot",
+          "tool_bundles": [
+            "runtime-command",
+            "game-visual"
+          ]
+        },
+        {
+          "id": "runtime-behavior",
+          "label": "Gameplay, scene, or input smoke proof",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "runtime-proof",
+          "tool_bundles": [
+            "game-visual"
+          ]
+        },
+        {
+          "id": "visual-proof",
+          "label": "Screenshot or capture proof",
+          "requirement": "conditional",
+          "condition": "requires_visual_proof",
+          "validator_status": "implemented",
+          "artifact_kind": "screenshot",
+          "tool_bundles": [
+            "game-visual"
+          ]
+        }
+      ]
+    },
+    "android": {
+      "title": "Android repos",
+      "supplements_tier1_stack_proof": true,
+      "activation": "release_lane_or_completion",
+      "overlay_capable": true,
+      "fallback": false,
+      "match": {
+        "stack_label_any": [
+          "android",
+          "java-android",
+          "android-app",
+          "kotlin"
+        ],
+        "deliverable_any": [
+          "android",
+          "apk",
+          "aab"
+        ],
+        "brief_any": [
+          "platform target is android",
+          "target platform is android"
+        ]
+      },
+      "stack_adapters": [
+        "godot",
+        "java-android"
+      ],
+      "required_artifact_kinds": [
+        "config-report",
+        "build-output",
+        "runtime-proof"
+      ],
+      "allowed_degradation_rules": [
+        "Prefer Gradle or export truth before emulator or device proof.",
+        "When emulator or device proof is unavailable, record the explicit blocker instead of silently skipping adb or logcat expectations."
+      ],
+      "headless_degradation_order": [
+        "process_health",
+        "http_or_runtime_truth",
+        "virtual_display_screenshot",
+        "full_browser_or_device_interaction"
+      ],
+      "proof_tiers": [
+        {
+          "id": "static-contract",
+          "label": "Static Android contract checks",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "config-report",
+          "tool_bundles": [
+            "bootstrap-check"
+          ]
+        },
+        {
+          "id": "build-proof",
+          "label": "Gradle or export build proof",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "build-output",
+          "tool_bundles": [
+            "android-runtime",
+            "runtime-command"
+          ]
+        },
+        {
+          "id": "runtime-proof",
+          "label": "Emulator, device, or installable runtime truth",
+          "requirement": "required",
+          "validator_status": "implemented",
+          "artifact_kind": "runtime-proof",
+          "tool_bundles": [
+            "android-runtime"
+          ]
+        },
+        {
+          "id": "visual-proof",
+          "label": "Screenshot proof when the brief requires a visual bar",
+          "requirement": "conditional",
+          "condition": "requires_visual_proof",
+          "validator_status": "implemented",
+          "artifact_kind": "screenshot",
+          "tool_bundles": [
+            "android-runtime",
+            "desktop-visual"
+          ]
+        }
+      ]
+    }
+  }
+}

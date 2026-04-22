@@ -14,6 +14,7 @@ from android_scaffold import has_managed_android_support_surface, repo_declares_
 
 SHARED_VERIFIER_PATH = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts" / "shared_verifier.py"
 SHARED_TYPES_PATH = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts" / "shared_verifier_types.py"
+TARGET_COMPLETION_PATH = Path(__file__).resolve().parents[2] / "scafforge-audit" / "scripts" / "target_completion.py"
 TEXT_SUFFIXES = {".md", ".json", ".jsonc", ".ts", ".js", ".mjs", ".cjs", ".txt", ".yaml", ".yml", ".cfg"}
 PLACEHOLDER_PATTERN = re.compile(r"__[A-Z0-9_]+__")
 HANDOFF_PROOF_RELATIVE_PATH = Path(".opencode/state/handoff-proof.json")
@@ -33,6 +34,16 @@ def load_shared_types():
     spec = spec_from_file_location("scafforge_generated_scaffold_types", SHARED_TYPES_PATH)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Unable to load shared verifier types from {SHARED_TYPES_PATH}")
+    module = module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_target_completion():
+    spec = spec_from_file_location("scafforge_generated_target_completion", TARGET_COMPLETION_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load target completion helpers from {TARGET_COMPLETION_PATH}")
     module = module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -370,6 +381,19 @@ def persist_handoff_proof(repo_root: Path, verification_kind: str, payload: dict
     proof_rel = str(HANDOFF_PROOF_RELATIVE_PATH).replace("\\", "/")
     timestamp = current_iso_timestamp()
     blocking_codes = [getattr(finding, "code", "") for finding in findings if getattr(finding, "code", "")]
+    target_completion = load_target_completion()
+    completion_summary = (
+        target_completion.completion_validation_summary(repo_root)
+        if hasattr(target_completion, "completion_validation_summary")
+        else {
+            "matrix_version": 0,
+            "primary_family": None,
+            "overlay_families": [],
+            "supported": False,
+            "completion_claim_active": False,
+            "families": [],
+        }
+    )
     proof_payload = {
         "repo_root": str(repo_root),
         "verification_kind": verification_kind,
@@ -383,6 +407,7 @@ def persist_handoff_proof(repo_root: Path, verification_kind: str, payload: dict
             else "Greenfield continuation proof failed; restart surfaces must not claim ready state."
         ),
         "verification": payload,
+        "completion_proof": completion_summary,
     }
     proof_path = repo_root / HANDOFF_PROOF_RELATIVE_PATH
     proof_path.parent.mkdir(parents=True, exist_ok=True)

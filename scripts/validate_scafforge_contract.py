@@ -610,7 +610,9 @@ def validate_core_docs(findings: list[Finding]) -> None:
     agents = ROOT / "AGENTS.md"
     one_shot = ROOT / "references" / "one-shot-generation-contract.md"
     competence_contract = ROOT / "references" / "competence-contract.md"
-    require_paths(findings, [readme, agents, one_shot, competence_contract])
+    validation_matrix = ROOT / "references" / "validation-proof-matrix.json"
+    stack_adapter_contract = ROOT / "references" / "stack-adapter-contract.md"
+    require_paths(findings, [readme, agents, one_shot, competence_contract, validation_matrix, stack_adapter_contract])
 
     require_contains(findings, readme, "Scafforge is a strong-host skill bundle")
     require_contains(findings, readme, "Greenfield generation is one kickoff run.")
@@ -642,6 +644,7 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, readme, "public pivot contract")
     require_contains(findings, readme, "deterministic refresh engine")
     require_contains(findings, readme, "references/competence-contract.md")
+    require_contains(findings, readme, "validation-proof-matrix.json")
     require_contains(findings, readme, "one legal next move")
     require_contains(findings, readme, "temporary contract smell")
     require_contains(findings, readme, "minimal-operable-versus-specialization split")
@@ -660,6 +663,7 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, agents, "minimal-operable-versus-specialization split")
     require_contains(findings, agents, "scafforge-pivot")
     require_contains(findings, agents, "immediately continuable")
+    require_contains(findings, agents, "what \"done\" means per repo family")
 
     require_contains(findings, competence_contract, "one legal next action")
     require_contains(
@@ -695,6 +699,61 @@ def validate_core_docs(findings: list[Finding]) -> None:
         one_shot,
         "`scafforge-pivot` is a later change-management lifecycle skill.",
     )
+    require_contains(findings, stack_adapter_contract, "validation-proof-matrix.json")
+    require_contains(findings, stack_adapter_contract, "Repo-family proof layers on top of that baseline")
+
+
+def validate_completion_proof_matrix(findings: list[Finding]) -> None:
+    matrix_path = ROOT / "references" / "validation-proof-matrix.json"
+    if not matrix_path.exists():
+        findings.append(Finding("error", "references/validation-proof-matrix.json must exist"))
+        return
+    payload = read_json(matrix_path)
+    if not isinstance(payload, dict):
+        findings.append(Finding("error", "validation-proof-matrix.json must be a JSON object"))
+        return
+    families = payload.get("families")
+    if not isinstance(families, dict):
+        findings.append(Finding("error", "validation-proof-matrix.json must declare a families object"))
+        return
+    expected_families = {"web", "game", "cli-script", "service", "desktop", "android"}
+    if set(families) != expected_families:
+        findings.append(Finding("error", "validation-proof-matrix.json must declare the complete supported repo-family set"))
+    artifact_schema = payload.get("artifact_schema")
+    if not isinstance(artifact_schema, dict):
+        findings.append(Finding("error", "validation-proof-matrix.json must declare artifact_schema"))
+    else:
+        required_fields = artifact_schema.get("required_top_level_fields")
+        if not isinstance(required_fields, list) or "family" not in required_fields or "passed" not in required_fields:
+            findings.append(Finding("error", "validation-proof-matrix.json must declare the required proof artifact schema fields"))
+    tool_bundles = payload.get("tool_bundles")
+    if not isinstance(tool_bundles, dict):
+        findings.append(Finding("error", "validation-proof-matrix.json must declare tool_bundles"))
+    else:
+        for required_bundle in ("browser-automation", "desktop-visual", "android-runtime", "native-build", "language-server-advice"):
+            if required_bundle not in tool_bundles:
+                findings.append(Finding("error", f"validation-proof-matrix.json is missing tool bundle `{required_bundle}`"))
+        bundle_text = json.dumps(tool_bundles, sort_keys=True)
+        for required_tool in ("ImageMagick", "ffmpeg", "CMake", "adb", "logcat", "Gradle", "Vulkan", "language server"):
+            if required_tool not in bundle_text:
+                findings.append(Finding("error", f"validation-proof-matrix.json must mention `{required_tool}` in the tool matrix"))
+    for family_name, entry in families.items():
+        if not isinstance(entry, dict):
+            findings.append(Finding("error", f"validation-proof-matrix family `{family_name}` must be an object"))
+            continue
+        proof_tiers = entry.get("proof_tiers")
+        if not isinstance(proof_tiers, list) or not proof_tiers:
+            findings.append(Finding("error", f"validation-proof-matrix family `{family_name}` must declare proof_tiers"))
+            continue
+        if not isinstance(entry.get("activation"), str) or not str(entry.get("activation", "")).strip():
+            findings.append(Finding("error", f"validation-proof-matrix family `{family_name}` must declare activation"))
+        for tier in proof_tiers:
+            if not isinstance(tier, dict):
+                findings.append(Finding("error", f"validation-proof-matrix family `{family_name}` proof tiers must be objects"))
+                continue
+            for field in ("id", "label", "requirement", "validator_status", "artifact_kind"):
+                if not isinstance(tier.get(field), str) or not str(tier.get(field, "")).strip():
+                    findings.append(Finding("error", f"validation-proof-matrix family `{family_name}` tier is missing `{field}`"))
 
 
 def validate_skill_contracts(findings: list[Finding]) -> None:
@@ -1270,8 +1329,33 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     )
     require_contains(
         findings,
+        TEMPLATE_ROOT / "docs" / "process" / "workflow.md",
+        "validation_proof_bundle",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / "docs" / "process" / "workflow.md",
+        "proof-<family>.json",
+    )
+    require_contains(
+        findings,
         TEMPLATE_ROOT / ".opencode" / "state" / "workflow-state.json",
         '"parallel_mode": "sequential"',
+    )
+    require_contains(
+        findings,
+        handoff_publish,
+        "completion_proof_status",
+    )
+    require_contains(
+        findings,
+        workflow_lib,
+        "completionValidationBlockerReason",
+    )
+    require_contains(
+        findings,
+        workflow_lib,
+        "validation_proof_bundle",
     )
     require_json_field(
         findings,
@@ -4406,6 +4490,7 @@ def main() -> int:
     findings: list[Finding] = []
     validate_flow_manifest(findings)
     validate_core_docs(findings)
+    validate_completion_proof_matrix(findings)
     validate_skill_contracts(findings)
     validate_template_surfaces(findings)
     validate_audit_repair_surfaces(findings)

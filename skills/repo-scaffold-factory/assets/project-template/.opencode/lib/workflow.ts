@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs"
+import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { appendFile, copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { delimiter, dirname, join, relative, resolve } from "node:path"
 import { createHash } from "node:crypto"
@@ -27,9 +27,61 @@ export type SplitKind = "parallel_independent" | "sequential_dependent"
 export type RepairFollowOnOutcome = "managed_blocked" | "source_follow_up" | "clean"
 type BootstrapProvenance = {
   requires_visual_proof?: boolean
+  validation_proof_bundle?: ValidationProofBundle
   product_finish_contract?: {
     requires_visual_proof?: boolean
   }
+}
+type ValidationProofStepBundle = {
+  id: string
+  label: string
+  requirement: string
+  condition?: string | null
+  validator_status: string
+  artifact_kind: string
+  tool_bundles: string[]
+}
+type ValidationProofFamilyBundle = {
+  family: string
+  title: string
+  activation: string
+  required_artifact_path: string
+  required_artifact_kinds: string[]
+  allowed_degradation_rules: string[]
+  headless_degradation_order: string[]
+  tool_bundles: string[]
+  steps: ValidationProofStepBundle[]
+}
+type ValidationProofBundle = {
+  matrix_version?: number
+  matrix_path?: string
+  primary_family?: string | null
+  overlay_families?: string[]
+  artifact_paths?: string[]
+  families?: ValidationProofFamilyBundle[]
+}
+type CompletionProofStepSummary = {
+  id: string
+  label: string
+  status: string
+}
+type CompletionProofFamilySummary = {
+  family: string
+  title: string
+  activation: string
+  active: boolean
+  status: string
+  artifact_path: string
+  required_artifact_kinds: string[]
+  step_summaries: CompletionProofStepSummary[]
+}
+type CompletionProofSummary = {
+  primary_family: string | null
+  overlay_families: string[]
+  completion_claim_active: boolean
+  families: CompletionProofFamilySummary[]
+  blocking: boolean
+  blocking_reasons: string[]
 }
 
 export type Artifact = {
@@ -507,6 +559,9 @@ export async function readJson<T>(path: string, fallback?: T): Promise<T> {
   try { return JSON.parse(await readFile(path, "utf-8")) as T } catch (error) { if (fallback !== undefined) return fallback; throw error }
 }
 async function readText(path: string, fallback = ""): Promise<string> { try { return await readFile(path, "utf-8") } catch { return fallback } }
+function readJsonSync<T>(path: string, fallback: T): T {
+  try { return JSON.parse(readFileSync(path, "utf-8")) as T } catch { return fallback }
+}
 export async function writeJson(path: string, value: unknown): Promise<void> { await mkdir(dirname(path), { recursive: true }); await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf-8") }
 export async function appendJsonl(path: string, value: unknown): Promise<void> { await mkdir(dirname(path), { recursive: true }); await appendFile(path, `${JSON.stringify(value)}\n`, "utf-8") }
 export async function writeText(path: string, value: string): Promise<void> { await mkdir(dirname(path), { recursive: true }); await writeFile(path, value, "utf-8") }
@@ -1116,6 +1171,123 @@ export function handoffProofBlockerReason(workflow: WorkflowState): string | nul
   return null
 }
 
+function repoClaimsCompletion(manifest: Manifest): boolean {
+  if (manifest.tickets.length === 0) return false
+  return manifest.tickets.every((ticket) => ticket.status === "done" || (ticket.resolution_state === "done" && ticket.status !== "blocked"))
+}
+function releaseLaneStartedOrDone(manifest: Manifest): boolean {
+  for (const ticketId of ["ANDROID-001", "RELEASE-001"]) {
+    const ticket = manifest.tickets.find((item) => item.id === ticketId)
+    if (!ticket) continue
+    if (ticket.resolution_state === "done") return true
+    if (!["todo", "blocked"].includes(ticket.status)) return true
+    if (!["planning", ""].includes(ticket.stage)) return true
+  }
+  return false
+}
+function loadValidationProofBundle(root = rootPath()): ValidationProofBundle | null {
+  const provenance = readJsonSync<BootstrapProvenance | null>(bootstrapProvenancePath(root), null)
+  const bundle = provenance?.validation_proof_bundle
+  return bundle && typeof bundle === "object" ? bundle : null
+}
+function completionProofStepConditionApplies(step: ValidationProofStepBundle, provenance: BootstrapProvenance | null): boolean {
+  if (!step.condition) return true
+  if (step.condition === "requires_visual_proof") {
+    return provenance?.requires_visual_proof === true || provenance?.product_finish_contract?.requires_visual_proof === true
+  }
+  return false
+}
+function inferCompletionProofStatus(payload: Record<string, unknown>): string {
+  if (typeof payload.not_applicable_reason === "string" && payload.not_applicable_reason.trim()) return "not_applicable"
+  if (payload.passed === false) return "failed"
+  if (typeof payload.degraded_reason === "string" && payload.degraded_reason.trim()) return "degraded"
+  return "passed"
+}
+export function completionProofSummary(manifest: Manifest, root = rootPath()): CompletionProofSummary | null {
+  const bundle = loadValidationProofBundle(root)
+  if (!bundle || !Array.isArray(bundle.families)) return null
+  const provenance = readJsonSync<BootstrapProvenance | null>(bootstrapProvenancePath(root), null)
+  const completionClaimActive = repoClaimsCompletion(manifest)
+  const summaries: CompletionProofFamilySummary[] = []
+  const blockingReasons: string[] = []
+  for (const family of bundle.families) {
+    const activation = typeof family.activation === "string" ? family.activation : "repo_completion"
+    const active = activation === "always"
+      ? true
+      : activation === "release_lane_or_completion"
+        ? (completionClaimActive || releaseLaneStartedOrDone(manifest))
+        : completionClaimActive
+    const artifactPath = typeof family.required_artifact_path === "string" ? family.required_artifact_path : ""
+    const artifact = artifactPath ? readJsonSync<Record<string, unknown> | null>(join(root, artifactPath), null) : null
+    const overallStatus = artifact ? inferCompletionProofStatus(artifact) : active ? "missing" : "inactive"
+    const stepsById = Array.isArray(artifact?.steps)
+      ? Object.fromEntries(
+          artifact.steps
+            .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+            .map((item) => [typeof item.step_id === "string" ? item.step_id : "", item]),
+        )
+      : {}
+    const stepSummaries: CompletionProofStepSummary[] = []
+    let familyBlocking = false
+    for (const step of Array.isArray(family.steps) ? family.steps : []) {
+      const activeStep = step.requirement === "required" || (step.requirement === "conditional" && completionProofStepConditionApplies(step, provenance))
+      let status = "not_required"
+      if (step.validator_status === "no_validator_yet" && activeStep) {
+        status = "validator_gap"
+      } else if (activeStep) {
+        const record = step.id ? stepsById[step.id] : undefined
+        if (record && typeof record.status === "string" && record.status.trim()) {
+          status = record.status.trim()
+        } else {
+          status = overallStatus
+        }
+      }
+      if (activeStep && ["missing", "failed", "validator_gap"].includes(status)) {
+        familyBlocking = true
+        blockingReasons.push(`${family.family}:${step.id}:${status}`)
+      }
+      if (activeStep && status === "degraded" && (!Array.isArray(family.allowed_degradation_rules) || family.allowed_degradation_rules.length === 0)) {
+        familyBlocking = true
+        blockingReasons.push(`${family.family}:${step.id}:degraded`)
+      }
+      stepSummaries.push({ id: step.id, label: step.label || step.id, status })
+    }
+    if (active && overallStatus === "missing") {
+      familyBlocking = true
+      blockingReasons.push(`${family.family}:artifact:missing`)
+    }
+    summaries.push({
+      family: family.family,
+      title: family.title || family.family,
+      activation,
+      active,
+      status: overallStatus,
+      artifact_path: artifactPath,
+      required_artifact_kinds: Array.isArray(family.required_artifact_kinds) ? family.required_artifact_kinds : [],
+      step_summaries: stepSummaries,
+    })
+    if (familyBlocking && active) {
+      blockingReasons.push(`${family.family}:status:${overallStatus}`)
+    }
+  }
+  return {
+    primary_family: typeof bundle.primary_family === "string" ? bundle.primary_family : null,
+    overlay_families: Array.isArray(bundle.overlay_families) ? bundle.overlay_families.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [],
+    completion_claim_active: completionClaimActive,
+    families: summaries,
+    blocking: blockingReasons.length > 0,
+    blocking_reasons: blockingReasons,
+  }
+}
+export function completionValidationBlockerReason(manifest: Manifest, root = rootPath()): string | null {
+  const summary = completionProofSummary(manifest, root)
+  if (!summary || !summary.completion_claim_active) return null
+  if (!summary.blocking) return null
+  const activeFamilies = summary.families.filter((family) => family.active).map((family) => family.family)
+  const reasons = summary.blocking_reasons.length > 0 ? ` Blocking completion proof: ${summary.blocking_reasons.join(", ")}.` : ""
+  return `Completion claims require the active validation proof bundle to pass before handoff publication.${activeFamilies.length > 0 ? ` Active families: ${activeFamilies.join(", ")}.` : ""}${reasons}`
+}
+
 export function validateRestartSurfacePublication(manifest: Manifest, workflow: WorkflowState, pivot: PivotState): string | null {
   if (!pivot.pivot_state_owner || !pivot.pivot_state_owner.trim()) {
     return "Pivot state owner is missing; restart surfaces can only publish from a normalized pivot state."
@@ -1142,6 +1314,10 @@ export function validateRestartSurfacePublication(manifest: Manifest, workflow: 
   const acceptanceRefreshTickets = manifest.tickets.filter((ticket) => ticketNeedsAcceptanceRefresh(workflow, ticket.id))
   if (acceptanceRefreshTickets.length > 0) {
     return `Restart surfaces can only publish after canonical acceptance refresh is complete for ${acceptanceRefreshTickets.map((ticket) => ticket.id).join(", ")}.`
+  }
+  const completionProofBlocker = completionValidationBlockerReason(manifest)
+  if (completionProofBlocker) {
+    return completionProofBlocker
   }
   if (workflow.handoff_proof.status === "passed" && workflow.handoff_proof.proof_artifact && !existsSync(join(rootPath(), workflow.handoff_proof.proof_artifact))) {
     return `Restart surfaces cannot publish a passing ready-state narrative while the recorded handoff proof artifact is missing: ${workflow.handoff_proof.proof_artifact}.`
@@ -2224,6 +2400,32 @@ ${renderArtifactLines(ticket)}
 ${notes.trimEnd() ? `${notes.trimEnd()}\n` : ""}
 `
 }
+function summarizeCompletionProofFamilies(summary: CompletionProofSummary | null): string {
+  if (!summary || summary.families.length === 0) return "none"
+  return summary.families.map((family) => {
+    const steps = family.step_summaries.length > 0 ? family.step_summaries.map((step) => `${step.id}:${step.status}`).join(", ") : "no steps"
+    return `${family.family}=${family.status}${family.active ? "" : " (inactive)"} [${steps}]`
+  }).join(" | ")
+}
+function renderCompletionProofLines(summary: CompletionProofSummary | null): string {
+  if (!summary) {
+    return [
+      "- primary_family: none",
+      "- overlay_families: none",
+      "- completion_claim_active: false",
+      "- blocking: unknown",
+      "- family_statuses: none",
+    ].join("\n")
+  }
+  return [
+    `- primary_family: ${summary.primary_family || "none"}`,
+    `- overlay_families: ${summary.overlay_families.length > 0 ? summary.overlay_families.join(", ") : "none"}`,
+    `- completion_claim_active: ${summary.completion_claim_active ? "true" : "false"}`,
+    `- blocking: ${summary.blocking ? "true" : "false"}`,
+    `- blocking_reasons: ${summary.blocking_reasons.length > 0 ? summary.blocking_reasons.join(", ") : "none"}`,
+    `- family_statuses: ${summarizeCompletionProofFamilies(summary)}`,
+  ].join("\n")
+}
 export function renderContextSnapshot(manifest: Manifest, workflow: WorkflowState, pivot: PivotState, note?: string): string {
   const ticket = getTicket(manifest, workflow.active_ticket)
   const ticketState = getTicketWorkflowState(workflow, ticket.id)
@@ -2234,8 +2436,9 @@ export function renderContextSnapshot(manifest: Manifest, workflow: WorkflowStat
   const pivotInputs = pivot.restart_surface_inputs
   const pivotState = pivot.downstream_refresh_state
   const handoffProofCodes = workflow.handoff_proof.blocking_codes.length > 0 ? workflow.handoff_proof.blocking_codes.join(", ") : "none"
+  const completionProof = completionProofSummary(manifest)
   const noteBlock = note ? `\n## Note\n\n${note}\n` : ""
-  return `# Context Snapshot\n\n## Project\n\n${manifest.project}\n\n## Active Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n- Approved plan: ${workflow.approved_plan ? "yes" : "no"}\n- Needs reverification: ${ticketState.needs_reverification ? "yes" : "no"}\n- Needs acceptance refresh: ${ticketState.needs_acceptance_refresh ? "yes" : "no"}\n- Open split children: ${splitChildren.length > 0 ? splitChildren.map((item) => item.id).join(", ") : "none"}\n\n## Bootstrap\n\n- status: ${workflow.bootstrap.status}\n- last_verified_at: ${workflow.bootstrap.last_verified_at || "Not yet verified."}\n- proof_artifact: ${workflow.bootstrap.proof_artifact || "None"}\n- blockers: ${workflow.bootstrap_blockers.length > 0 ? workflow.bootstrap_blockers.map((item) => `${item.executable} (${item.reason})`).join(", ") : "none"}\n\n## Handoff Proof\n\n- status: ${workflow.handoff_proof.status}\n- verification_kind: ${workflow.handoff_proof.verification_kind || "none"}\n- verified_at: ${workflow.handoff_proof.verified_at || "Not yet recorded."}\n- proof_artifact: ${workflow.handoff_proof.proof_artifact || "None"}\n- blocking_codes: ${handoffProofCodes}\n\n## Process State\n\n- process_version: ${workflow.process_version}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- parallel_mode: ${workflow.parallel_mode}\n- state_revision: ${workflow.state_revision}\n\n## Repair Follow-On\n\n- outcome: ${workflow.repair_follow_on.outcome}\n- required: ${hasPendingRepairFollowOn(workflow) ? "yes" : "no"}\n- next_required_stage: ${repairNextStage}\n- verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- last_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n\n## Pivot State\n\n- pivot_in_progress: ${pivotInputs.pivot_in_progress ? "true" : "false"}\n- pivot_class: ${pivotInputs.pivot_class || "none"}\n- pivot_changed_surfaces: ${pivotInputs.pivot_changed_surfaces.length > 0 ? pivotInputs.pivot_changed_surfaces.join(", ") : "none"}\n- pending_downstream_stages: ${pivotInputs.pending_downstream_stages.length > 0 ? pivotInputs.pending_downstream_stages.join(", ") : "none"}\n- completed_downstream_stages: ${pivotInputs.completed_downstream_stages.length > 0 ? pivotInputs.completed_downstream_stages.join(", ") : "none"}\n- pending_ticket_lineage_actions: ${pivotInputs.pending_ticket_lineage_actions.length > 0 ? pivotInputs.pending_ticket_lineage_actions.join(", ") : "none"}\n- completed_ticket_lineage_actions: ${pivotInputs.completed_ticket_lineage_actions.length > 0 ? pivotInputs.completed_ticket_lineage_actions.join(", ") : "none"}\n- post_pivot_verification_passed: ${pivotInputs.post_pivot_verification_passed ? "true" : "false"}\n- pivot_state_path: ${pivot.pivot_state_path || ".opencode/meta/pivot-state.json"}\n- pivot_tracking_mode: ${pivotState?.tracking_mode || "none"}\n\n## Lane Leases\n\n${leases}\n\n## Recent Artifacts\n\n${artifactLines}${noteBlock}`
+  return `# Context Snapshot\n\n## Project\n\n${manifest.project}\n\n## Active Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n- Approved plan: ${workflow.approved_plan ? "yes" : "no"}\n- Needs reverification: ${ticketState.needs_reverification ? "yes" : "no"}\n- Needs acceptance refresh: ${ticketState.needs_acceptance_refresh ? "yes" : "no"}\n- Open split children: ${splitChildren.length > 0 ? splitChildren.map((item) => item.id).join(", ") : "none"}\n\n## Bootstrap\n\n- status: ${workflow.bootstrap.status}\n- last_verified_at: ${workflow.bootstrap.last_verified_at || "Not yet verified."}\n- proof_artifact: ${workflow.bootstrap.proof_artifact || "None"}\n- blockers: ${workflow.bootstrap_blockers.length > 0 ? workflow.bootstrap_blockers.map((item) => `${item.executable} (${item.reason})`).join(", ") : "none"}\n\n## Handoff Proof\n\n- status: ${workflow.handoff_proof.status}\n- verification_kind: ${workflow.handoff_proof.verification_kind || "none"}\n- verified_at: ${workflow.handoff_proof.verified_at || "Not yet recorded."}\n- proof_artifact: ${workflow.handoff_proof.proof_artifact || "None"}\n- blocking_codes: ${handoffProofCodes}\n\n## Completion Proof\n\n${renderCompletionProofLines(completionProof)}\n\n## Process State\n\n- process_version: ${workflow.process_version}\n- pending_process_verification: ${workflow.pending_process_verification ? "true" : "false"}\n- parallel_mode: ${workflow.parallel_mode}\n- state_revision: ${workflow.state_revision}\n\n## Repair Follow-On\n\n- outcome: ${workflow.repair_follow_on.outcome}\n- required: ${hasPendingRepairFollowOn(workflow) ? "yes" : "no"}\n- next_required_stage: ${repairNextStage}\n- verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- last_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n\n## Pivot State\n\n- pivot_in_progress: ${pivotInputs.pivot_in_progress ? "true" : "false"}\n- pivot_class: ${pivotInputs.pivot_class || "none"}\n- pivot_changed_surfaces: ${pivotInputs.pivot_changed_surfaces.length > 0 ? pivotInputs.pivot_changed_surfaces.join(", ") : "none"}\n- pending_downstream_stages: ${pivotInputs.pending_downstream_stages.length > 0 ? pivotInputs.pending_downstream_stages.join(", ") : "none"}\n- completed_downstream_stages: ${pivotInputs.completed_downstream_stages.length > 0 ? pivotInputs.completed_downstream_stages.join(", ") : "none"}\n- pending_ticket_lineage_actions: ${pivotInputs.pending_ticket_lineage_actions.length > 0 ? pivotInputs.pending_ticket_lineage_actions.join(", ") : "none"}\n- completed_ticket_lineage_actions: ${pivotInputs.completed_ticket_lineage_actions.length > 0 ? pivotInputs.completed_ticket_lineage_actions.join(", ") : "none"}\n- post_pivot_verification_passed: ${pivotInputs.post_pivot_verification_passed ? "true" : "false"}\n- pivot_state_path: ${pivot.pivot_state_path || ".opencode/meta/pivot-state.json"}\n- pivot_tracking_mode: ${pivotState?.tracking_mode || "none"}\n\n## Lane Leases\n\n${leases}\n\n## Recent Artifacts\n\n${artifactLines}${noteBlock}`
 }
 export function renderStartHere(manifest: Manifest, workflow: WorkflowState, pivot: PivotState, options: StartHereOptions = {}): string {
   const ticket = getTicket(manifest, workflow.active_ticket)
@@ -2260,6 +2463,8 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, piv
   const sourceFollowUpPending = workflow.repair_follow_on.outcome === "source_follow_up"
   const handoffProofPending = handoffProofBlocksReadyState(workflow)
   const handoffProofBlocker = handoffProofBlockerReason(workflow)
+  const completionProof = completionProofSummary(manifest)
+  const completionProofBlocker = completionValidationBlockerReason(manifest)
   const pivotInputs = pivot.restart_surface_inputs
   const pivotPending = pivotInputs.pivot_in_progress
   const handoffStatus = options.handoffStatus || (
@@ -2275,6 +2480,8 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, piv
           ? workflow.handoff_proof.status === "failed"
             ? "pre-handoff proof failed"
             : "pre-handoff proof missing"
+        : completionProofBlocker
+          ? "completion proof blocked"
         : "ready for continued development"
   )
   const recommendedAction = options.nextAction || (
@@ -2314,6 +2521,8 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, piv
                 : `Use the team leader to route ${verifierLabel} across done tickets whose trust predates the current process contract: ${processVerification.affected_done_tickets.map((item) => item.id).join(", ")}.`
                 : blockedDependents.length > 0
                   ? dependentContinuationAction(ticket, blockedDependents)
+                : completionProofBlocker
+                  ? completionProofBlocker
                 : handoffProofPending
                   ? (handoffProofBlocker || "Record a current-cycle pre-handoff proof before treating the repo as ready for continued development.")
                 : "Continue the required internal lifecycle from the current ticket stage."
@@ -2325,6 +2534,7 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, piv
     pivotInputs.pending_ticket_lineage_actions.length > 0 ? `- Pivot ticket lineage actions remain pending: ${pivotInputs.pending_ticket_lineage_actions.join(", ")}.` : null,
     repairFollowOnPending ? `- Repair follow-on remains incomplete${repairBlocker ? `: ${repairBlocker}` : "."}` : null,
     handoffProofPending ? `- Current-cycle handoff proof is ${workflow.handoff_proof.status}${handoffProofBlocker ? `: ${handoffProofBlocker}` : "."}` : null,
+    completionProofBlocker ? `- Completion proof is blocked: ${completionProofBlocker}` : null,
     sourceFollowUpPending ? "- Managed repair converged, but source-layer follow-up still remains in the ticket graph." : null,
     activeTicketNeedsHistoricalReconciliation ? "- Historical lineage remains contradictory until ticket_reconcile repairs the superseded invalidated ticket graph." : null,
     activeTicketNeedsTrustRestoration || processVerification.pending ? "- Historical completion should not be treated as fully trusted until pending process verification or explicit reverification is cleared." : null,
@@ -2336,7 +2546,7 @@ export function renderStartHere(manifest: Manifest, workflow: WorkflowState, piv
     blockedDependents.length > 0 && ticket.status !== "done" ? `- Downstream tickets ${blockedDependents.map((item) => item.id).join(", ")} remain formally blocked until ${ticket.id} reaches done.` : null,
   ].filter((line): line is string => Boolean(line)).join("\n") || "- None recorded."
   const quality = summarizeCodeQualityStatus(manifest)
-  return `# START HERE\n\n${START_HERE_MANAGED_START}\n## What This Repo Is\n\n${manifest.project}\n\n## Current State\n\nThe repo is operating under the managed OpenCode workflow. Use the canonical state files below instead of memory or raw ticket prose.\n\n## Read In This Order\n\n1. README.md\n2. AGENTS.md\n3. docs/AGENT-DELEGATION.md\n4. docs/spec/CANONICAL-BRIEF.md\n5. docs/process/workflow.md\n6. tickets/manifest.json\n7. tickets/BOARD.md\n\n## Current Or Next Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Wave: ${ticket.wave}\n- Lane: ${ticket.lane}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n\n## Dependency Status\n\n- current_ticket_done: ${ticket.status === "done" ? "yes" : "no"}\n- dependent_tickets_waiting_on_current: ${summarizeTickets(blockedDependents)}\n- split_child_tickets: ${summarizeTickets(splitChildren)}\n\n## Generation Status\n\n- handoff_status: ${handoffStatus}\n- process_version: ${workflow.process_version}\n- parallel_mode: ${workflow.parallel_mode}\n- pending_process_verification: ${processVerification.pending ? "true" : "false"}\n- repair_follow_on_outcome: ${workflow.repair_follow_on.outcome}\n- repair_follow_on_required: ${repairFollowOnPending ? "true" : "false"}\n- repair_follow_on_next_stage: ${repairNextStage || "none"}\n- repair_follow_on_verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- repair_follow_on_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n- pivot_in_progress: ${pivotInputs.pivot_in_progress ? "true" : "false"}\n- pivot_class: ${pivotInputs.pivot_class || "none"}\n- pivot_changed_surfaces: ${pivotInputs.pivot_changed_surfaces.length > 0 ? pivotInputs.pivot_changed_surfaces.join(", ") : "none"}\n- pivot_pending_stages: ${pivotInputs.pending_downstream_stages.length > 0 ? pivotInputs.pending_downstream_stages.join(", ") : "none"}\n- pivot_completed_stages: ${pivotInputs.completed_downstream_stages.length > 0 ? pivotInputs.completed_downstream_stages.join(", ") : "none"}\n- pivot_pending_ticket_lineage_actions: ${pivotInputs.pending_ticket_lineage_actions.length > 0 ? pivotInputs.pending_ticket_lineage_actions.join(", ") : "none"}\n- pivot_completed_ticket_lineage_actions: ${pivotInputs.completed_ticket_lineage_actions.length > 0 ? pivotInputs.completed_ticket_lineage_actions.join(", ") : "none"}\n- post_pivot_verification_passed: ${pivotInputs.post_pivot_verification_passed ? "true" : "false"}\n- bootstrap_status: ${workflow.bootstrap.status}\n- bootstrap_proof: ${workflow.bootstrap.proof_artifact || "None"}\n- bootstrap_blockers: ${workflow.bootstrap_blockers.length > 0 ? workflow.bootstrap_blockers.map((item) => `${item.executable} (${item.reason})`).join(", ") : "none"}\n\n## Post-Generation Audit Status\n\n- audit_or_repair_follow_up: ${pivotPending || repairFollowOnPending || sourceFollowUpPending || reopened.length > 0 || suspectDone.length > 0 || reverification.length > 0 || processVerification.clearable_now ? "follow-up required" : "none recorded"}\n- reopened_tickets: ${summarizeTickets(reopened)}\n- done_but_not_fully_trusted: ${summarizeTickets(suspectDone)}\n- pending_reverification: ${summarizeTickets(reverification)}\n- repair_follow_on_blockers: ${workflow.repair_follow_on.blocking_reasons.length > 0 ? workflow.repair_follow_on.blocking_reasons.join(" | ") : "none"}\n- pivot_pending_stages: ${pivotInputs.pending_downstream_stages.length > 0 ? pivotInputs.pending_downstream_stages.join(", ") : "none"}\n- pivot_pending_ticket_lineage_actions: ${pivotInputs.pending_ticket_lineage_actions.length > 0 ? pivotInputs.pending_ticket_lineage_actions.join(", ") : "none"}\n\n## Code Quality Status\n\n- last_build_result: ${quality.build_result}\n- last_test_run_result: ${quality.test_result}\n- open_remediation_tickets: ${quality.open_remediation_tickets}\n- known_reference_integrity_issues: ${quality.open_reference_integrity_tickets}\n\n## Known Risks\n\n${riskLines}\n\n## Next Action\n\n${recommendedAction}\n${START_HERE_MANAGED_END}\n`
+  return `# START HERE\n\n${START_HERE_MANAGED_START}\n## What This Repo Is\n\n${manifest.project}\n\n## Current State\n\nThe repo is operating under the managed OpenCode workflow. Use the canonical state files below instead of memory or raw ticket prose.\n\n## Read In This Order\n\n1. README.md\n2. AGENTS.md\n3. docs/AGENT-DELEGATION.md\n4. docs/spec/CANONICAL-BRIEF.md\n5. docs/process/workflow.md\n6. tickets/manifest.json\n7. tickets/BOARD.md\n\n## Current Or Next Ticket\n\n- ID: ${ticket.id}\n- Title: ${ticket.title}\n- Wave: ${ticket.wave}\n- Lane: ${ticket.lane}\n- Stage: ${ticket.stage}\n- Status: ${ticket.status}\n- Resolution: ${ticket.resolution_state}\n- Verification: ${ticket.verification_state}\n\n## Dependency Status\n\n- current_ticket_done: ${ticket.status === "done" ? "yes" : "no"}\n- dependent_tickets_waiting_on_current: ${summarizeTickets(blockedDependents)}\n- split_child_tickets: ${summarizeTickets(splitChildren)}\n\n## Generation Status\n\n- handoff_status: ${handoffStatus}\n- process_version: ${workflow.process_version}\n- parallel_mode: ${workflow.parallel_mode}\n- pending_process_verification: ${processVerification.pending ? "true" : "false"}\n- repair_follow_on_outcome: ${workflow.repair_follow_on.outcome}\n- repair_follow_on_required: ${repairFollowOnPending ? "true" : "false"}\n- repair_follow_on_next_stage: ${repairNextStage || "none"}\n- repair_follow_on_verification_passed: ${workflow.repair_follow_on.verification_passed ? "true" : "false"}\n- repair_follow_on_updated_at: ${workflow.repair_follow_on.last_updated_at || "Not yet recorded."}\n- pivot_in_progress: ${pivotInputs.pivot_in_progress ? "true" : "false"}\n- pivot_class: ${pivotInputs.pivot_class || "none"}\n- pivot_changed_surfaces: ${pivotInputs.pivot_changed_surfaces.length > 0 ? pivotInputs.pivot_changed_surfaces.join(", ") : "none"}\n- pivot_pending_stages: ${pivotInputs.pending_downstream_stages.length > 0 ? pivotInputs.pending_downstream_stages.join(", ") : "none"}\n- pivot_completed_stages: ${pivotInputs.completed_downstream_stages.length > 0 ? pivotInputs.completed_downstream_stages.join(", ") : "none"}\n- pivot_pending_ticket_lineage_actions: ${pivotInputs.pending_ticket_lineage_actions.length > 0 ? pivotInputs.pending_ticket_lineage_actions.join(", ") : "none"}\n- pivot_completed_ticket_lineage_actions: ${pivotInputs.completed_ticket_lineage_actions.length > 0 ? pivotInputs.completed_ticket_lineage_actions.join(", ") : "none"}\n- post_pivot_verification_passed: ${pivotInputs.post_pivot_verification_passed ? "true" : "false"}\n- bootstrap_status: ${workflow.bootstrap.status}\n- bootstrap_proof: ${workflow.bootstrap.proof_artifact || "None"}\n- bootstrap_blockers: ${workflow.bootstrap_blockers.length > 0 ? workflow.bootstrap_blockers.map((item) => `${item.executable} (${item.reason})`).join(", ") : "none"}\n- completion_primary_family: ${completionProof?.primary_family || "none"}\n- completion_overlay_families: ${completionProof && completionProof.overlay_families.length > 0 ? completionProof.overlay_families.join(", ") : "none"}\n- completion_claim_active: ${completionProof?.completion_claim_active ? "true" : "false"}\n- completion_proof_blocking: ${completionProof?.blocking ? "true" : "false"}\n- completion_proof_status: ${summarizeCompletionProofFamilies(completionProof)}\n\n## Post-Generation Audit Status\n\n- audit_or_repair_follow_up: ${pivotPending || repairFollowOnPending || sourceFollowUpPending || reopened.length > 0 || suspectDone.length > 0 || reverification.length > 0 || processVerification.clearable_now ? "follow-up required" : "none recorded"}\n- reopened_tickets: ${summarizeTickets(reopened)}\n- done_but_not_fully_trusted: ${summarizeTickets(suspectDone)}\n- pending_reverification: ${summarizeTickets(reverification)}\n- repair_follow_on_blockers: ${workflow.repair_follow_on.blocking_reasons.length > 0 ? workflow.repair_follow_on.blocking_reasons.join(" | ") : "none"}\n- pivot_pending_stages: ${pivotInputs.pending_downstream_stages.length > 0 ? pivotInputs.pending_downstream_stages.join(", ") : "none"}\n- pivot_pending_ticket_lineage_actions: ${pivotInputs.pending_ticket_lineage_actions.length > 0 ? pivotInputs.pending_ticket_lineage_actions.join(", ") : "none"}\n\n## Code Quality Status\n\n- last_build_result: ${quality.build_result}\n- last_test_run_result: ${quality.test_result}\n- open_remediation_tickets: ${quality.open_remediation_tickets}\n- known_reference_integrity_issues: ${quality.open_reference_integrity_tickets}\n\n## Known Risks\n\n${riskLines}\n\n## Next Action\n\n${recommendedAction}\n${START_HERE_MANAGED_END}\n`
 }
 function escapeRegExp(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
 function inferArtifactSummaryState(summary: string | undefined): "pass" | "fail" | "unknown" {

@@ -37,6 +37,7 @@ from test_support.gpttalker_fixture_builders import (
 from test_support.repo_seeders import (
     make_stack_skill_non_placeholder,
     read_json,
+    seed_all_tickets_closed,
     seed_failing_pytest_suite,
     seed_godot_target as seed_curated_godot_target,
     seed_ready_bootstrap,
@@ -68,9 +69,14 @@ class ProofTarget:
     project_name: str
     stack_label: str
     adapter_id: str
+    family: str
     smoke_snippets: tuple[str, ...]
     seed: Callable[[Path], None]
     release_check: Callable[[Path], None] | None = None
+    overlay_families: tuple[str, ...] = ()
+    deliverable_kind: str | None = None
+    visual_finish_target: str | None = None
+    finish_acceptance_signals: str | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -834,24 +840,29 @@ def multi_stack_targets() -> list[ProofTarget]:
             "Proof Python CLI",
             "python-cli",
             "python",
+            "cli-script",
             ("pytest",),
             seed_python_cli_target,
             python_release_check,
         ),
         ProofTarget(
             "proof-node-api",
-            "Proof Node API",
-            "node-api",
+            "Proof Node Web",
+            "node-web",
             "node",
+            "web",
             ("npm", "test"),
             seed_node_api_target,
             node_release_check,
+            visual_finish_target="browser dashboard",
+            finish_acceptance_signals="web app",
         ),
         ProofTarget(
             "proof-rust-cli",
             "Proof Rust CLI",
             "rust-cli",
             "rust",
+            "cli-script",
             ("cargo test",),
             seed_rust_cli_target,
             rust_release_check,
@@ -861,6 +872,7 @@ def multi_stack_targets() -> list[ProofTarget]:
             "Proof Go HTTP",
             "go-http",
             "go",
+            "service",
             ("go test",),
             seed_go_http_target,
             go_release_check,
@@ -870,24 +882,31 @@ def multi_stack_targets() -> list[ProofTarget]:
             "Proof Godot",
             "godot-android-2d",
             "godot",
+            "game",
             ("godot", "headless"),
             seed_godot_target,
             godot_release_check,
+            overlay_families=("android",),
+            deliverable_kind="android-debug-apk",
         ),
         ProofTarget(
             "proof-cmake",
-            "Proof CMake",
+            "Proof Desktop CMake",
+            "desktop-cpp",
             "c-cpp",
-            "c-cpp",
+            "desktop",
             ("cmake",),
             seed_cmake_target,
             cmake_release_check,
+            visual_finish_target="desktop window",
+            finish_acceptance_signals="desktop app",
         ),
         ProofTarget(
             "proof-dotnet",
             "Proof Dotnet",
             "dotnet",
             "dotnet",
+            "cli-script",
             ("dotnet", "test\\b"),
             seed_dotnet_target,
             dotnet_release_check,
@@ -897,6 +916,7 @@ def multi_stack_targets() -> list[ProofTarget]:
             "Proof Java",
             "java-gradle",
             "java-android",
+            "cli-script",
             ("gradle",),
             seed_java_gradle_target,
             java_release_check,
@@ -1991,6 +2011,7 @@ def synthetic_edge_case_integration(workspace: Path) -> None:
 
 def multi_stack_proof_integration(workspace: Path) -> None:
     proof_root = workspace / "multi-stack-proof"
+    represented_families: set[str] = set()
     for target in multi_stack_targets():
         dest = proof_root / target.slug
         bootstrap_scaffold(
@@ -1999,8 +2020,49 @@ def multi_stack_proof_integration(workspace: Path) -> None:
             project_slug=target.slug,
             agent_prefix=target.slug,
             stack_label=target.stack_label,
+            deliverable_kind=target.deliverable_kind,
+            visual_finish_target=target.visual_finish_target,
+            finish_acceptance_signals=target.finish_acceptance_signals,
         )
         target.seed(dest)
+
+        provenance = read_json(dest / ".opencode" / "meta" / "bootstrap-provenance.json")
+        if not isinstance(provenance, dict):
+            raise RuntimeError(
+                f"Proof target `{target.slug}` expected bootstrap provenance to be a JSON object."
+            )
+        validation_bundle = provenance.get("validation_proof_bundle")
+        if not isinstance(validation_bundle, dict):
+            raise RuntimeError(
+                f"Proof target `{target.slug}` should receive a validation_proof_bundle in bootstrap provenance."
+            )
+        if validation_bundle.get("primary_family") != target.family:
+            raise RuntimeError(
+                f"Proof target `{target.slug}` should resolve primary family `{target.family}`, observed `{validation_bundle.get('primary_family')}`."
+            )
+        overlay_families = validation_bundle.get("overlay_families")
+        normalized_overlays = (
+            sorted(item for item in overlay_families if isinstance(item, str))
+            if isinstance(overlay_families, list)
+            else []
+        )
+        if normalized_overlays != sorted(target.overlay_families):
+            raise RuntimeError(
+                f"Proof target `{target.slug}` should resolve overlay families {sorted(target.overlay_families)}, observed {normalized_overlays}."
+            )
+        artifact_paths = validation_bundle.get("artifact_paths")
+        expected_artifact_paths = {
+            f".opencode/state/artifacts/proof-{family}.json"
+            for family in (target.family, *target.overlay_families)
+        }
+        if not isinstance(artifact_paths, list) or expected_artifact_paths - {
+            item for item in artifact_paths if isinstance(item, str)
+        }:
+            raise RuntimeError(
+                f"Proof target `{target.slug}` should publish canonical proof artifact paths for {sorted(expected_artifact_paths)}."
+            )
+        represented_families.add(target.family)
+        represented_families.update(target.overlay_families)
 
         smoke_test_text = (dest / ".opencode" / "tools" / "smoke_test.ts").read_text(
             encoding="utf-8"
@@ -2092,6 +2154,34 @@ def multi_stack_proof_integration(workspace: Path) -> None:
                 [sys.executable, str(VERIFY_GENERATED), str(dest), "--format", "json"],
                 ROOT,
             )
+            handoff_proof = read_json(dest / ".opencode" / "state" / "handoff-proof.json")
+            if not isinstance(handoff_proof, dict):
+                raise RuntimeError(
+                    f"Proof target `{target.slug}` should persist .opencode/state/handoff-proof.json."
+                )
+            completion_proof = handoff_proof.get("completion_proof")
+            if not isinstance(completion_proof, dict):
+                raise RuntimeError(
+                    f"Proof target `{target.slug}` should persist completion proof summary in handoff-proof.json."
+                )
+            if completion_proof.get("primary_family") != target.family:
+                raise RuntimeError(
+                    f"Proof target `{target.slug}` should persist primary completion family `{target.family}` in handoff-proof.json."
+                )
+            persisted_overlays = completion_proof.get("overlay_families")
+            normalized_persisted_overlays = (
+                sorted(item for item in persisted_overlays if isinstance(item, str))
+                if isinstance(persisted_overlays, list)
+                else []
+            )
+            if normalized_persisted_overlays != sorted(target.overlay_families):
+                raise RuntimeError(
+                    f"Proof target `{target.slug}` should persist overlay completion families {sorted(target.overlay_families)}, observed {normalized_persisted_overlays}."
+                )
+            if completion_proof.get("completion_claim_active") is not False:
+                raise RuntimeError(
+                    f"Proof target `{target.slug}` should not claim completion during baseline multi-stack coverage."
+                )
             code_quality_findings = [
                 item
                 for item in audit_payload.get("findings", [])
@@ -2099,6 +2189,7 @@ def multi_stack_proof_integration(workspace: Path) -> None:
                 and (
                     str(item.get("code", "")).startswith("EXEC")
                     or str(item.get("code", "")).startswith("REF")
+                    or str(item.get("code", "")).startswith("PROOF")
                 )
             ]
             if (
@@ -2119,6 +2210,57 @@ def multi_stack_proof_integration(workspace: Path) -> None:
                 raise RuntimeError(
                     f"Proof target `{target.slug}` should fail bootstrap only when it can explain the missing prerequisite or blocker."
                 )
+
+    expected_families = {"cli-script", "service", "web", "desktop", "game", "android"}
+    if represented_families != expected_families:
+        raise RuntimeError(
+            "Multi-stack proof integration should cover every validation-proof family. "
+            f"Observed {sorted(represented_families)}."
+        )
+
+    missing_proof_dest = proof_root / "proof-missing-family-artifact"
+    bootstrap_scaffold(
+        missing_proof_dest,
+        project_name="Proof Missing Artifact",
+        project_slug="proof-missing-family-artifact",
+        agent_prefix="proof-missing-family-artifact",
+        stack_label="node-web",
+        visual_finish_target="browser dashboard",
+        finish_acceptance_signals="web app",
+    )
+    seed_node_api_target(missing_proof_dest)
+    seed_all_tickets_closed(missing_proof_dest)
+    seed_ready_bootstrap(missing_proof_dest)
+
+    missing_proof_audit = run_json(
+        [
+            sys.executable,
+            str(AUDIT),
+            str(missing_proof_dest),
+            "--format",
+            "json",
+            "--no-diagnosis-pack",
+        ],
+        ROOT,
+    )
+    missing_proof_findings = [
+        item
+        for item in missing_proof_audit.get("findings", [])
+        if isinstance(item, dict)
+    ]
+    if not any(item.get("code") == "PROOF001" for item in missing_proof_findings):
+        raise RuntimeError(
+            "Completion-claim coverage should emit PROOF001 when a required family proof artifact is missing."
+        )
+    missing_proof_error = run_generated_tool_error(
+        missing_proof_dest,
+        ".opencode/tools/handoff_publish.ts",
+        {},
+    )
+    if "Completion claims require the active validation proof bundle to pass before handoff publication." not in missing_proof_error:
+        raise RuntimeError(
+            "handoff_publish should block completion claims when the required family proof artifact is missing."
+        )
 
 
 def contract_edge_case_integration(workspace: Path) -> None:
