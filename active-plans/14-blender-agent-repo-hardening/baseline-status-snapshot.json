@@ -1,0 +1,54 @@
+{
+  "snapshot_version": "pre-hardening-2026-04-22",
+  "captured_from": [
+    "blender-agent/README.md",
+    "blender-agent/mcp-server/TOOL_IMPLEMENTATION_STATUS.md",
+    "blender-agent/mcp-server/src/blender_mcp_server/data/tool-status.md",
+    "blender-agent/mcp-server/src/blender_mcp_server/data/capabilities.md"
+  ],
+  "default_shipped_api": "v1",
+  "v2_status": "preview",
+  "v1_certified": [
+    "environment_probe",
+    "project_initialize",
+    "addon_configure",
+    "scene_query",
+    "scene_batch_edit",
+    "modifier_stack_edit",
+    "uv_workflow",
+    "material_pbr_build",
+    "render_preview"
+  ],
+  "v1_partial": [
+    "mesh_edit_batch",
+    "node_graph_build",
+    "bake_maps",
+    "armature_animation",
+    "simulation_cache",
+    "asset_publish",
+    "import_asset",
+    "export_asset",
+    "quality_validate",
+    "data_access",
+    "blender_live_status",
+    "blender_live_operator",
+    "blender_live_data",
+    "blender_live_capture"
+  ],
+  "v1_experimental": [
+    "blender_python"
+  ],
+  "v2_preview_session": [
+    "blender_session_create",
+    "blender_session_attach",
+    "blender_session_close",
+    "blender_session_pause",
+    "blender_session_resume",
+    "blender_session_checkpoint"
+  ],
+  "baseline_constraints": [
+    "Live-session features depend on a running Blender add-on runtime.",
+    "Headless/Linux support was not yet tied to a dedicated proof artifact.",
+    "Client packaging docs contained broader session/watch/streaming claims than the proof surfaces supported."
+  ]
+}

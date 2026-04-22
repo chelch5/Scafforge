@@ -8,6 +8,8 @@ This matrix documents the truthful Scafforge contract for Blender-derived workfl
 - Certified v1 tools today are `environment_probe`, `project_initialize`, `addon_configure`, `scene_query`, `scene_batch_edit`, `modifier_stack_edit`, `uv_workflow`, `material_pbr_build`, and `render_preview`.
 - `mesh_edit_batch`, `export_asset`, and `quality_validate` are currently partial, so Scafforge must not describe them as guaranteed end-to-end proof lanes.
 - V2 session tools and wrapper workflows exist, but they remain preview/control-plane surfaces rather than the certified default execution contract.
+- The hardened machine-readable boundary now lives in `blender-agent/mcp-server/capability-contract.json` and `blender-agent/HARDENING-PROOF.json`.
+- Background headless proof exists, but it is only as broad as the platform recorded in `blender-agent/mcp-server/tests/headless/results.json`.
 
 ## Supported lanes
 
@@ -54,3 +56,4 @@ For Blender-derived assets, keep the evidence on the canonical asset truth surfa
 - Do not document V2 session wrappers as the default shipped production contract.
 - Do not describe `quality_validate`, `export_asset`, or broad session/control-plane surfaces as certified when the adjacent repo marks them partial or preview.
 - Do not promise that Blender solves style direction by itself. Blender evidence proves a lane executed; the visual rubric still decides whether the output is acceptable.
+- When citing headless support, point at `HARDENING-PROOF.json` and `mcp-server/tests/headless/results.json` rather than prose summaries alone.

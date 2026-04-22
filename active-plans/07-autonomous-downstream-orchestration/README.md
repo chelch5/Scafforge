@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** TODO
+**Status:** DONE
 **Goal:** Build the orchestration layer that accepts an approved brief, runs the standard Scafforge greenfield flow, drives downstream work through PR-based phases, and resumes safely after repair without breaking the package’s one-shot contract.
 
 **Architecture:** The orchestration layer wraps Scafforge; it does not replace it. An adjacent service should own job intake, state transitions, PR and review automation, pause, retry, and resume controls, and evidence aggregation. Scafforge remains responsible for scaffold generation, repo contract surfaces, audit, repair, and handoff publication.

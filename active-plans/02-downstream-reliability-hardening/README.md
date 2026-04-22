@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** TODO
+**Status:** DONE
 **Goal:** Eliminate the current womanvshorse and spinner failure families from both fresh Scafforge-generated repositories and the audit/repair recovery path.
 
 **Architecture:** Treat repeated downstream breakage as package evidence. This plan adds a formal failure taxonomy, stronger greenfield proof gates, richer audit classification, and repair routing that distinguishes package-managed defects from genuine repo-local implementation work. The result must satisfy both user criteria: prevention on fresh scaffolds and truthful recovery through `scafforge-audit` plus `scafforge-repair`.

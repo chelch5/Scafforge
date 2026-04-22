@@ -3,6 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Status:** IN PROGRESS
+**Current Phase:** Phases 1 through 5 are implemented in Scafforge as boundary, transport, connectivity, security, and screen-map contracts. Phase 6 remains open for live backend-connected WinUI build-and-proof work.
 **Goal:** Design the Windows control app that monitors and controls the autonomous Scafforge factory across local WSL and remote SSH environments without becoming a hidden workflow engine.
 
 **Architecture:** Build the control plane as a dedicated WinUI 3 application backed by explicit orchestration APIs and event streams. The app should observe and control the system, not own its truth. During early implementation, prefer an internal-tool packaging posture that optimizes local build/run and operator workflows; revisit packaged distribution only when the app’s Windows feature needs are clear.

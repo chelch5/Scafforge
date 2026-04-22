@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** TODO
+**Status:** DONE
 **Goal:** Create a separate idea-to-spec system that can accept rough concepts, attachments, and prompts, turn them into Scafforge-ready brief material, and hand off approved outputs without weakening package boundaries.
 
 **Architecture:** Build the spec factory as an adjacent workspace or service, not as hidden package logic. It owns intake, enrichment, drafting, decision packets, review, and approval state. Scafforge still owns normalization against its canonical brief contract and the actual greenfield scaffold. ChatGPT and MCP ingress should feed the factory through a reviewed workflow, not bypass it.

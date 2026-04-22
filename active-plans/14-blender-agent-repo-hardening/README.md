@@ -2,7 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** TODO
+**Status:** DONE
+**Implementation Outcome:** The adjacent `blender-agent` repo was hardened on 2026-04-22 and merged through PR `#3`, including machine-readable capability/proof artifacts, tighter client docs, and headless-proof validation.
 **Goal:** Harden the separate `blender-agent` repository into a truthful, testable, headless-capable Blender automation system with stable tool contracts, stronger QA, and packaging that Scafforge can rely on honestly.
 
 **Architecture:** `blender-agent` already has a substantial internal plan pack and a large skill set. This Scafforge-side plan does not replace those plans. It turns them into a cross-repo execution program focused on the gaps that matter most to Scafforge: honest tool maturity, Linux/headless viability, deterministic QA/export behavior, and stable packaging/integration contracts.

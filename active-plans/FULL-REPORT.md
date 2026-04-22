@@ -2,14 +2,14 @@
 
 ## Executive Summary
 
-This planning cycle now has two distinct outputs:
+This portfolio now has two distinct outputs:
 
 1. a cleaned and correctly classified `active-plans/` portfolio
-2. fourteen numbered implementation plans that are detailed enough to guide real Scafforge work
+2. fourteen numbered implementation plans, most of which are now implemented across Scafforge and its adjacent repos
 
 The first pass only solved the structure problem. The second pass fixed the actual planning problem by rewriting the numbered folders into implementation-grade documents with dependencies, package surfaces, phased work, validation gates, and documentation obligations.
 
-Those numbered plans have now also been through a live `planchecker` pass and follow-up rewrite cycle, so they are no longer generic outline stubs.
+Those numbered plans then went through a live `planchecker` pass and follow-up rewrite cycle, and the implementation loop used `agent-caller`, direct `copilot -p` recovery where needed, local validation, PR review, and merge.
 
 A final planning-hygiene closeout pass also locked the portfolio rules in place:
 
@@ -23,7 +23,14 @@ Plan `11` is now implemented as the routing layer for this documentation archite
 
 A later source-spec audit against the moved `_source-material/` docs tightened the plans further around three areas that were still too implicit: retrieval or vector-index handling, concrete distillation of the asset-research ecosystem into route policy, and the distinction between provider, SDK, and execution-host access paths in the model-router plan.
 
-The central program decision remains unchanged: Scafforge should not scale autonomy until it first closes the reliability, validation, and quality gaps already proven by womanvshorse and spinner.
+The central program decision remains unchanged: Scafforge should not scale autonomy until it first closes the reliability, validation, and quality gaps already proven by womanvshorse and spinner. That hardening sequence is now implemented. The only remaining active plan is the final WinUI control-plane build-and-proof phase in plan `10`.
+
+## Current Implementation Status
+
+- Scafforge plans `01` through `09`, `11`, and `12` are implemented and merged on `main`.
+- The adjacent `Meta-Skill-Engineering` repo hardening from plan `13` is implemented and merged through PR `#19`.
+- The adjacent `blender-agent` repo hardening from plan `14` is implemented and merged through PR `#3`.
+- Plan `10` remains in progress because its final phase depends on a live backend-connected WinUI client implementation and verification pass, not only the contract documents already landed in Scafforge.
 
 ## What This Program Is Actually Doing
 
@@ -133,7 +140,7 @@ Locks the provider and SDK architecture so later services do not drift across in
 
 ### `10-viewer-control-plane-winui`
 
-Designs the operator-facing Windows app that watches and controls the autonomous factory through explicit backend contracts.
+Designs and partially implements the operator-facing Windows app boundary that watches and controls the autonomous factory through explicit backend contracts. The Scafforge-side contract pack is merged; the live client build/proof phase remains open.
 
 ### `11-repository-documentation-sweep`
 
@@ -164,4 +171,4 @@ Turns the separate `blender-agent` repository into a clearer, safer dependency b
 
 ## Final Recommendation
 
-Treat these plans as a dependency-ordered implementation program, not as background notes. The correct next step after this planning cycle is not more restructuring. It is to choose the next implementation plan from the ordered list and execute it with docs and validation in the same PR.
+Treat these plans as the recorded implementation program, not as background notes. The remaining execution work is concentrated in plan `10`: build the backend-connected WinUI client against the now-landed orchestration, provider-policy, and meta-loop contracts, then close the final verification phase with the same review discipline used for the rest of the portfolio.
