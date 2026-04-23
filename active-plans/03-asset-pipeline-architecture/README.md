@@ -225,53 +225,53 @@ This plan is not allowed to turn commercial APIs into the default asset route.
 
 ### Phase 1: Replace the current route model
 
-- [ ] Audit the current `asset-pipeline` skill and identify where route selection is currently too coarse or keyword-driven.
-- [ ] Replace the current route family wording with the capability taxonomy above or a refined version that still keeps the same operational split.
-- [ ] Update the route-normalization code and bootstrap metadata using the explicit old-to-new mapping above instead of ad hoc renaming.
-- [ ] Document what each capability owns, what it requires as input, and what evidence it must emit.
-- [ ] Update the bootstrap logic so route choice is recorded explicitly instead of inferred later from vague text.
+- [x] Audit the current `asset-pipeline` skill and identify where route selection is currently too coarse or keyword-driven.
+- [x] Replace the current route family wording with the capability taxonomy above or a refined version that still keeps the same operational split.
+- [x] Update the route-normalization code and bootstrap metadata using the explicit old-to-new mapping above instead of ad hoc renaming.
+- [x] Document what each capability owns, what it requires as input, and what evidence it must emit.
+- [x] Update the bootstrap logic so route choice is recorded explicitly instead of inferred later from vague text.
 
 ### Phase 2: Define the canonical asset state model
 
-- [ ] Design the file contract for `requirements`, `pipeline`, `manifest`, `workflow`, `preview`, and QA surfaces.
-- [ ] Define which fields are authoritative in machine-readable JSON versus derived in markdown summaries.
-- [ ] Ensure the manifest can distinguish sourced assets, procedural assets, AI-generated assets, reconstructed assets, and Blender-assembled assets.
-- [ ] Keep `assets/pipeline.json` as the category-level route/config surface and `assets/manifest.json` as the per-asset truth surface; do not collapse them into one file.
-- [ ] Define `assets/workflows/` as structured workflow definitions or run records, not an empty placeholder directory.
-- [ ] Define how generated repos are expected to use the state model during greenfield generation, later repair, and final handoff.
-- [ ] Distill the cited research files into an explicit route-and-tool guidance table so future implementation is not forced to rediscover the same ecosystem map.
+- [x] Design the file contract for `requirements`, `pipeline`, `manifest`, `workflow`, `preview`, and QA surfaces.
+- [x] Define which fields are authoritative in machine-readable JSON versus derived in markdown summaries.
+- [x] Ensure the manifest can distinguish sourced assets, procedural assets, AI-generated assets, reconstructed assets, and Blender-assembled assets.
+- [x] Keep `assets/pipeline.json` as the category-level route/config surface and `assets/manifest.json` as the per-asset truth surface; do not collapse them into one file.
+- [x] Define `assets/workflows/` as structured workflow definitions or run records, not an empty placeholder directory.
+- [x] Define how generated repos are expected to use the state model during greenfield generation, later repair, and final handoff.
+- [x] Distill the cited research files into an explicit route-and-tool guidance table so future implementation is not forced to rediscover the same ecosystem map.
 
 ### Phase 3: Build provenance and compliance rules
 
-- [ ] Expand provenance from “file listed in `PROVENANCE.md`” into source URL, author, license, tool, model, prompt/workflow, and version lock where applicable.
-- [ ] Define an allowlist/denylist policy for asset sources and model licenses.
-- [ ] Keep commercial API generation denied by default for the local-AI capabilities unless a later plan explicitly approves an exception.
-- [ ] Make sure mixed-license sources such as OpenGameArt or Freesound require explicit attribution and commercial-policy handling.
-- [ ] Define how generated repos build `ATTRIBUTION.md` and machine-readable license reports from the authoritative manifest.
+- [x] Expand provenance from “file listed in `PROVENANCE.md`” into source URL, author, license, tool, model, prompt/workflow, and version lock where applicable.
+- [x] Define an allowlist/denylist policy for asset sources and model licenses.
+- [x] Keep commercial API generation denied by default for the local-AI capabilities unless a later plan explicitly approves an exception.
+- [x] Make sure mixed-license sources such as OpenGameArt or Freesound require explicit attribution and commercial-policy handling.
+- [x] Define how generated repos build `ATTRIBUTION.md` and machine-readable license reports from the authoritative manifest.
 
 ### Phase 4: Add optimization and import QA to the contract
 
-- [ ] Specify a standard optimization stage for 2D, 3D, and audio assets where the stack supports it.
-- [ ] Define import-report expectations for Godot and any other stack Scafforge claims to support in asset-heavy contexts.
-- [ ] Deprecate `assets/import-reports/` in favor of `assets/qa/import-report.json` and define the migration/update behavior for already-generated repos.
-- [ ] Require preview artifacts or contact-sheet style outputs for human audit when assets are not trivially inspectable.
-- [ ] Ensure import success and optimization status are recorded in the QA surfaces, not left as transient console output.
+- [x] Specify a standard optimization stage for 2D, 3D, and audio assets where the stack supports it.
+- [x] Define import-report expectations for Godot and any other stack Scafforge claims to support in asset-heavy contexts.
+- [x] Deprecate `assets/import-reports/` in favor of `assets/qa/import-report.json` and define the migration/update behavior for already-generated repos.
+- [x] Require preview artifacts or contact-sheet style outputs for human audit when assets are not trivially inspectable.
+- [x] Ensure import success and optimization status are recorded in the QA surfaces, not left as transient console output.
 
 ### Phase 5: Define fallback ladders by asset category
 
-- [ ] Write category-specific fallback ladders for fonts, icons, UI kits, sprites/tiles, VFX, SFX, props, terrain, environments, and characters.
-- [ ] Prefer vector or SVG-first routes for simple icons, UI symbols, and flat game art before escalating to raster generation or heavier DCC work.
-- [ ] Make deterministic/procedural and curated open sources the default first choices before local AI generation.
-- [ ] Define the exact moment an agent is allowed to escalate to local AI generation or Blender assembly.
-- [ ] Document where the pipeline should stop and ask for human input instead of hallucinating a route.
+- [x] Write category-specific fallback ladders for fonts, icons, UI kits, sprites/tiles, VFX, SFX, props, terrain, environments, and characters.
+- [x] Prefer vector or SVG-first routes for simple icons, UI symbols, and flat game art before escalating to raster generation or heavier DCC work.
+- [x] Make deterministic/procedural and curated open sources the default first choices before local AI generation.
+- [x] Define the exact moment an agent is allowed to escalate to local AI generation or Blender assembly.
+- [x] Document where the pipeline should stop and ask for human input instead of hallucinating a route.
 
 ### Phase 6: Integrate with audit, repair, and validation
 
-- [ ] Ensure asset-state surfaces can be consumed by `scafforge-audit` and `scafforge-repair`.
-- [ ] Update package validation so missing provenance, banned licenses, or missing import QA fail cleanly.
-- [ ] Add validator contract checks that explicitly mention `assets/requirements.json`, `assets/manifest.json`, `assets/qa/import-report.json`, `assets/qa/license-report.json`, `.opencode/meta/asset-provenance-lock.json`, and any still-supported Blender asset agent surfaces.
-- [ ] Add a mixed-asset fixture pack under `tests/fixtures/assets/` plus a harness entry in `scripts/integration_test_scafforge.py` so sourced, procedural, and generated assets can be validated together.
-- [ ] Confirm the handoff and restart surfaces can summarize asset truth without making the operator read the full manifest.
+- [x] Ensure asset-state surfaces can be consumed by `scafforge-audit` and `scafforge-repair`.
+- [x] Update package validation so missing provenance, banned licenses, or missing import QA fail cleanly.
+- [x] Add validator contract checks that explicitly mention `assets/requirements.json`, `assets/manifest.json`, `assets/qa/import-report.json`, `assets/qa/license-report.json`, `.opencode/meta/asset-provenance-lock.json`, and any still-supported Blender asset agent surfaces.
+- [x] Add a mixed-asset fixture pack under `tests/fixtures/assets/` plus a harness entry in `scripts/integration_test_scafforge.py` so sourced, procedural, and generated assets can be validated together.
+- [x] Confirm the handoff and restart surfaces can summarize asset truth without making the operator read the full manifest.
 
 ## Validation and proof requirements
 

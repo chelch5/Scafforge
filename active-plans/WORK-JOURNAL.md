@@ -369,3 +369,19 @@ The ecosystem-root reorganization solved the factory repo layout, but it exposed
 - the control plane must render that backend truth instead of discovering projects by folder scan
 
 That is why plans `15` through `19` now exist even though the first implementation wave is already complete.
+
+### Entry 35: Final Workspace V2 closeout needed productization cleanup, not more architecture
+
+The remaining real gaps after plans `15` through `19` landed were mostly about presentation truth:
+
+- some `active-plans/` READMEs still showed unchecked implementation bullets despite `Status: DONE`
+- the control-plane demo gateway still embedded machine-specific sample paths
+- some live Blender MCP installer and user-guide docs still referenced `C:\Users\PC` or `/home/pc/...`
+- `scafforge-spec-factory` still had its hybrid model-router branch unmerged even though the tests were already green
+
+The final closeout pass therefore focused on productization and consistency instead of inventing new scope:
+
+- normalize completed plan checklists so the portfolio reads as finished
+- make demo and default path examples generic or environment-derived
+- keep generated-repo adoption policy criteria-based rather than tied to the current local durable set
+- merge the remaining clean subrepo branch where the tests already proved it was safe

@@ -102,50 +102,50 @@ No downstream phase may begin until those gates are satisfied.
 
 ### Phase 1: Freeze the orchestration job contract
 
-- [ ] Treat this phase as contract design only; persistence and substrate implementation details are blocked pending plan `09`.
-- [ ] Define the job envelope: approved brief pointer, repo identity, branch strategy, execution mode, model/router policy, and operator permissions.
-- [ ] Define the state transitions the orchestration layer is allowed to perform directly versus those it must infer from Scafforge or GitHub outputs.
-- [ ] Decide where idempotency keys and retry tokens live so retries do not duplicate repo creation or PR spam.
-- [ ] Specify the evidence each state must retain for later audit or operator review.
+- [x] Treat this phase as contract design only; persistence and substrate implementation details are blocked pending plan `09`.
+- [x] Define the job envelope: approved brief pointer, repo identity, branch strategy, execution mode, model/router policy, and operator permissions.
+- [x] Define the state transitions the orchestration layer is allowed to perform directly versus those it must infer from Scafforge or GitHub outputs.
+- [x] Decide where idempotency keys and retry tokens live so retries do not duplicate repo creation or PR spam.
+- [x] Specify the evidence each state must retain for later audit or operator review.
 
 ### Phase 2: Define the greenfield invocation boundary
 
-- [ ] Specify exactly how an approved brief enters the Scafforge greenfield flow.
-- [ ] Require `scaffold-verified` to mean VERIFY009 persistence confirmation plus zero blocking VERIFY010 and VERIFY011 failures.
-- [ ] Record which generated artifacts the orchestration service must read to continue: tickets, restart surface, workflow state, and any package provenance.
-- [ ] Define failure handling when the scaffold step fails before downstream repo execution even begins.
+- [x] Specify exactly how an approved brief enters the Scafforge greenfield flow.
+- [x] Require `scaffold-verified` to mean VERIFY009 persistence confirmation plus zero blocking VERIFY010 and VERIFY011 failures.
+- [x] Record which generated artifacts the orchestration service must read to continue: tickets, restart surface, workflow state, and any package provenance.
+- [x] Define failure handling when the scaffold step fails before downstream repo execution even begins.
 
 ### Phase 3: Define phase-to-PR workflow rules
 
-- [ ] Decide how downstream work is broken into phases and how those phases map to ticket bundles or ticket groups.
-- [ ] Require every autonomous phase to end in an explicit PR or reviewable diff rather than a silent merge to main.
-- [ ] Define branch naming, reviewer assignment, and evidence attachment rules for those PRs.
-- [ ] Specify when a phase may be retried, split, paused, or escalated to a human reviewer.
-- [ ] Keep the orchestration layer read-only with respect to canonical generated-repo ticket and workflow state; phase grouping lives only in orchestration-owned state.
+- [x] Decide how downstream work is broken into phases and how those phases map to ticket bundles or ticket groups.
+- [x] Require every autonomous phase to end in an explicit PR or reviewable diff rather than a silent merge to main.
+- [x] Define branch naming, reviewer assignment, and evidence attachment rules for those PRs.
+- [x] Specify when a phase may be retried, split, paused, or escalated to a human reviewer.
+- [x] Keep the orchestration layer read-only with respect to canonical generated-repo ticket and workflow state; phase grouping lives only in orchestration-owned state.
 
 ### Phase 4: Define review and merge gating
 
-- [ ] Write reviewer rules that cross-check PRs against the original spec, ticket requirements, validation artifacts, and stack-specific expectations.
-- [ ] Decide which failures are fix-and-resubmit, which require audit, and which require human approval.
-- [ ] Define merge policy for fully autonomous, merge-approval, and strict or human-in-the-loop operating modes.
-- [ ] Ensure no PR can merge without the required stage-gate and validation evidence defined by plan `05`.
+- [x] Write reviewer rules that cross-check PRs against the original spec, ticket requirements, validation artifacts, and stack-specific expectations.
+- [x] Decide which failures are fix-and-resubmit, which require audit, and which require human approval.
+- [x] Define merge policy for fully autonomous, merge-approval, and strict or human-in-the-loop operating modes.
+- [x] Ensure no PR can merge without the required stage-gate and validation evidence defined by plan `05`.
 
 ### Phase 5: Define failure routing and resume semantics
 
-- [ ] Define the trigger matrix for when downstream failure routes into `scafforge-audit` rather than simple task retry.
-- [ ] Define the repo-local repair branch and its resume trigger.
-- [ ] Define the package-defect branch, where a package-owned finding moves the job into `package-change-pending` and waits for plan `08`’s meta-improvement loop to supply the resume trigger.
-- [ ] Specify what must be revalidated before the orchestration service marks a repo `resume-ready`.
-- [ ] Prevent the orchestration layer from losing causality when a repo-level fix and a package-level fix interact.
+- [x] Define the trigger matrix for when downstream failure routes into `scafforge-audit` rather than simple task retry.
+- [x] Define the repo-local repair branch and its resume trigger.
+- [x] Define the package-defect branch, where a package-owned finding moves the job into `package-change-pending` and waits for plan `08`’s meta-improvement loop to supply the resume trigger.
+- [x] Specify what must be revalidated before the orchestration service marks a repo `resume-ready`.
+- [x] Prevent the orchestration layer from losing causality when a repo-level fix and a package-level fix interact.
 
 ### Phase 6: Dry-run the whole wrapper path
 
-- [ ] This phase is blocked until plans `05`, `06`, and `09` are complete.
-- [ ] Define the dry-run fixture and harness contract first: stub approved brief, fake PR events, mock review outcomes, and mock audit outputs.
-- [ ] Run a small approved brief through greenfield generation and the first downstream phase.
-- [ ] Force at least one PR review rejection and verify the repo does not merge prematurely.
-- [ ] Force both a repo-repair and a package-change case and confirm the state model remains truthful.
-- [ ] Confirm the wrapper never violates the one-shot Scafforge generation contract by mutating package-owned truth itself.
+- [x] This phase is blocked until plans `05`, `06`, and `09` are complete.
+- [x] Define the dry-run fixture and harness contract first: stub approved brief, fake PR events, mock review outcomes, and mock audit outputs.
+- [x] Run a small approved brief through greenfield generation and the first downstream phase.
+- [x] Force at least one PR review rejection and verify the repo does not merge prematurely.
+- [x] Force both a repo-repair and a package-change case and confirm the state model remains truthful.
+- [x] Confirm the wrapper never violates the one-shot Scafforge generation contract by mutating package-owned truth itself.
 
 ## Validation and proof requirements
 

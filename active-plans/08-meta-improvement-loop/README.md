@@ -175,52 +175,52 @@ This plan may define documentation and conventions for GitHub issues/PR linkage,
 
 ### Phase 1: Define the escalation trigger matrix
 
-- [ ] Freeze the initial trigger matrix for repo-local vs package-evidence vs auto-escalate cases.
-- [ ] Record recurrence thresholds, severity thresholds, and contradiction thresholds that trigger escalation.
-- [ ] Ensure the trigger matrix references concrete failure families and proof artifacts rather than vague intuition.
-- [ ] Record how the orchestration layer and human operators see that escalation decision.
+- [x] Freeze the initial trigger matrix for repo-local vs package-evidence vs auto-escalate cases.
+- [x] Record recurrence thresholds, severity thresholds, and contradiction thresholds that trigger escalation.
+- [x] Ensure the trigger matrix references concrete failure families and proof artifacts rather than vague intuition.
+- [x] Record how the orchestration layer and human operators see that escalation decision.
 
 ### Phase 2: Define the evidence bundle contract
 
-- [ ] Specify the audit outputs that must be bundled for package investigation: findings, logs, diffs, restart state, validation artifacts, and source repo metadata.
-- [ ] Extend the current disposition-bundle flow rather than creating a disconnected artifact family unless implementation proves that is impossible.
-- [ ] Formalize how those bundles are stored in `active-audits/` without editing the raw evidence.
-- [ ] Add enough provenance to map one downstream failure back to one package defect hypothesis.
-- [ ] Ensure the evidence bundle is concise enough to review but complete enough to support package fixes.
+- [x] Specify the audit outputs that must be bundled for package investigation: findings, logs, diffs, restart state, validation artifacts, and source repo metadata.
+- [x] Extend the current disposition-bundle flow rather than creating a disconnected artifact family unless implementation proves that is impossible.
+- [x] Formalize how those bundles are stored in `active-audits/` without editing the raw evidence.
+- [x] Add enough provenance to map one downstream failure back to one package defect hypothesis.
+- [x] Ensure the evidence bundle is concise enough to review but complete enough to support package fixes.
 
 ### Phase 3: Define the investigator role
 
-- [ ] Introduce a package-side investigator role or equivalent bounded automation surface that consumes evidence bundles and writes a root-cause report.
-- [ ] Standardize the report into sections: downstream symptom, package-owned cause, prevented-by analysis, required package changes, and revalidation plan.
-- [ ] Require the investigator to identify the exact Scafforge surface that needs change: skill instructions, template asset, validation logic, or documentation.
-- [ ] Require both a markdown report and a machine-readable JSON sidecar stored under `active-audits/<repo-name>/`.
-- [ ] Ensure the investigator can also conclude `no package change required` when evidence does not support escalation.
+- [x] Introduce a package-side investigator role or equivalent bounded automation surface that consumes evidence bundles and writes a root-cause report.
+- [x] Standardize the report into sections: downstream symptom, package-owned cause, prevented-by analysis, required package changes, and revalidation plan.
+- [x] Require the investigator to identify the exact Scafforge surface that needs change: skill instructions, template asset, validation logic, or documentation.
+- [x] Require both a markdown report and a machine-readable JSON sidecar stored under `active-audits/<repo-name>/`.
+- [x] Ensure the investigator can also conclude `no package change required` when evidence does not support escalation.
 
 ### Phase 4: Define the package-fix path
 
-- [ ] Introduce a package-side fixer role, skill, or workflow that turns the investigator report into a reviewable PR.
-- [ ] Require normal package review, validation, and documentation updates for that PR.
-- [ ] Define when the loop must also open or update a formal GitHub issue to track the package-level failure family and tie it to the evidence bundle plus fixer PR.
-- [ ] Link the PR back to the evidence bundle and any GitHub issue so the causality chain remains visible.
-- [ ] Prevent archive-mining outputs or investigator reports from mutating package code directly without that PR path.
-- [ ] Update `skills/skill-flow-manifest.json` and `AGENTS.md` skill-boundary rules if the new roles are implemented as package skills.
+- [x] Introduce a package-side fixer role, skill, or workflow that turns the investigator report into a reviewable PR.
+- [x] Require normal package review, validation, and documentation updates for that PR.
+- [x] Define when the loop must also open or update a formal GitHub issue to track the package-level failure family and tie it to the evidence bundle plus fixer PR.
+- [x] Link the PR back to the evidence bundle and any GitHub issue so the causality chain remains visible.
+- [x] Prevent archive-mining outputs or investigator reports from mutating package code directly without that PR path.
+- [x] Update `skills/skill-flow-manifest.json` and `AGENTS.md` skill-boundary rules if the new roles are implemented as package skills.
 
 ### Phase 5: Define revalidation and downstream resume
 
-- [ ] Require package validation after the fix using the canonical package commands and any new regression fixtures tied to the defect family.
-- [ ] Require a fresh downstream audit using `--diagnosis-kind post_package_revalidation` before the repo resumes.
-- [ ] Emit the concrete resume-ready signal described above so plan `07` can consume it without inventing its own package-state guess.
-- [ ] Ensure restart surfaces in both repos reflect the updated truth and do not overclaim success.
+- [x] Require package validation after the fix using the canonical package commands and any new regression fixtures tied to the defect family.
+- [x] Require a fresh downstream audit using `--diagnosis-kind post_package_revalidation` before the repo resumes.
+- [x] Emit the concrete resume-ready signal described above so plan `07` can consume it without inventing its own package-state guess.
+- [x] Ensure restart surfaces in both repos reflect the updated truth and do not overclaim success.
 
 ### Phase 6: Integrate background archive intelligence safely
 
-- [ ] Treat this phase as design-only until plan `07`’s event-stream and orchestration architecture are stable enough to define how archive mining runs.
-- [ ] Define how archive-mining or historical analysis produces suggestions, not direct package mutations.
-- [ ] Define how raw logs, session files, and any database-exported run metadata are categorized and indexed for archive analysis without replacing the copied evidence as canonical truth.
-- [ ] Decide whether archive search uses a derived retrieval or vector index, and keep that index explicitly non-authoritative relative to the raw archived materials.
-- [ ] Route archive-derived improvement candidates into the same trigger/investigation/fix pipeline.
-- [ ] Decide when archive findings become tickets versus immediate investigation requests.
-- [ ] Ensure the background loop can be paused or reviewed by a human without losing the evidence chain.
+- [x] Treat this phase as design-only until plan `07`’s event-stream and orchestration architecture are stable enough to define how archive mining runs.
+- [x] Define how archive-mining or historical analysis produces suggestions, not direct package mutations.
+- [x] Define how raw logs, session files, and any database-exported run metadata are categorized and indexed for archive analysis without replacing the copied evidence as canonical truth.
+- [x] Decide whether archive search uses a derived retrieval or vector index, and keep that index explicitly non-authoritative relative to the raw archived materials.
+- [x] Route archive-derived improvement candidates into the same trigger/investigation/fix pipeline.
+- [x] Decide when archive findings become tickets versus immediate investigation requests.
+- [x] Ensure the background loop can be paused or reviewed by a human without losing the evidence chain.
 
 ## Validation and proof requirements
 

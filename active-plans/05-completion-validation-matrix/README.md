@@ -176,43 +176,43 @@ The Android external skill sources in the research notes are research inputs onl
 
 ### Phase 1: Define the validation matrix
 
-- [ ] Write the supported repo families and the minimum validation ladder each one must satisfy.
-- [ ] Identify which proof steps are mandatory, optional, or stack-conditional.
-- [ ] Create `references/validation-proof-matrix.json` as the machine-readable source of truth for family-to-stack proof expectations.
-- [ ] Make sure the matrix distinguishes between “no validator exists yet” and “proof not required.”
-- [ ] Encode the family-to-stack mapping rule so family-level proof supplements Tier 1 stack proof instead of replacing it.
+- [x] Write the supported repo families and the minimum validation ladder each one must satisfy.
+- [x] Identify which proof steps are mandatory, optional, or stack-conditional.
+- [x] Create `references/validation-proof-matrix.json` as the machine-readable source of truth for family-to-stack proof expectations.
+- [x] Make sure the matrix distinguishes between “no validator exists yet” and “proof not required.”
+- [x] Encode the family-to-stack mapping rule so family-level proof supplements Tier 1 stack proof instead of replacing it.
 
 ### Phase 2: Specify tool bundles and artifact rules
 
-- [ ] For each repo family, choose the baseline tools Scafforge should recommend or require.
-- [ ] Make the first-pass tool matrix answer the current research list explicitly, including `ImageMagick`, `ffmpeg`, `CMake`, `adb`, `logcat`, Android emulator flows, `Gradle`, Vulkan or graphics-capability checks where relevant, and language-server assistance only when it materially improves validation truth.
-- [ ] Define the proof artifact outputs and align them to the JSON schema above.
-- [ ] Decide what should be committed into generated repos versus what remains ephemeral package evidence.
-- [ ] Ensure proof storage stays concise and reviewable instead of turning into uncontrolled log dumps.
-- [ ] Record the headless-degradation order for desktop and web proof explicitly in the matrix.
+- [x] For each repo family, choose the baseline tools Scafforge should recommend or require.
+- [x] Make the first-pass tool matrix answer the current research list explicitly, including `ImageMagick`, `ffmpeg`, `CMake`, `adb`, `logcat`, Android emulator flows, `Gradle`, Vulkan or graphics-capability checks where relevant, and language-server assistance only when it materially improves validation truth.
+- [x] Define the proof artifact outputs and align them to the JSON schema above.
+- [x] Decide what should be committed into generated repos versus what remains ephemeral package evidence.
+- [x] Ensure proof storage stays concise and reviewable instead of turning into uncontrolled log dumps.
+- [x] Record the headless-degradation order for desktop and web proof explicitly in the matrix.
 
 ### Phase 3: Seed representative fixtures first, then wire audit
 
-- [ ] Extend the existing `multi_stack_targets()` proof infrastructure in `scripts/integration_test_scafforge.py` instead of building a second fixture system from scratch.
-- [ ] Add or extend fixture coverage so at least one example exists for each supported family.
-- [ ] Ensure a failing fixture demonstrates a real missing-proof or wrong-proof condition.
-- [ ] Ensure a healthy fixture can clear the expected validation ladder without needing human interpretation.
-- [ ] Use the fixtures to prove that Android tooling is no longer the only concrete validation story in the repo.
+- [x] Extend the existing `multi_stack_targets()` proof infrastructure in `scripts/integration_test_scafforge.py` instead of building a second fixture system from scratch.
+- [x] Add or extend fixture coverage so at least one example exists for each supported family.
+- [x] Ensure a failing fixture demonstrates a real missing-proof or wrong-proof condition.
+- [x] Ensure a healthy fixture can clear the expected validation ladder without needing human interpretation.
+- [x] Use the fixtures to prove that Android tooling is no longer the only concrete validation story in the repo.
 
 ### Phase 4: Integrate validation with audit, stage gates, and handoff
 
-- [ ] Teach audit to consume the validation matrix and report missing proof as a named issue, not a vague smell.
-- [ ] Teach handoff publication to summarize which proof steps passed, failed, degraded, or were not applicable.
-- [ ] Update the generated stage-gate flow so required proof blocks completion claims.
-- [ ] Make sure repair flows can request the right proof rerun instead of forcing the whole pipeline to restart blindly.
-- [ ] Keep proof-family findings machine-searchable, ideally through a dedicated proof-related finding family if implementation supports it cleanly.
+- [x] Teach audit to consume the validation matrix and report missing proof as a named issue, not a vague smell.
+- [x] Teach handoff publication to summarize which proof steps passed, failed, degraded, or were not applicable.
+- [x] Update the generated stage-gate flow so required proof blocks completion claims.
+- [x] Make sure repair flows can request the right proof rerun instead of forcing the whole pipeline to restart blindly.
+- [x] Keep proof-family findings machine-searchable, ideally through a dedicated proof-related finding family if implementation supports it cleanly.
 
 ### Phase 5: Connect matrix language to contributor docs
 
-- [ ] Add a concise operator-facing explanation of the validation ladder and proof categories.
-- [ ] Update package docs so supported repo families and proof expectations are discoverable.
-- [ ] Ensure generated repos get a lightweight explanation of their own required proof bundle.
-- [ ] Cross-link the matrix into the documentation sweep plan so future contract changes keep docs aligned.
+- [x] Add a concise operator-facing explanation of the validation ladder and proof categories.
+- [x] Update package docs so supported repo families and proof expectations are discoverable.
+- [x] Ensure generated repos get a lightweight explanation of their own required proof bundle.
+- [x] Cross-link the matrix into the documentation sweep plan so future contract changes keep docs aligned.
 
 ## Validation and proof requirements
 

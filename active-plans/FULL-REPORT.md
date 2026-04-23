@@ -5,7 +5,7 @@
 This portfolio now has two distinct outputs:
 
 1. a cleaned and correctly classified `active-plans/` portfolio
-2. a first implementation wave (`01` through `14`) that is implemented across Scafforge and its adjacent repos, plus a follow-on Workspace V2 wave (`15` through `19`) that defines generated-repo roots, orchestration-owned inventory, worker hosts, and control-plane tracking
+2. a complete implementation wave (`01` through `19`) that is implemented across Scafforge and its adjacent repos, including the Workspace V2 follow-on architecture for generated-repo roots, orchestration-owned inventory, worker hosts, and control-plane tracking
 
 The first pass only solved the structure problem. The second pass fixed the actual planning problem by rewriting the numbered folders into implementation-grade documents with dependencies, package surfaces, phased work, validation gates, and documentation obligations.
 
@@ -23,7 +23,7 @@ Plan `11` is now implemented as the routing layer for this documentation archite
 
 A later source-spec audit against the moved `_source-material/` docs tightened the plans further around three areas that were still too implicit: retrieval or vector-index handling, concrete distillation of the asset-research ecosystem into route policy, and the distinction between provider, SDK, and execution-host access paths in the model-router plan.
 
-The central program decision remains unchanged: Scafforge should not scale autonomy until it first closes the reliability, validation, and quality gaps already proven by womanvshorse and spinner. That hardening sequence is now implemented, and the final WinUI control-plane build-and-proof phase in plan `10` is now merged in its adjacent repo. The new open work is not a reversal of that decision; it is a second-wave architecture pass for where generated repos live and how the control plane tracks and dispatches work across Windows, WSL, and SSH Linux hosts.
+The central program decision remains unchanged: Scafforge should not scale autonomy until it first closes the reliability, validation, and quality gaps already proven by womanvshorse and spinner. That hardening sequence is now implemented, the final WinUI control-plane build-and-proof phase in plan `10` is merged in its adjacent repo, and the Workspace V2 architecture follow-on is implemented as plans `15` through `19`.
 
 ## Current Implementation Status
 
@@ -31,7 +31,7 @@ The central program decision remains unchanged: Scafforge should not scale auton
 - The adjacent `meta-skill-engineering` repo hardening from plan `13` is implemented and merged through PR `#19`.
 - The adjacent `blender-mcp` repo hardening from plan `14` is implemented and merged through PR `#3`.
 - The adjacent `scafforge-control-plane` repo from plan `10` is implemented and merged through PR `#1`.
-- Follow-on plans `15` through `19` are now implemented as the Workspace V2 architecture wave across the bootstrap repo, `scafforge-core`, `scafforge-control-plane`, `scafforge-archive`, and the adjacent ecosystem docs.
+- Plans `15` through `19` are implemented as the Workspace V2 architecture wave across the bootstrap repo, `scafforge-core`, `scafforge-control-plane`, `scafforge-archive`, `scafforge-spec-factory`, `mcode`, and the adjacent ecosystem docs.
 
 ## What This Program Is Actually Doing
 
@@ -213,8 +213,8 @@ Defines how generated repos move between `ephemeral`, `durable`, `blocked`, and 
 6. Add the package self-improvement loop.
 7. Add disciplined skill evolution and harden the adjacent `meta-skill-engineering` and `blender-mcp` repos where they underpin the program.
 8. Build the WinUI control plane last, when the backend contracts are real.
-9. Land the Workspace V2 follow-on plans so ecosystem-root cleanup, generated-repo tracking, worker dispatch, and control-plane project views all use the same backend-owned model.
+9. Keep the Workspace V2 follow-on implementation aligned so ecosystem-root cleanup, generated-repo tracking, worker dispatch, and control-plane project views continue using the same backend-owned model.
 
 ## Final Recommendation
 
-Treat these plans as the recorded implementation program, not as background notes. The first implementation backlog is closed across plans `01` through `14`, but the portfolio is now intentionally reopened through plans `15` through `19` for Workspace V2 follow-on architecture. Future work should implement those new numbered plans or archive the completed first-wave folders explicitly rather than silently editing completed contracts.
+Treat these plans as the recorded implementation program, not as background notes. The implementation backlog is now closed across plans `01` through `19`. Future work should either archive completed folders explicitly or open genuinely new numbered plans instead of silently editing completed contracts.

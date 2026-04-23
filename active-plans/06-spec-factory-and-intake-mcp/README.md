@@ -129,44 +129,44 @@ This plan defines the handoff artifact and the conditions under which it is elig
 
 ### Phase 1: Freeze the input, output, and storage contracts
 
-- [ ] Define the intake object model for raw ideas, text notes, links, files, and reference assets.
-- [ ] Define the minimum approved output schema and map it to `skills/spec-pack-normalizer/references/brief-schema.md`.
-- [ ] Decide which fields may remain unresolved and must become explicit decision packets instead of silent guesses.
-- [ ] Define the file-backed storage model for inbox, drafts, approvals, attachments, and decision packets.
-- [ ] Define whether the factory also maintains a derived retrieval index over approved specs, attachments, and references, and if so keep it explicitly non-authoritative relative to the file-backed artifacts.
-- [ ] Document exactly what metadata accompanies a handoff into Scafforge.
-- [ ] Decide and document the validator-only behavior for `spec-pack-normalizer` when the input is an already-approved factory brief.
+- [x] Define the intake object model for raw ideas, text notes, links, files, and reference assets.
+- [x] Define the minimum approved output schema and map it to `skills/spec-pack-normalizer/references/brief-schema.md`.
+- [x] Decide which fields may remain unresolved and must become explicit decision packets instead of silent guesses.
+- [x] Define the file-backed storage model for inbox, drafts, approvals, attachments, and decision packets.
+- [x] Define whether the factory also maintains a derived retrieval index over approved specs, attachments, and references, and if so keep it explicitly non-authoritative relative to the file-backed artifacts.
+- [x] Document exactly what metadata accompanies a handoff into Scafforge.
+- [x] Decide and document the validator-only behavior for `spec-pack-normalizer` when the input is an already-approved factory brief.
 
 ### Phase 2: Define internal factory roles and state transitions
 
-- [ ] Split responsibilities between research, creative expansion, technical architecture drafting, and editorial normalization.
-- [ ] Define who is allowed to transition an item into `decision-needed`, `review`, or `approved`.
-- [ ] Keep `approved` human-gated by default and document the enforcement mechanism for that gate.
-- [ ] Specify how conflicting agent outputs are reconciled and recorded.
-- [ ] Define what evidence must be attached to an approved brief before handoff.
+- [x] Split responsibilities between research, creative expansion, technical architecture drafting, and editorial normalization.
+- [x] Define who is allowed to transition an item into `decision-needed`, `review`, or `approved`.
+- [x] Keep `approved` human-gated by default and document the enforcement mechanism for that gate.
+- [x] Specify how conflicting agent outputs are reconciled and recorded.
+- [x] Define what evidence must be attached to an approved brief before handoff.
 
 ### Phase 3: Design the MCP and ChatGPT ingress surface
 
-- [ ] This phase is blocked until plan `09` is complete enough to freeze Apps SDK, MCP, and ingress topology decisions.
-- [ ] Define the MCP-facing intake operations: submit idea, attach files, inspect draft status, request approval view.
-- [ ] Design the ChatGPT-facing app as an ingress and review surface rather than as the hidden source of truth.
-- [ ] Follow current Apps SDK patterns for MCP server plus widget separation and keep the app bounded to intake and review flows.
-- [ ] Ensure the ingress surface cannot bypass the state model and directly trigger generation without an approved persisted artifact.
+- [x] This phase is blocked until plan `09` is complete enough to freeze Apps SDK, MCP, and ingress topology decisions.
+- [x] Define the MCP-facing intake operations: submit idea, attach files, inspect draft status, request approval view.
+- [x] Design the ChatGPT-facing app as an ingress and review surface rather than as the hidden source of truth.
+- [x] Follow current Apps SDK patterns for MCP server plus widget separation and keep the app bounded to intake and review flows.
+- [x] Ensure the ingress surface cannot bypass the state model and directly trigger generation without an approved persisted artifact.
 
 ### Phase 4: Define handoff semantics into Scafforge
 
-- [ ] Specify the handoff artifact that the later orchestration layer receives once a brief is approved.
-- [ ] Define the exact persisted bundle: brief, provenance, approval timestamp, decision-packet residue, and attachments.
-- [ ] Ensure Scafforge can reject malformed or incomplete approved briefs cleanly.
-- [ ] Define how rejected handoffs route back to the factory without corrupting state.
-- [ ] Explicitly document that the runtime trigger to call `scaffold-kickoff` belongs to plan `07`, not to the spec factory itself.
+- [x] Specify the handoff artifact that the later orchestration layer receives once a brief is approved.
+- [x] Define the exact persisted bundle: brief, provenance, approval timestamp, decision-packet residue, and attachments.
+- [x] Ensure Scafforge can reject malformed or incomplete approved briefs cleanly.
+- [x] Define how rejected handoffs route back to the factory without corrupting state.
+- [x] Explicitly document that the runtime trigger to call `scaffold-kickoff` belongs to plan `07`, not to the spec factory itself.
 
 ### Phase 5: Validate the contract with short-idea scenarios
 
-- [ ] Test a very short idea and ensure the factory produces a proper decision-rich brief instead of improvising too much.
-- [ ] Test an ambiguous idea and ensure the factory emits a batched decision packet rather than guessing.
-- [ ] Test an attachment-heavy idea and ensure references remain linked through approval and handoff.
-- [ ] Confirm the approved artifact is sufficient for `scaffold-kickoff` and the validator-aligned `spec-pack-normalizer` path to consume.
+- [x] Test a very short idea and ensure the factory produces a proper decision-rich brief instead of improvising too much.
+- [x] Test an ambiguous idea and ensure the factory emits a batched decision packet rather than guessing.
+- [x] Test an attachment-heavy idea and ensure references remain linked through approval and handoff.
+- [x] Confirm the approved artifact is sufficient for `scaffold-kickoff` and the validator-aligned `spec-pack-normalizer` path to consume.
 
 ## Validation and proof requirements
 

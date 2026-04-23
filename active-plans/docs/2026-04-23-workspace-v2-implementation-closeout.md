@@ -56,8 +56,13 @@ The implementation landed across:
 - `dotnet build` for `scafforge-control-plane`
 - archive ingest/catalog script execution
 - local generated repo move verification into `ScafforgeProjects`
+- `scafforge-spec-factory` model-router tests and branch merge
+- latest `meta-skill-engineering` WPF publish and CLI verification
+- control-plane dev/release builds plus launch proof after productization cleanup
+- plan README completion-state sync across `01` through `14`
 
 ## Notes
 
 - generated repo names from the current local machine are not baked into the product as shipped defaults
 - the control-plane demo data uses generic sample inventory
+- live operator-facing docs and demo surfaces were scrubbed for machine-specific `C:\Users\PC` and `/home/pc` assumptions where those paths would leak into shipped product behavior

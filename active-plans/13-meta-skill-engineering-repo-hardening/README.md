@@ -73,56 +73,56 @@ This plan should decide which of those belong repo-wide and which stay specializ
 
 ### Phase 1: Inventory the actual suite and CLI surface
 
-- [ ] Build a feature inventory covering root skill packages, Studio actions, automation scripts, library operations, and WPF-only capabilities.
-- [ ] Compare that inventory to the current `--action` surface in `meta-skill-studio.py`.
-- [ ] Identify every major workflow that an AI agent cannot currently drive end-to-end through CLI alone.
-- [ ] Distinguish between “feature exists but has no CLI action,” “feature only exists in WPF,” and “feature is not implemented at all.”
-- [ ] Publish the inventory as `docs/cli/feature-inventory.md` in the MSE repo so later phases can audit against it instead of relying on implicit knowledge.
-- [ ] Identify blocking CLI bugs from `references/meta-skill-engineering-extra-plan-intake.md` during this inventory pass so Phase 2 verification does not proceed on a broken foundation.
-- [ ] Resolve or explicitly gate those blocking CLI bugs before Phase 2 verification can be signed off; do not defer that prerequisite to a later generic triage phase.
+- [x] Build a feature inventory covering root skill packages, Studio actions, automation scripts, library operations, and WPF-only capabilities.
+- [x] Compare that inventory to the current `--action` surface in `meta-skill-studio.py`.
+- [x] Identify every major workflow that an AI agent cannot currently drive end-to-end through CLI alone.
+- [x] Distinguish between “feature exists but has no CLI action,” “feature only exists in WPF,” and “feature is not implemented at all.”
+- [x] Publish the inventory as `docs/cli/feature-inventory.md` in the MSE repo so later phases can audit against it instead of relying on implicit knowledge.
+- [x] Identify blocking CLI bugs from `references/meta-skill-engineering-extra-plan-intake.md` during this inventory pass so Phase 2 verification does not proceed on a broken foundation.
+- [x] Resolve or explicitly gate those blocking CLI bugs before Phase 2 verification can be signed off; do not defer that prerequisite to a later generic triage phase.
 
 ### Phase 2: Define the full CLI contract
 
-- [ ] Redesign the CLI around stable, agent-usable verbs with predictable outputs.
-- [ ] Ensure the CLI can cover create, improve, test/evaluate, benchmark, catalog curation, provenance, safety review, packaging, install, and lifecycle work.
-- [ ] Add a machine-readable JSON mode or stable artifact mode for every major workflow.
-- [ ] Remove hidden dependence on TUI/GUI for essential functionality.
-- [ ] Declare the Python Studio CLI the headless, cross-platform-compatible execution surface and prohibit Windows-only runtime dependencies from leaking into it.
-- [ ] Publish a minimum required `--action` inventory at `docs/cli/action-contract.md` as the definition of "complete CLI coverage" so validation can audit the contract concretely.
+- [x] Redesign the CLI around stable, agent-usable verbs with predictable outputs.
+- [x] Ensure the CLI can cover create, improve, test/evaluate, benchmark, catalog curation, provenance, safety review, packaging, install, and lifecycle work.
+- [x] Add a machine-readable JSON mode or stable artifact mode for every major workflow.
+- [x] Remove hidden dependence on TUI/GUI for essential functionality.
+- [x] Declare the Python Studio CLI the headless, cross-platform-compatible execution surface and prohibit Windows-only runtime dependencies from leaking into it.
+- [x] Publish a minimum required `--action` inventory at `docs/cli/action-contract.md` as the definition of "complete CLI coverage" so validation can audit the contract concretely.
 
 ### Phase 3: Adapt the right evaluation techniques from `plugin-eval`
 
-- [ ] Decide which `plugin-eval` concepts become repo-wide standards: result schemas, measurement plans, observed-usage ingestion, compare reports, improvement briefs, or metric packs.
-- [ ] Document the canonical evaluation artifact shape for Meta-Skill-Engineering workflows.
-- [ ] Integrate or mirror the improvement-brief pattern so evaluation outputs can directly feed improvement work.
-- [ ] Keep specialized plugin-only logic scoped where it belongs rather than blindly spreading everything.
-- [ ] Record adopted-versus-rejected decisions for each candidate technique in `docs/evaluation/plugin-eval-disposition.md` inside the MSE repo, with reasons.
+- [x] Decide which `plugin-eval` concepts become repo-wide standards: result schemas, measurement plans, observed-usage ingestion, compare reports, improvement briefs, or metric packs.
+- [x] Document the canonical evaluation artifact shape for Meta-Skill-Engineering workflows.
+- [x] Integrate or mirror the improvement-brief pattern so evaluation outputs can directly feed improvement work.
+- [x] Keep specialized plugin-only logic scoped where it belongs rather than blindly spreading everything.
+- [x] Record adopted-versus-rejected decisions for each candidate technique in `docs/evaluation/plugin-eval-disposition.md` inside the MSE repo, with reasons.
 
 ### Phase 4: Align Studio, WPF, scripts, and headless automation
 
-- [ ] Ensure the Python Studio, WPF shell, and automation scripts refer to the same workflow contract and terminology.
-- [ ] Decide which surfaces are convenience UIs and which are authoritative execution paths.
-- [ ] Make sure headless agent usage is a first-class path, not a degraded afterthought.
-- [ ] Ensure the repo can run its core workflows without requiring the WPF shell.
-- [ ] Publish a surface-authority document at `docs/architecture/surface-authority.md` that explicitly states which interface is authoritative for execution and which are convenience shells layered on top.
-- [ ] Reaffirm that the Python Studio CLI remains Linux/headless-compatible even while WPF stays Windows-specific.
-- [ ] Treat this phase and Phase 3 as parallel-capable once Phase 2’s CLI contract is stable.
-- [ ] Only touch `scripts/meta_skill_studio/opencode_sdk_bridge.mjs` if it is confirmed to be part of the authoritative CLI automation path; otherwise leave it out of scope for this hardening pass.
+- [x] Ensure the Python Studio, WPF shell, and automation scripts refer to the same workflow contract and terminology.
+- [x] Decide which surfaces are convenience UIs and which are authoritative execution paths.
+- [x] Make sure headless agent usage is a first-class path, not a degraded afterthought.
+- [x] Ensure the repo can run its core workflows without requiring the WPF shell.
+- [x] Publish a surface-authority document at `docs/architecture/surface-authority.md` that explicitly states which interface is authoritative for execution and which are convenience shells layered on top.
+- [x] Reaffirm that the Python Studio CLI remains Linux/headless-compatible even while WPF stays Windows-specific.
+- [x] Treat this phase and Phase 3 as parallel-capable once Phase 2’s CLI contract is stable.
+- [x] Only touch `scripts/meta_skill_studio/opencode_sdk_bridge.mjs` if it is confirmed to be part of the authoritative CLI automation path; otherwise leave it out of scope for this hardening pass.
 
 ### Phase 5: Triage the current Studio quality issues
 
-- [ ] Turn the issues listed in `references/meta-skill-engineering-extra-plan-intake.md` into grouped workstreams: blocking bugs, workflow UX defects, architecture problems, and lower-priority polish.
-- [ ] Identify which issues are symptoms of missing suite contracts versus isolated UI defects.
-- [ ] Ensure the CLI and core workflow hardening land before spending heavy effort on surface polish.
-- [ ] Ensure all issues in `references/meta-skill-engineering-extra-plan-intake.md` receive an explicit triage disposition by the end of this phase, even if only a subset blocks earlier CLI verification.
-- [ ] Keep WPF-specific fixes tied to the same underlying workflow truth where possible.
+- [x] Turn the issues listed in `references/meta-skill-engineering-extra-plan-intake.md` into grouped workstreams: blocking bugs, workflow UX defects, architecture problems, and lower-priority polish.
+- [x] Identify which issues are symptoms of missing suite contracts versus isolated UI defects.
+- [x] Ensure the CLI and core workflow hardening land before spending heavy effort on surface polish.
+- [x] Ensure all issues in `references/meta-skill-engineering-extra-plan-intake.md` receive an explicit triage disposition by the end of this phase, even if only a subset blocks earlier CLI verification.
+- [x] Keep WPF-specific fixes tied to the same underlying workflow truth where possible.
 
 ### Phase 6: Documentation and packaging hardening
 
-- [ ] Rewrite root docs so the repo is understandable as a CLI- and automation-capable suite.
-- [ ] Document the preferred agent/operator workflow for the repo.
-- [ ] Document installation, auth/runtime prerequisites, and artifact locations.
-- [ ] Ensure package or release notes accurately describe what is fully usable from CLI, TUI, GUI, and WPF.
+- [x] Rewrite root docs so the repo is understandable as a CLI- and automation-capable suite.
+- [x] Document the preferred agent/operator workflow for the repo.
+- [x] Document installation, auth/runtime prerequisites, and artifact locations.
+- [x] Ensure package or release notes accurately describe what is fully usable from CLI, TUI, GUI, and WPF.
 
 ## Validation and proof requirements
 

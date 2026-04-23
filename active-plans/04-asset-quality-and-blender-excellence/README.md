@@ -92,42 +92,42 @@ Source material may mention paid or proprietary tooling. Package output must not
 
 ### Phase 1: Define the visual quality rubric
 
-- [ ] Write a quality rubric with named failure categories instead of generic “looks bad” language.
-- [ ] Split the rubric by surface: 2D UI, 2D game art, 3D props, scenes, and presentation/motion.
-- [ ] Define what counts as a blocker versus a polish issue for each category.
-- [ ] Ensure the rubric is strict enough to catch spinner/womanvshorse-style failures without forcing one art style.
+- [x] Write a quality rubric with named failure categories instead of generic “looks bad” language.
+- [x] Split the rubric by surface: 2D UI, 2D game art, 3D props, scenes, and presentation/motion.
+- [x] Define what counts as a blocker versus a polish issue for each category.
+- [x] Ensure the rubric is strict enough to catch spinner/womanvshorse-style failures without forcing one art style.
 
 ### Phase 2: Translate the rubric into generated-repo guidance
 
-- [ ] Update generated template guidance so repos know what “screen-fit,” “menu centered,” “visual hierarchy,” and “proof of appearance” actually mean.
-- [ ] Add layout guidance for common interactive surfaces such as menus, title screens, HUDs, and modal overlays.
-- [ ] Require generated repos to capture screenshots or short visual summaries at specific checkpoints where visual regression matters.
-- [ ] Extend `stage-gate-enforcer.ts` through an explicit visual-proof hook that checks structured visual-evidence artifacts only when the repo is marked as requiring visual proof.
-- [ ] Reuse existing evidence-validation flow where possible instead of adding a second approval path that could drift.
+- [x] Update generated template guidance so repos know what “screen-fit,” “menu centered,” “visual hierarchy,” and “proof of appearance” actually mean.
+- [x] Add layout guidance for common interactive surfaces such as menus, title screens, HUDs, and modal overlays.
+- [x] Require generated repos to capture screenshots or short visual summaries at specific checkpoints where visual regression matters.
+- [x] Extend `stage-gate-enforcer.ts` through an explicit visual-proof hook that checks structured visual-evidence artifacts only when the repo is marked as requiring visual proof.
+- [x] Reuse existing evidence-validation flow where possible instead of adding a second approval path that could drift.
 
 ### Phase 3: Define a truthful Blender contract
 
-- [ ] Audit the real `blender-agent` capability surface and document what it can currently prove, not what we wish it did.
-- [ ] Split Blender usage into supported lanes such as hard-surface prop work, basic material/lookdev, export, and QA, versus unsupported or experimental lanes.
-- [ ] Define what evidence a Blender-derived asset must emit before it can be considered usable in a generated repo.
-- [ ] Coordinate those Blender evidence fields with plan `03` so they align to `assets/manifest.json` and related asset-truth surfaces rather than inventing a conflicting schema.
-- [ ] Document where the asset pipeline should stop and fall back to sourced assets or simpler routes instead of pretending the Blender path is magical.
+- [x] Audit the real `blender-agent` capability surface and document what it can currently prove, not what we wish it did.
+- [x] Split Blender usage into supported lanes such as hard-surface prop work, basic material/lookdev, export, and QA, versus unsupported or experimental lanes.
+- [x] Define what evidence a Blender-derived asset must emit before it can be considered usable in a generated repo.
+- [x] Coordinate those Blender evidence fields with plan `03` so they align to `assets/manifest.json` and related asset-truth surfaces rather than inventing a conflicting schema.
+- [x] Document where the asset pipeline should stop and fall back to sourced assets or simpler routes instead of pretending the Blender path is magical.
 
 ### Phase 4: Distill useful external design knowledge into Scafforge-owned guidance
 
-- [ ] Review the copied Game Studio and Remotion materials and extract only the concepts that materially improve Scafforge guidance.
-- [ ] Re-express those concepts in Scafforge language and file locations instead of copying external bundles wholesale.
-- [ ] Decide which ideas belong in generated template skills, which belong in package references, and which remain only as source material.
-- [ ] Keep all resulting tool recommendations free/open-source by default and exclude proprietary tool references from shipped output.
-- [ ] Ensure the resulting guidance is narrow enough for weak models to follow and does not create redundant skill sprawl.
+- [x] Review the copied Game Studio and Remotion materials and extract only the concepts that materially improve Scafforge guidance.
+- [x] Re-express those concepts in Scafforge language and file locations instead of copying external bundles wholesale.
+- [x] Decide which ideas belong in generated template skills, which belong in package references, and which remain only as source material.
+- [x] Keep all resulting tool recommendations free/open-source by default and exclude proprietary tool references from shipped output.
+- [x] Ensure the resulting guidance is narrow enough for weak models to follow and does not create redundant skill sprawl.
 
 ### Phase 5: Add visual review to validation and audit
 
-- [ ] Define when screenshot or render evidence is mandatory by repo type.
-- [ ] Ensure visual failures can show up in validation, audit, and handoff language as first-class blockers.
-- [ ] Add at least one intentionally ugly fixture pack under `tests/fixtures/visual-proof/` with metadata that states the expected rubric failures.
-- [ ] Extend `scripts/integration_test_scafforge.py` to exercise that fixture contract, even if the first pass validates file presence, metadata, and artifact wiring rather than image analysis.
-- [ ] Confirm the system cannot mark a visually broken repo “complete” just because tests pass.
+- [x] Define when screenshot or render evidence is mandatory by repo type.
+- [x] Ensure visual failures can show up in validation, audit, and handoff language as first-class blockers.
+- [x] Add at least one intentionally ugly fixture pack under `tests/fixtures/visual-proof/` with metadata that states the expected rubric failures.
+- [x] Extend `scripts/integration_test_scafforge.py` to exercise that fixture contract, even if the first pass validates file presence, metadata, and artifact wiring rather than image analysis.
+- [x] Confirm the system cannot mark a visually broken repo “complete” just because tests pass.
 
 ## Validation and proof requirements
 
