@@ -947,7 +947,11 @@ def validate_core_docs(findings: list[Finding]) -> None:
         ],
     )
 
-    require_contains(findings, readme, "Scafforge is a strong-host skill bundle")
+    require_contains(
+        findings,
+        readme,
+        "Scafforge Core is the standalone scaffold package at the heart of the Scafforge ecosystem.",
+    )
     require_contains(findings, readme, "Greenfield generation is one kickoff run.")
     require_contains(findings, readme, "one batched blocking-decision round")
     require_contains(findings, readme, "one uninterrupted same-session generation run")

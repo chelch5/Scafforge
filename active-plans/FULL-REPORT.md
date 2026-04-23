@@ -5,7 +5,7 @@
 This portfolio now has two distinct outputs:
 
 1. a cleaned and correctly classified `active-plans/` portfolio
-2. fourteen numbered implementation plans, most of which are now implemented across Scafforge and its adjacent repos
+2. a first implementation wave (`01` through `14`) that is implemented across Scafforge and its adjacent repos, plus a follow-on Workspace V2 wave (`15` through `19`) that defines generated-repo roots, orchestration-owned inventory, worker hosts, and control-plane tracking
 
 The first pass only solved the structure problem. The second pass fixed the actual planning problem by rewriting the numbered folders into implementation-grade documents with dependencies, package surfaces, phased work, validation gates, and documentation obligations.
 
@@ -23,7 +23,7 @@ Plan `11` is now implemented as the routing layer for this documentation archite
 
 A later source-spec audit against the moved `_source-material/` docs tightened the plans further around three areas that were still too implicit: retrieval or vector-index handling, concrete distillation of the asset-research ecosystem into route policy, and the distinction between provider, SDK, and execution-host access paths in the model-router plan.
 
-The central program decision remains unchanged: Scafforge should not scale autonomy until it first closes the reliability, validation, and quality gaps already proven by womanvshorse and spinner. That hardening sequence is now implemented, and the final WinUI control-plane build-and-proof phase in plan `10` is now merged in its adjacent repo.
+The central program decision remains unchanged: Scafforge should not scale autonomy until it first closes the reliability, validation, and quality gaps already proven by womanvshorse and spinner. That hardening sequence is now implemented, and the final WinUI control-plane build-and-proof phase in plan `10` is now merged in its adjacent repo. The new open work is not a reversal of that decision; it is a second-wave architecture pass for where generated repos live and how the control plane tracks and dispatches work across Windows, WSL, and SSH Linux hosts.
 
 ## Current Implementation Status
 
@@ -31,6 +31,7 @@ The central program decision remains unchanged: Scafforge should not scale auton
 - The adjacent `meta-skill-engineering` repo hardening from plan `13` is implemented and merged through PR `#19`.
 - The adjacent `blender-mcp` repo hardening from plan `14` is implemented and merged through PR `#3`.
 - The adjacent `scafforge-control-plane` repo from plan `10` is implemented and merged through PR `#1`.
+- Follow-on plans `15` through `19` are now open as the Workspace V2 architecture wave.
 
 ## What This Program Is Actually Doing
 
@@ -70,6 +71,16 @@ These plans address both sides of the asset problem: how assets are sourced/gene
 
 These plans turn the existing Scafforge package into the core of a larger autonomous factory, but only by wrapping the package with adjacent systems rather than dissolving its boundaries.
 
+### 5. Workspace V2 follow-on architecture
+
+- `15-generated-repo-root-and-inventory-architecture`
+- `16-existing-machine-migration-and-adoption`
+- `17-worker-fabric-and-host-registration`
+- `18-control-plane-project-tracking`
+- `19-generated-repo-lifecycle-policy`
+
+These plans define how the now-separate ecosystem workspace interacts with generated repos, multi-host worker execution, and control-plane project tracking without collapsing those concerns back into local folder layout guesswork.
+
 ## The Most Important Decisions
 
 ### Reliability beats ambition
@@ -99,6 +110,20 @@ That means “rewrite Scafforge around AI SDK” is the wrong move for this cycl
 ### Adjacent services stay adjacent
 
 The spec factory, model router, orchestration service, meta-improvement loop, and WinUI control plane should all be designed as adjacent systems that consume Scafforge contracts. They should not be smuggled into the package root as hidden product scope.
+
+### Generated repos stay separate from the ecosystem workspace
+
+Generated repos are outputs, not ecosystem internals. They should live in a separate root such as `ScafforgeProjects/`, while orchestration-owned inventory tracks repo identity, lifecycle class, host assignment, and path bindings.
+
+### Workers live on hosts, not in the Windows app
+
+The clean model is now explicit:
+
+- Windows app as control plane
+- orchestration backend as inventory and dispatch owner
+- host-resident workers on Windows, WSL, and SSH Linux targets
+
+That keeps the UI from becoming a hidden shell-based execution authority.
 
 ## Plan-by-Plan Summary
 
@@ -158,6 +183,26 @@ Hardens the separate Meta-Skill-Engineering repository into a complete, agent-us
 
 Turns the separate `blender-mcp` repository into a clearer, safer dependency by focusing on truthful contracts, QA/export evidence, and headless-ready hardening.
 
+### `15-generated-repo-root-and-inventory-architecture`
+
+Defines the separation between ecosystem workspace roots and generated repo roots, plus the canonical orchestration-owned inventory schema for tracked repos, host bindings, and lifecycle class.
+
+### `16-existing-machine-migration-and-adoption`
+
+Turns “old standalone Scafforge clone plus arbitrary sibling repos” into an explicit migration/adoption playbook that works across Windows, WSL, and SSH-connected hosts.
+
+### `17-worker-fabric-and-host-registration`
+
+Defines the host-resident worker model, host registration, capability reporting, and dispatch boundary that the backend and control plane should share.
+
+### `18-control-plane-project-tracking`
+
+Extends the control-plane contract so the Windows app tracks generated repos, host bindings, and worker health through backend inventory rather than local folder discovery.
+
+### `19-generated-repo-lifecycle-policy`
+
+Defines how generated repos move between `ephemeral`, `durable`, `blocked`, and `archived`, including adoption and promotion rules for repos worth keeping.
+
 ## Recommended Execution Sequence
 
 1. Land planning hygiene and documentation architecture.
@@ -168,7 +213,8 @@ Turns the separate `blender-mcp` repository into a clearer, safer dependency by 
 6. Add the package self-improvement loop.
 7. Add disciplined skill evolution and harden the adjacent `meta-skill-engineering` and `blender-mcp` repos where they underpin the program.
 8. Build the WinUI control plane last, when the backend contracts are real.
+9. Land the Workspace V2 follow-on plans so ecosystem-root cleanup, generated-repo tracking, worker dispatch, and control-plane project views all use the same backend-owned model.
 
 ## Final Recommendation
 
-Treat these plans as the recorded implementation program, not as background notes. The implementation backlog is now closed across plans `01` through `14`; future work should either archive the completed plan folders or open new numbered folders for fresh scope rather than quietly editing the completed contracts.
+Treat these plans as the recorded implementation program, not as background notes. The first implementation backlog is closed across plans `01` through `14`, but the portfolio is now intentionally reopened through plans `15` through `19` for Workspace V2 follow-on architecture. Future work should implement those new numbered plans or archive the completed first-wave folders explicitly rather than silently editing completed contracts.

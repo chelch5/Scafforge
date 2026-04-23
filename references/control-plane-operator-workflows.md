@@ -11,6 +11,12 @@ The recommended connectivity shape is:
 
 The app may perform read-only environment discovery, but it must not use direct WSL or SSH shell mutation as a fallback control path.
 
+Worker execution remains host-resident:
+
+- the backend dispatches to registered Windows, WSL, or SSH Linux workers
+- the app may show host health, repo bindings, and worker availability
+- the app must not become the place where real mutation work runs
+
 ## Auth
 
 - unpackaged internal-tool mode should use DPAPI-backed user-scoped secret storage
@@ -28,6 +34,7 @@ The operator may approve or reject:
 - merge approvals
 - retry or resume actions that policy requires a human to approve
 - explicit override requests raised by backend workflows
+- repo adoption, host binding, and durable-repo promotion requests raised by backend workflows
 
 Every approval or override must travel through the backend API and be attributable to an operator/session record.
 

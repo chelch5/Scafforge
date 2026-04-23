@@ -5,24 +5,50 @@ Scafforge may be wrapped by an **adjacent orchestration service**, but that wrap
 ## Boundary
 
 - The orchestration service wraps Scafforge; it does not replace `scaffold-kickoff`, `spec-pack-normalizer`, `scafforge-audit`, `scafforge-repair`, or `handoff-brief`.
-- The orchestration service owns job progression, phase scheduling, PR automation, pause, retry, resume controls, and dashboard-facing event streams.
+- The orchestration service owns job progression, phase scheduling, PR automation, pause, retry, resume controls, dashboard-facing event streams, tracked generated-repo inventory, and worker-host registration.
 - Dashboard or control-plane clients consume wrapper-owned read models and event streams; they do not become separate state authorities.
 - The orchestration service is read-only with respect to generated `tickets/manifest.json` and `.opencode/state/workflow-state.json`.
 - The orchestration service may read `docs/spec/CANONICAL-BRIEF.md`, `tickets/manifest.json`, `.opencode/state/workflow-state.json`, `START-HERE.md`, `.opencode/state/latest-handoff.md`, and `.opencode/meta/bootstrap-provenance.json`.
-- Phase grouping, PR numbers, reviewer assignment, merge-mode state, retry tokens, and idempotency keys live in orchestration-owned storage, not in the generated repo.
+- Phase grouping, PR numbers, reviewer assignment, merge-mode state, retry tokens, idempotency keys, tracked repo records, host records, and path bindings live in orchestration-owned storage, not in the generated repo.
 - Operator and dashboard signaling for orchestration-owned states such as `package-change-pending` must also live in orchestration-owned storage or event streams, not in generated repo canonical truth.
 - Operator commands coming from a control plane must call orchestration APIs; they must not bypass the wrapper through direct GitHub mutation, direct repo mutation, or direct WSL/SSH shell mutation.
+
+## Generated-repo inventory and worker-host registry
+
+The wrapper owns the adjacent inventory for tracked generated repos and worker hosts.
+
+Minimum generated-repo inventory fields:
+
+- repo id
+- human name
+- Git remote
+- repo class (`ephemeral` or `durable`)
+- product family or type
+- current lifecycle state
+- current assigned host
+
+Minimum host and path-binding fields:
+
+- host id, host kind (`windows`, `wsl`, or `ssh-linux`), display name, connectivity state, and capability summary
+- repo id, host id, absolute path on that host, and path role (`primary`, `mirror`, `archived`, or `detached`)
+
+Rules:
+
+- tracked generated repos may live outside the ecosystem workspace in separate roots such as `ScafforgeProjects/`
+- control-plane clients must consume this inventory through backend APIs rather than by local folder scans
+- durable or ephemeral classification, host assignment, and path binding role are orchestration-owned state and must not be written into generated canonical repo truth
 
 ## Job envelope
 
 Every orchestration job should retain, at minimum:
 
 - approved brief pointer or bundle address
-- downstream repo identity and destination
+- downstream repo identity, inventory record, and destination
 - branch strategy for phase work
 - execution mode
 - model/router policy
 - operator permission mode
+- target host id and path-binding role when the job is host-affine
 - idempotency key for repo creation or scaffold invocation
 - retry token for phase or PR retries
 - retained evidence pointers for scaffold proof, PR review, audit, repair, and resume
@@ -72,6 +98,13 @@ Generated repos may expose derived helper fields such as a local `scaffoldVerifi
 - Branch names should stay job- and phase-scoped, for example `autonomy/<job-id>/phase-<nn>-<slug>`.
 - Each PR should retain links to the owning ticket IDs, validation artifacts, canonical brief snapshot, and any required stack-specific evidence.
 - Retry, split, pause, or escalation decisions belong to the wrapper, but they must leave the generated repo canonical state untouched until a repo-local tool or skill changes it lawfully.
+
+## Worker-host dispatch boundary
+
+- Actual agents run on host-resident worker processes or daemons, not inside the control plane client.
+- The wrapper dispatches jobs to registered worker hosts; it does not rely on control-plane shell fallback to `wsl.exe` or `ssh`.
+- Supported host kinds for the first contract are `windows`, `wsl`, and `ssh-linux`.
+- A job may target a host even when the repo is not present on the local Windows machine running the control plane.
 
 ## Review and merge gates
 

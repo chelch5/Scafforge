@@ -72,11 +72,14 @@ Examples:
 
 - an adjacent spec factory repo or workspace that owns intake, drafting, review, approval, and approved-brief publication
 - an adjacent orchestration service that owns job progression and runtime invocation
+- an adjacent orchestration inventory that owns tracked generated repos, host bindings, and worker registration
 - an adjacent control plane or ChatGPT-facing ingress surface
 
 These systems may consume Scafforge contracts, but they must not smuggle their runtime state or authority into the package root.
 
 An adjacent orchestration service may trigger `scaffold-kickoff` from a persisted approved-brief bundle, schedule downstream PR phases, and own pause, retry, and resume controls. It must stay read-only with respect to generated `tickets/manifest.json` and `.opencode/state/workflow-state.json`, and it must derive wrapper state from package and GitHub evidence instead of inventing repo truth in the UI.
+
+Tracked generated repos may live outside the ecosystem workspace in a separate root such as `ScafforgeProjects/`. Their canonical tracked identity, lifecycle class, and host/path bindings belong to adjacent orchestration inventory, not to package-root manifests or control-plane folder scans.
 
 An adjacent control plane may render orchestration job state, package investigations, and provider/router summaries, but it must route approvals, overrides, pause/resume, retry, merge, and policy mutations through backend APIs. If auth, trust, or connectivity is ambiguous, the control plane must fail closed to read-only and must not fall back to direct WSL, SSH, GitHub, or repo-local shell mutation.
 
@@ -116,6 +119,7 @@ The package-wide authority map is documented in [references/authority-adr.md](re
 - `scafforge-audit` owns diagnosis disposition.
 - The generated runtime workflow layer owns canonical repo mutation.
 - An adjacent orchestration service owns job progression, PR automation, idempotency or retry state, and pause or resume controls while staying read-only over generated canonical repo truth.
+- Adjacent orchestration inventory owns tracked generated-repo records, durable/ephemeral classification, host bindings, and worker-host registration while staying outside generated canonical repo truth.
 - `scafforge-pivot` owns pivot-state persistence.
 - `handoff-brief` owns restart publication from the verified final snapshot.
 - `agent-prompt-engineering` owns contract alignment for prompts, workflow docs, and generated behavior.

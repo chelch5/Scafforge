@@ -18,8 +18,14 @@ Scafforge uses a layering decision rather than a rewrite-first decision.
 ## System layers
 
 ```text
+ecosystem workspace
+  bootstrap repo plus platform/ and agent-tools/ repos
+generated repo roots
+  separate roots such as ScafforgeProjects/
 adjacent services / workspaces
   spec factory, router, orchestration, control plane
+worker hosts
+  windows, wsl, ssh-linux
 host agent
   runs Scafforge package skills
 Scafforge package
@@ -29,6 +35,8 @@ generated repo
 downstream agent
   works inside the generated repo using its local operating layer
 ```
+
+Generated repos are intentionally outside the ecosystem workspace by default. The recommended host-local root is a sibling directory such as `ScafforgeProjects/`, while orchestration-owned inventory remains the canonical source of truth for tracked repo identity, host bindings, and lifecycle class.
 
 ## Package skill layout
 
@@ -94,9 +102,16 @@ The spec factory owns rough intake, drafting, review, approval, and persisted ha
 The adjacent orchestration service wraps approved briefs, package execution, and downstream PR phases.
 
 - It may invoke `scaffold-kickoff` only after an approved-brief bundle is persisted and addressable.
-- It owns job envelopes, idempotency or retry tokens, PR automation, reviewer assignment, and operator permission modes.
+- It owns job envelopes, idempotency or retry tokens, PR automation, reviewer assignment, operator permission modes, tracked generated-repo inventory, and worker-host registration.
 - It may read generated canonical surfaces and restart outputs.
 - It must stay read-only over generated canonical repo truth.
+
+Tracked generated repos and worker hosts are adjacent orchestration concerns:
+
+- generated-repo inventory records repo identity, durable/ephemeral class, lifecycle state, current assigned host, and path bindings
+- worker-host registration records host kind, health, and execution capabilities
+- the control plane consumes those adjacent records through backend APIs instead of discovering repos by local folder scanning
+- control-plane clients and package docs must not treat local filesystem layout as canonical repo tracking truth
 
 ### Adjacent model-router boundary
 
@@ -110,7 +125,7 @@ The model router is an adjacent service concern even when it uses the AI SDK.
 
 The control plane is an adjacent operator client, not a backend substitute.
 
-- It may render orchestration state, generated-repo truth projections, package investigations, and provider/router summaries.
+- It may render orchestration state, tracked generated-repo inventory, worker-host health, generated-repo truth projections, package investigations, and provider/router summaries.
 - All approvals, overrides, pause/resume, retry, merge-approval, and router-policy changes stay backend-mediated.
 - Ambiguous auth, trust, or connectivity must force read-only behavior instead of alternate mutation paths.
 - Local shells, WSL, SSH, and GitHub transport choices must not become hidden authority bypasses.

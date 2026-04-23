@@ -24,6 +24,8 @@ This is the current source-of-truth map for Scafforge package documentation. Sta
 | `references/rejected-sources.md` | canonical reference | Quarantined or rejected external skill sources |
 | `references/one-shot-generation-contract.md` | canonical reference | One-shot greenfield lifecycle and publication gate |
 | `references/stack-adapter-contract.md` | canonical reference | Stack detection, bootstrap, execution proof, and release-proof contract |
+| `references/generated-repo-inventory-contract.md` | canonical reference | Tracked generated-repo records, host/path bindings, and durable or ephemeral lifecycle classification |
+| `references/worker-host-contract.md` | canonical reference | Worker-host registration, capability reporting, and dispatch boundary |
 
 ## Planning-layer docs
 

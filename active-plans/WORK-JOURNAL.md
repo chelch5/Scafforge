@@ -340,3 +340,14 @@ The only genuinely open plan is `10-viewer-control-plane-winui`. Its Scafforge-s
 The adjacent `scafforge-control-plane` repo is now real, not just planned. The implementation landed the WinUI shell, pinned-cert live gateway factory, WSL plus SSH transport proof, fail-closed degraded overlay, and a launch-smoke fix for the App/XAML startup path. The PR review swarm for that repo produced a few factual follow-ups; the only ones worth taking were the machine-local WSL path assumption, request debouncing/in-flight mutation gating, explicit demo-mode messaging, and cleanup of repo-local ephemeral SSH proof material. The other higher-level concerns were either already covered by the contract or unsupported by the actual code.
 
 With that adjacent PR merged, the portfolio no longer has a “final remaining plan.” The Scafforge closeout now needs to say that directly: plans `01` through `14` are implemented, the three adjacent repos (`meta-skill-engineering`, `blender-mcp`, and `scafforge-control-plane`) are all merged, and future work should move into either archival or genuinely new numbered plans instead of leaving `active-plans/` in a permanently half-open state.
+
+### Entry 34: Workspace V2 reopened the portfolio on purpose
+
+The ecosystem-root reorganization solved the factory repo layout, but it exposed the next real architecture gap: generated repos, mixed old-machine migration, host workers, and control-plane project tracking were still only implicit. The right answer was not to jam generated repos into the ecosystem workspace. The right answer was to reopen the portfolio with a second wave:
+
+- generated repos stay outside `Scafforge/` by default, with `ScafforgeProjects/` as the recommended sibling root
+- orchestration-owned inventory becomes the canonical source of truth for tracked generated repos, durable/ephemeral class, host bindings, and path bindings
+- host-resident workers become the execution model across Windows, WSL, and SSH Linux
+- the control plane must render that backend truth instead of discovering projects by folder scan
+
+That is why plans `15` through `19` now exist even though the first implementation wave is already complete.

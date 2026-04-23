@@ -17,6 +17,8 @@ Root docs should route readers here for ownership detail instead of restating th
 | Diagnosis disposition | `scafforge-audit` | Classifies findings, emits the authoritative disposition bundle, and owns follow-up routing decisions. |
 | Repo mutation | Generated runtime workflow layer | Mutates canonical ticket, workflow, artifact, and restart-surface state. Package-side repair and pivot surfaces may invoke it, but they do not redefine it. |
 | Orchestration job state | Adjacent orchestration service | Owns job envelopes, phase grouping, idempotency and retry tokens, PR automation, and pause or resume controls, but stays read-only over generated canonical repo truth. |
+| Generated-repo inventory | Adjacent orchestration service | Owns tracked repo identity, durable or ephemeral class, lifecycle state, assigned host, and path bindings without serializing them into generated repo canonical truth. |
+| Worker-host registration | Adjacent orchestration service | Owns host records, health state, capability reporting, and worker reachability for Windows, WSL, and SSH Linux targets. |
 | Managed repair execution | `scafforge-repair` | Applies safe package-managed repairs, refreshes generated workflow surfaces, and delegates canonical state mutation back through the generated runtime workflow layer. |
 | Pivot-state persistence | `scafforge-pivot` | Owns `.opencode/meta/pivot-state.json` persistence and bounded pivot classification truth. |
 | Restart publication | `handoff-brief` | Publishes derived restart surfaces only after the verified final snapshot is available. |
@@ -34,7 +36,8 @@ The first duplicate-authority seam to collapse was repair-side restart rendering
 4. Restart publication may only happen from the final verified post-mutation state.
 5. Contract alignment must keep `AGENTS.md`, `skills/skill-flow-manifest.json`, and the reference contracts in sync with the same owner map.
 6. Adjacent orchestration may derive wrapper state from Scafforge and GitHub outputs, but it may not rewrite `tickets/manifest.json`, `.opencode/state/workflow-state.json`, or restart publication directly.
-7. Package root docs may summarize the owner map, but this ADR remains the canonical owner-by-domain reference.
+7. Adjacent orchestration inventory may track repos, hosts, and path bindings, but it may not become a shadow writer for generated canonical repo truth.
+8. Package root docs may summarize the owner map, but this ADR remains the canonical owner-by-domain reference.
 
 ## Dependent References
 

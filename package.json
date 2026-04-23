@@ -26,7 +26,7 @@
   ],
   "license": "UNLICENSED",
   "scripts": {
-    "validate:contract": "python3 scripts/validate_scafforge_contract.py",
-    "validate:smoke": "python3 scripts/smoke_test_scafforge.py"
+    "validate:contract": "node scripts/run_python.mjs scripts/validate_scafforge_contract.py",
+    "validate:smoke": "node scripts/run_python.mjs scripts/smoke_test_scafforge.py"
   }
 }

@@ -58,3 +58,9 @@ This catalog turns the RFC invariants into a checklist that later tickets can im
 27. End-to-end repair tests must assert convergence and publish safety, not only exact strings.
 28. Tier 1 stacks must have real execution proof coverage on proof hosts.
 29. Existing curated fixture families must be preserved and upgraded rather than discarded.
+
+### Adjacent inventory and workers
+
+30. Tracked generated-repo identity, durable or ephemeral class, host bindings, and path binding roles remain orchestration-owned state and must not be inferred from control-plane folder scans.
+31. Worker-host registration and health remain adjacent orchestration state and must not be reconstructed by direct control-plane shell mutation.
+32. Generated-repo inventory or worker-host records may not be serialized into generated canonical repo truth surfaces as a shadow authority layer.

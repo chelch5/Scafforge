@@ -100,12 +100,18 @@ Keep plan status explicit. A plan may remain in `active-plans/` with `Status: DO
 | 12 | DONE | `13-meta-skill-engineering-repo-hardening/` | Hardens the separate Meta-Skill-Engineering repo into a fully agent-usable suite with a complete CLI surface. |
 | 13 | DONE | `14-blender-agent-repo-hardening/` | Hardens the separate blender-mcp repo so Scafforge can rely on it truthfully. |
 | 14 | DONE | `10-viewer-control-plane-winui/` | Landed the adjacent WinUI control-plane repo, live WSL/SSH transport proof, fail-closed operator shell, and post-review hardening, then merged the implementation through PR `#1`. |
+| 15 | TODO | `15-generated-repo-root-and-inventory-architecture/` | Defines the split between ecosystem roots and generated repo roots, plus the orchestration-owned inventory contract for tracked repos and path bindings. |
+| 16 | TODO | `16-existing-machine-migration-and-adoption/` | Turns mixed pre-migration machines into a deterministic cutover flow without wipe-and-reclone. |
+| 17 | TODO | `17-worker-fabric-and-host-registration/` | Defines host-resident workers, host registration, capability reporting, and dispatch across Windows, WSL, and SSH Linux. |
+| 18 | TODO | `18-control-plane-project-tracking/` | Extends the control-plane contract so the app tracks generated repos and worker hosts through backend inventory instead of folder scans. |
+| 19 | TODO | `19-generated-repo-lifecycle-policy/` | Defines durable versus ephemeral generated repos, promotion/adoption rules, and archival policy. |
 
-Execution status sync as of `2026-04-22`:
+Execution status sync as of `2026-04-23`:
 
-- plans `01` through `14` are implemented
-- the adjacent `meta-skill-engineering`, `blender-mcp`, and `scafforge-control-plane` repos have all been hardened and merged back upstream
-- the active-plans implementation program is fully complete and ready for archival when the user wants to move the completed folders out of `active-plans/`
+- plans `01` through `14` remain implemented
+- the adjacent `meta-skill-engineering`, `blender-mcp`, and `scafforge-control-plane` repos remain hardened and merged back upstream
+- plans `15` through `19` open the follow-on Workspace V2 wave for generated-repo roots, orchestration-owned inventory, host workers, and control-plane tracking
+- the original implementation wave is closed, but the active-plans portfolio is no longer globally complete
 
 ## Program-Level Decisions
 
@@ -114,6 +120,8 @@ Execution status sync as of `2026-04-22`:
 3. The SDK answer is hybrid: OpenCode stays the execution substrate, AI SDK wraps new services, and Apps SDK is for ChatGPT-facing ingress/UI only.
 4. Adjacent systems such as the spec factory, orchestration service, model router, and WinUI control plane stay outside the package core.
 5. Every implemented plan must update docs, validators, and references in the same PR where its contract changes land.
+6. Ecosystem repos and generated repos are separate roots by default; the recommended generated-repo root is `ScafforgeProjects/`, not a nested folder under the ecosystem workspace.
+7. Tracked generated-repo inventory, host bindings, and worker-host registration are orchestration-owned state and must not be guessed from control-plane folder scans.
 
 ## Source Material Layout
 
