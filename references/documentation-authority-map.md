@@ -31,11 +31,10 @@ This is the current source-of-truth map for Scafforge package documentation. Sta
 
 | Surface | Class | Owns | Sweep decision |
 | --- | --- | --- | --- |
-| `active-plans/README.md` | canonical portfolio index | Plan ordering, portfolio shape, and plan-document expectations | Updated as a reminder, not a second policy source |
-| `active-plans/FULL-REPORT.md` | derived program summary | Cross-plan rationale and current program summary | Updated when plan sequencing or major program framing changes |
-| `active-plans/docscleanup.md` | canonical planning-format policy | Placement and naming rules for planning docs | Keeps plan formatting aligned to the standing rule from `AGENTS.md` |
-| `active-plans/WORK-JOURNAL.md` | historical provenance | Dated planning decisions and corrections | Inventoried by this sweep, intentionally out of the root routing rewrite |
-| `active-plans/codexinstructions.md` | supporting reference | Execution guide for implementing the numbered plans | Inventoried by this sweep, intentionally not promoted to contract authority |
+| `docs/plans/active-plans-index.md` | canonical portfolio index | Plan ordering, portfolio shape, and plan-document expectations | Updated as a reminder, not a second policy source |
+| `docs/plans/FULL-REPORT.md` | derived program summary | Cross-plan rationale and current program summary | Updated when plan sequencing or major program framing changes |
+| `docs/plans/active-plans-docs-policy.md` | canonical planning-format policy | Placement and naming rules for planning docs | Keeps plan formatting aligned to the standing rule from `AGENTS.md` |
+| `docs/plans/active-plans-work-journal.md` | historical provenance | Dated planning decisions and corrections | Inventoried by this sweep, intentionally out of the root routing rewrite |
 
 ## Generated-template docs
 

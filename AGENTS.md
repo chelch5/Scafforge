@@ -41,7 +41,7 @@ This repository contains:
 - validation and proof harnesses under `scripts/` and `tests/`
 - contract references under `references/`
 - copied diagnosis evidence under `active-audits/`
-- active package implementation planning under `active-plans/`
+- active package implementation planning under `docs/plans/scafforge-core/`
 
 ### Output layer
 
@@ -89,12 +89,11 @@ Scafforge package work is not driven by generated-repo runtime state.
 
 In this repo:
 
-- `active-plans/README.md` is the canonical portfolio index
-- each numbered `active-plans/NN-kebab-case/README.md` is the authoritative implementation plan for that plan
-- `active-plans/FULL-REPORT.md` is the cross-plan summary and sequencing rationale
-- `active-plans/docscleanup.md` is the planning-surface placement policy
-- `active-plans/WORK-JOURNAL.md` is historical provenance, not current authority
-- `active-plans/codexinstructions.md` is a supporting execution guide, not a canonical contract source
+- `docs/plans/active-plans-index.md` is the canonical portfolio index
+- each numbered `docs/plans/scafforge-core/NN-kebab-case/README.md` (and similar for other repos) is the authoritative implementation plan for that plan
+- `docs/plans/FULL-REPORT.md` is the cross-plan summary and sequencing rationale
+- `docs/plans/active-plans-docs-policy.md` is the planning-surface placement policy
+- `docs/plans/active-plans-work-journal.md` is historical provenance, not current authority
 - package-root `.opencode/` runtime state must not be created to manage package work
 - package-root `tickets/manifest.json` and `tickets/BOARD.md` are not current package planning surfaces and must not be reintroduced as shadow workflow state
 
@@ -110,7 +109,7 @@ Before review:
 4. Run the contract validator after changing validator-pinned docs, then run the wider package validation stack.
 5. Record remaining gaps or environment blockers explicitly instead of implying the docs already converge.
 
-`AGENTS.md` is the durable policy home for this rule. `active-plans/README.md` and `active-plans/docscleanup.md` are program-level reminders and formatting guidance only.
+`AGENTS.md` is the durable policy home for this rule. `docs/plans/active-plans-index.md` and `docs/plans/active-plans-docs-policy.md` are program-level reminders and formatting guidance only.
 
 ## Authority baseline
 
@@ -146,12 +145,12 @@ Use `python3` or `sys.executable` for Python entrypoints in repository guidance.
 - canonical package-side sidecars include `evidence-manifest.json`, `investigator/report.md`, `investigator/report.json`, `fixer/package-fix-record.json`, and `revalidation/resume-ready.json`
 - archive indexes for copied logs, session files, or database exports must stay derived and non-authoritative relative to the copied raw evidence and sidecar manifests
 
-`active-plans/` holds the live package implementation program.
+`docs/plans/` holds the live ecosystem implementation program.
 
-- numbered folders are the canonical plans
+- numbered folders under repo-specific subfolders (`scafforge-core/`, `blender-mcp/`, etc.) are the canonical plans
 - plan-local references stay under that folder's `references/`
-- `_source-material/` stays active supporting material, not a disposal queue
-- root-level files under `active-plans/` are portfolio-wide routing, reporting, provenance, or execution guidance
+- shared supporting material lives in `docs/brainstorming/reference-materials/`
+- root-level files under `docs/plans/` are portfolio-wide routing, reporting, provenance, or execution guidance
 
 ## Skill evolution and distillation
 

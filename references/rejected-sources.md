@@ -4,7 +4,7 @@ Use this record for external skill inputs that fail provenance, licensing, overl
 
 | Source | Status | Blocking issue | Allowed use | Resolution path |
 | --- | --- | --- | --- | --- |
-| `active-plans/_source-material/asset-pipeline/assetsplanning/pipeline/stolenfromcodex/` | quarantined | copied research bundle with incomplete preserved licensing chain inside the retained snapshot, plus high overlap risk with package and repo-local skill surfaces | read-only concept extraction only after distillation review; no direct import into Scafforge or generated repos | either prove provenance and rerun the rubric before distilling a narrow concept into Scafforge-owned language, or keep the bundle quarantined and exclude it from package changes |
+| `docs/plans/scafforge-core/12-skill-system-expansion/references/rejected-sources.md` | quarantined | copied research bundle with incomplete preserved licensing chain inside the retained snapshot, plus high overlap risk with package and repo-local skill surfaces | read-only concept extraction only after distillation review; no direct import into Scafforge or generated repos | either prove provenance and rerun the rubric before distilling a narrow concept into Scafforge-owned language, or keep the bundle quarantined and exclude it from package changes |
 
 ## Standing rule
 

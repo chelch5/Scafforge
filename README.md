@@ -26,7 +26,7 @@ The package repo contains:
 - `references/` for durable contracts, ADRs, and matrices
 - `scripts/` and `tests/` for validation and proof harnesses
 - `active-audits/` for copied diagnosis evidence from generated repos
-- `active-plans/` for the live package implementation portfolio
+- `docs/plans/scafforge-core/` for the live package implementation portfolio (see bootstrap repo `docs/plans/`)
 
 Generated repos inherit OpenCode-oriented operating surfaces such as `.opencode/agents/`, `.opencode/tools/`, `.opencode/plugins/`, `.opencode/commands/`, `.opencode/skills/`, `tickets/`, `docs/spec/CANONICAL-BRIEF.md`, `START-HERE.md`, and `.opencode/skills/model-operating-profile/SKILL.md`.
 

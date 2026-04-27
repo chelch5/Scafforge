@@ -29,7 +29,8 @@ worker hosts
 host agent
   runs Scafforge package skills
 Scafforge package
-  skills/, references/, scripts/, tests/, active-audits/, active-plans/
+  skills/, references/, scripts/, tests/, active-audits/
+  docs/plans/scafforge-core/ for implementation planning (see bootstrap repo)
 generated repo
   docs/, tickets/, .opencode/, START-HERE.md
 downstream agent

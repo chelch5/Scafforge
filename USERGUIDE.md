@@ -8,7 +8,7 @@ This guide is for humans operating Scafforge or a Scafforge-managed repo. Use it
 2. Open [references/documentation-authority-map.md](references/documentation-authority-map.md).
 3. Take one reference hop for the specific truth domain you need.
 
-The current context-test evidence for this path lives in [active-plans/11-repository-documentation-sweep/references/documentation-context-tests.md](active-plans/11-repository-documentation-sweep/references/documentation-context-tests.md).
+The current context-test evidence for this path lives in [docs/plans/scafforge-core/11-repository-documentation-sweep/references/documentation-context-tests.md](../docs/plans/scafforge-core/11-repository-documentation-sweep/references/documentation-context-tests.md).
 
 | Question | Root doc | Reference hop |
 | --- | --- | --- |
