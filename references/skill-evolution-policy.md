@@ -17,8 +17,8 @@ This policy starts only after a candidate is already accepted as package work.
 | Candidate source | Minimum evidence before classification | Lives here while awaiting evaluation | Notes |
 | --- | --- | --- | --- |
 | Audit-origin package signal | `package-evidence-bundle.json`, `active-audits/<repo>/evidence-manifest.json`, and the investigator sidecar | `active-audits/<repo>/` | `scafforge-audit` and the active-audit sidecars decide whether the repo issue becomes package work at all. |
-| Review, investigation, or operator note | concrete symptom, affected package surfaces, proof that the current package leaves no clear legal next move, and a bounded change hypothesis | the relevant numbered `docs/plans/scafforge-core/<plan>/references/` folder until a package change is scoped | Do not create package-root runtime queues for this work. |
-| External source research | source identity, provenance or license note, concept summary, overlap analysis, and a rubric result | the relevant numbered `docs/plans/scafforge-core/<plan>/references/` folder until the distilled package artifact exists | The research source is input only. |
+| Review, investigation, or operator note | concrete symptom, affected package surfaces, proof that the current package leaves no clear legal next move, and a bounded change hypothesis | the relevant numbered `docs/plans/scafforge-core/<plan>/references/` folder in the bootstrap workspace until a package change is scoped | Do not create package-root runtime queues for this work. |
+| External source research | source identity, provenance or license note, concept summary, overlap analysis, and a rubric result | the relevant numbered `docs/plans/scafforge-core/<plan>/references/` folder in the bootstrap workspace until the distilled package artifact exists | The research source is input only. |
 
 ## Classification lanes
 

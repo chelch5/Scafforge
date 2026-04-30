@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import site
 import subprocess
 import sys
 import tempfile
@@ -249,10 +250,13 @@ def fake_blender_host_env(workspace: Path) -> dict[str, str]:
     host_root = workspace / "fake-blender-host"
     bin_dir = host_root / "bin"
     mcp_dir = host_root / "blender-agent" / "mcp-server"
-    write_executable_wrapper(bin_dir / "blender", "/bin/true")
+    if os.name == "nt":
+        write_text(bin_dir / "blender.cmd", "@echo off\r\nexit /b 0\r\n")
+    else:
+        write_executable_wrapper(bin_dir / "blender", "/bin/true")
     write_text(mcp_dir / "pyproject.toml", "[project]\nname = \"fake-blender-mcp\"\nversion = \"0.0.0\"\n")
     env = os.environ.copy()
-    env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
     env["BLENDER_MCP_PROJECT"] = str(mcp_dir)
     return env
 
@@ -2114,7 +2118,13 @@ def multi_stack_proof_integration(workspace: Path) -> None:
                     tool_path = Path(tool_dir)
                     git_path = shutil.which("git")
                     if git_path is not None:
-                        (tool_path / "git").symlink_to(git_path)
+                        if os.name == "nt":
+                            write_text(
+                                tool_path / "git.cmd",
+                                f'@echo off\r\n"{git_path}" %*\r\n',
+                            )
+                        else:
+                            (tool_path / "git").symlink_to(git_path)
                     node_missing_env = os.environ.copy()
                     node_missing_env["PATH"] = str(tool_path)
                     node_missing_audit = run_json(
@@ -2510,6 +2520,13 @@ def backward_transition_integration(workspace: Path) -> None:
 
 
 def main() -> int:
+    user_script_candidates = [
+        Path(site.getuserbase()) / ("Scripts" if os.name == "nt" else "bin"),
+        Path(site.getusersitepackages()).parent / ("Scripts" if os.name == "nt" else "bin"),
+    ]
+    for user_scripts in user_script_candidates:
+        if user_scripts.exists():
+            os.environ["PATH"] = f"{user_scripts}{os.pathsep}{os.environ.get('PATH', '')}"
     args = parse_args()
     fixtures = ensure_fixture_index()
     downstream_fixtures = ensure_downstream_fixture_indexes()

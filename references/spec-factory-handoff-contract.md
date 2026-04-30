@@ -15,9 +15,11 @@ An approved factory brief is eligible for Scafforge intake only when all of thes
 
 - approved brief file (`approved-brief.md`, `approved-brief.json`, or equivalent addressable artifact)
 - approval metadata with timestamp and approver identity
-- decision-packet residue, including any deferred non-blocking questions
+- decision-packet residue, including any open non-blocking questions
 - attachment index with durable references
 - provenance linking the approved brief back to the draft and source inputs
+- backend job payload with backend-owned provider credential routing metadata
+- Core kickoff payload for local/manual scaffold kickoff
 
 Transient chat state, in-memory UI state, or an MCP tool result without persisted files is **not** a legal handoff.
 
@@ -56,6 +58,23 @@ The approved brief content must still align to the canonical Scafforge brief con
 11. Acceptance Signals
 12. Assumptions
 13. Product Finish Contract
+
+The JSON brief must also expose these machine-readable fields so downstream systems do not infer them from prose:
+
+- `brief_id`
+- `source_intake_id`
+- `project_name`
+- `problem_statement`
+- `users`
+- `core_workflows`
+- `stack_recommendation`
+- `generated_repo_lifecycle_preference`
+- `asset_content_requirements`
+- `validation_requirements`
+- `security_trust_notes`
+- `open_questions`
+- `approval_metadata`
+- `downstream_handoff_target`
 
 The factory may keep richer drafting and review artifacts, but the handoff brief must map cleanly onto these sections.
 

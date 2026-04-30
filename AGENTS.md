@@ -8,6 +8,43 @@ Within the canonical Scafforge workspace this repo lives at `platform/scafforge-
 
 That distinction is law in this repository. Do not collapse package-repo surfaces and generated-repo surfaces together.
 
+## Agent quickstart
+
+1. Read `README.md`, `USERGUIDE.md`, and `architecture.md` before changing package behavior.
+2. Use `references/documentation-authority-map.md` to find the source of truth for a contract.
+3. Keep package-layer changes in this repo and generated-repo runtime state out of this repo.
+4. Run the canonical package validation commands listed below before claiming completion.
+
+## Purpose
+
+Scafforge Core is the generator, template source, validation harness, and workflow contract used by host agents to build, audit, repair, or update generated project repos.
+
+## Owns
+
+- package skills under `skills/`
+- generated-template assets under `skills/repo-scaffold-factory/assets/project-template/`
+- validation and proof harnesses under `scripts/` and `tests/`
+- contract references under `references/`
+- copied diagnosis evidence under `active-audits/`
+- active package implementation planning under `docs/plans/scafforge-core/`
+
+## Does not own
+
+- generated-repo runtime state in the package root
+- adjacent spec factory, orchestration backend, or control plane runtime state
+- tracked generated-repo inventory or worker-host registration
+- product implementation code for generated repos
+
+## Required read order
+
+1. `AGENTS.md`
+2. `README.md`
+3. `USERGUIDE.md`
+4. `architecture.md`
+5. `references/documentation-authority-map.md`
+6. relevant `references/*.md`
+7. relevant `skills/*/SKILL.md`
+
 ## Mission
 
 Maintain a host-agnostic scaffold package that can turn raw project inputs into a deterministic, signposted, OpenCode-oriented repo operating framework.
@@ -87,13 +124,11 @@ An adjacent control plane may render orchestration job state, package investigat
 
 Scafforge package work is not driven by generated-repo runtime state.
 
-In this repo:
+In the canonical workspace:
 
-- `docs/plans/active-plans-index.md` is the canonical portfolio index
+- the bootstrap repo `docs/plans/active-plans-index.md` is the canonical portfolio index
 - each numbered `docs/plans/scafforge-core/NN-kebab-case/README.md` (and similar for other repos) is the authoritative implementation plan for that plan
-- `docs/plans/FULL-REPORT.md` is the cross-plan summary and sequencing rationale
-- `docs/plans/active-plans-docs-policy.md` is the planning-surface placement policy
-- `docs/plans/active-plans-work-journal.md` is historical provenance, not current authority
+- the bootstrap repo `docs/plans/active-plans-docs-policy.md` is the planning-surface placement policy
 - package-root `.opencode/` runtime state must not be created to manage package work
 - package-root `tickets/manifest.json` and `tickets/BOARD.md` are not current package planning surfaces and must not be reintroduced as shadow workflow state
 
@@ -109,7 +144,7 @@ Before review:
 4. Run the contract validator after changing validator-pinned docs, then run the wider package validation stack.
 5. Record remaining gaps or environment blockers explicitly instead of implying the docs already converge.
 
-`AGENTS.md` is the durable policy home for this rule. `docs/plans/active-plans-index.md` and `docs/plans/active-plans-docs-policy.md` are program-level reminders and formatting guidance only.
+`AGENTS.md` is the durable policy home for this rule. Bootstrap workspace planning docs are program-level reminders and formatting guidance only.
 
 ## Authority baseline
 
@@ -135,6 +170,22 @@ The package-level validation entrypoints are:
 - `python3 scripts/validate_gpttalker_migration.py`
 
 Use `python3` or `sys.executable` for Python entrypoints in repository guidance. Do not assume a `python` shim exists or points to the correct interpreter.
+
+## Commands
+
+```bash
+npm run validate:contract
+npm run validate:smoke
+python3 scripts/integration_test_scafforge.py
+python3 scripts/validate_gpttalker_migration.py
+```
+
+## Completion evidence
+
+- List changed package skills, templates, references, validators, tests, or docs.
+- Include the canonical package validation commands run and results.
+- Identify any generated-template docs or local-skill guidance updated with a contract change.
+- Call out skipped validation, missing host-installed skill refreshes, or environment blockers explicitly.
 
 ## Active audits and plans
 

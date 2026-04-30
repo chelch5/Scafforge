@@ -31,10 +31,9 @@ This is the current source-of-truth map for Scafforge package documentation. Sta
 
 | Surface | Class | Owns | Sweep decision |
 | --- | --- | --- | --- |
-| `docs/plans/active-plans-index.md` | canonical portfolio index | Plan ordering, portfolio shape, and plan-document expectations | Updated as a reminder, not a second policy source |
-| `docs/plans/FULL-REPORT.md` | derived program summary | Cross-plan rationale and current program summary | Updated when plan sequencing or major program framing changes |
-| `docs/plans/active-plans-docs-policy.md` | canonical planning-format policy | Placement and naming rules for planning docs | Keeps plan formatting aligned to the standing rule from `AGENTS.md` |
-| `docs/plans/active-plans-work-journal.md` | historical provenance | Dated planning decisions and corrections | Inventoried by this sweep, intentionally out of the root routing rewrite |
+| bootstrap `docs/plans/active-plans-index.md` | portfolio index | Plan ordering, portfolio shape, and plan-document expectations | Updated as a reminder, not a second policy source |
+| bootstrap `docs/plans/active-plans-docs-policy.md` | planning-format policy | Placement and naming rules for planning docs | Keeps plan formatting aligned to the standing rule from `AGENTS.md` |
+| bootstrap `docs/plans/scafforge-core/20-contract-validation-restoration/README.md` | current core plan | Core validation recovery work | Used in canonical workspace; not required for standalone package clone |
 
 ## Generated-template docs
 

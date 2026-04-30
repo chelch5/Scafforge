@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
+import site
 import subprocess
 import sys
 import tempfile
@@ -445,6 +447,13 @@ def write_summary_report(output_dir: Path, summary: dict[str, Any]) -> None:
 
 
 def main() -> int:
+    user_script_candidates = [
+        Path(site.getuserbase()) / ("Scripts" if os.name == "nt" else "bin"),
+        Path(site.getusersitepackages()).parent / ("Scripts" if os.name == "nt" else "bin"),
+    ]
+    for user_scripts in user_script_candidates:
+        if user_scripts.exists():
+            os.environ["PATH"] = f"{user_scripts}{os.pathsep}{os.environ.get('PATH', '')}"
     args = parse_args()
     source_repo, fixture_workspace = resolve_source_repo(args.source_repo)
     try:

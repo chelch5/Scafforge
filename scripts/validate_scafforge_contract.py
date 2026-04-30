@@ -13,7 +13,9 @@ FLOW_MANIFEST = ROOT / "skills" / "skill-flow-manifest.json"
 TEMPLATE_ROOT = (
     ROOT / "skills" / "repo-scaffold-factory" / "assets" / "project-template"
 )
-ACTIVE_PLANS_ROOT = ROOT / "active-plans"
+WORKSPACE_ROOT = ROOT.parents[1] if len(ROOT.parents) > 1 else ROOT
+WORKSPACE_CORE_PLANS_ROOT = WORKSPACE_ROOT / "docs" / "plans" / "scafforge-core"
+ARCHIVE_DIAGNOSIS_ROOT = WORKSPACE_ROOT / "platform" / "scafforge-archive" / "archived-diagnosis-plans"
 
 
 @dataclass
@@ -647,20 +649,6 @@ def validate_skill_governance(findings: list[Finding]) -> None:
     external_rubric = ROOT / "references" / "external-source-evaluation-rubric.md"
     rejected_sources = ROOT / "references" / "rejected-sources.md"
     skill_validation_policy = ROOT / "references" / "skill-validation-policy.md"
-    plan_12_dirs = sorted(ACTIVE_PLANS_ROOT.glob("12-*"))
-    if len(plan_12_dirs) != 1:
-        findings.append(
-            Finding(
-                "error",
-                "active-plans must contain exactly one plan-12 folder for skill-governance pointer validation",
-            )
-        )
-        return
-    plan_12_root = plan_12_dirs[0]
-    plan_rubric_pointer = (
-        plan_12_root / "references" / "external-source-evaluation-rubric.md"
-    )
-    plan_rejected_pointer = plan_12_root / "references" / "rejected-sources.md"
     local_skill_catalog = (
         ROOT
         / "skills"
@@ -676,8 +664,6 @@ def validate_skill_governance(findings: list[Finding]) -> None:
             external_rubric,
             rejected_sources,
             skill_validation_policy,
-            plan_rubric_pointer,
-            plan_rejected_pointer,
             local_skill_catalog,
         ],
     )
@@ -716,13 +702,13 @@ def validate_skill_governance(findings: list[Finding]) -> None:
             isinstance(item, str) and "active-audits/<repo>/" in item
             for item in staging_locations
         ) or not any(
-            isinstance(item, str) and "active-plans/<plan>/references/" in item
+            isinstance(item, str) and "docs/plans/scafforge-core/<plan>/references/" in item
             for item in staging_locations
         ):
             findings.append(
                 Finding(
                     "error",
-                    "skill_governance.intake.staging_locations must describe both active-audits and active-plans staging paths",
+                    "skill_governance.intake.staging_locations must describe both active-audits and workspace docs/plans staging paths",
                 )
             )
 
@@ -881,7 +867,7 @@ def validate_skill_governance(findings: list[Finding]) -> None:
         )
 
     require_contains(findings, skill_evolution_policy, "active-audits/<repo>/evidence-manifest.json")
-    require_contains(findings, skill_evolution_policy, "active-plans/<plan>/references/")
+    require_contains(findings, skill_evolution_policy, "docs/plans/scafforge-core/<plan>/references/")
     require_contains(findings, skill_evolution_policy, "prompt-contract-gap")
     require_contains(findings, skill_evolution_policy, "workflow-boundary-gap")
     require_contains(findings, skill_evolution_policy, "missing-capability-gap")
@@ -909,8 +895,6 @@ def validate_core_docs(findings: list[Finding]) -> None:
     userguide = ROOT / "USERGUIDE.md"
     agents = ROOT / "AGENTS.md"
     architecture = ROOT / "architecture.md"
-    active_plans_readme = ROOT / "active-plans" / "README.md"
-    docscleanup = ROOT / "active-plans" / "docscleanup.md"
     documentation_authority_map = ROOT / "references" / "documentation-authority-map.md"
     sdk_layering_adr = ROOT / "references" / "sdk-layering-adr.md"
     provider_router_policy = ROOT / "references" / "provider-router-policy.md"
@@ -930,8 +914,6 @@ def validate_core_docs(findings: list[Finding]) -> None:
             userguide,
             agents,
             architecture,
-            active_plans_readme,
-            docscleanup,
             documentation_authority_map,
             sdk_layering_adr,
             provider_router_policy,
@@ -1028,8 +1010,8 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, agents, "references/documentation-authority-map.md")
     require_contains(findings, agents, "## What Not To Reintroduce")
     require_contains(findings, agents, "## Host-side validation hygiene")
-    require_contains(findings, active_plans_readme, "documentation impact checklist")
-    require_contains(findings, docscleanup, "documentation impact checklist")
+    if WORKSPACE_CORE_PLANS_ROOT.exists():
+        require_paths(findings, [WORKSPACE_CORE_PLANS_ROOT / "20-contract-validation-restoration" / "README.md"])
     require_contains(findings, documentation_authority_map, "## Root package docs")
     require_contains(findings, documentation_authority_map, "## Standing rule")
     require_contains(findings, documentation_authority_map, "references/skill-evolution-policy.md")
@@ -4946,9 +4928,9 @@ def validate_curated_fixtures(findings: list[Finding]) -> None:
         },
     }
     integration_script = ROOT / "scripts" / "integration_test_scafforge.py"
-    archived_plans = ROOT / "references" / "archived-diagnosis-plans"
-
-    fixture_paths = [fixtures_root / "README.md", integration_script, archived_plans]
+    fixture_paths = [fixtures_root / "README.md", integration_script]
+    if ARCHIVE_DIAGNOSIS_ROOT.exists():
+        fixture_paths.append(ARCHIVE_DIAGNOSIS_ROOT)
     for corpus in corpora.values():
         fixture_paths.extend([corpus["root"] / "README.md", corpus["root"] / "index.json"])
     require_paths(

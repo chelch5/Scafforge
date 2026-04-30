@@ -24,7 +24,7 @@
       ],
       "staging_locations": [
         "active-audits/<repo>/ for audit-accepted package evidence",
-        "active-plans/<plan>/references/ for non-audit candidates until they become bounded package work"
+          "docs/plans/scafforge-core/<plan>/references/ in the bootstrap workspace for non-audit candidates until they become bounded package work"
       ]
     },
     "external_sources": {
