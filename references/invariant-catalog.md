@@ -44,23 +44,24 @@ This catalog turns the RFC invariants into a checklist that later tickets can im
 19. Greenfield remains the primary user path.
 20. Audit and repair remain non-primary lifecycle tools and may not be required for normal greenfield success.
 21. The package must bias toward generated-repo self-sufficiency rather than host-side rescue dependence.
+22. Minimal-operable output may claim managed scaffold readiness only; full-specialization output may claim project-specific skills, agents, prompts, backlog expansion, and final continuation proof only after those stages run.
 
 ### Contract alignment
 
-22. `AGENTS.md`, `skills/skill-flow-manifest.json`, and the reference contracts must agree on authority ownership and publish-gate behavior.
-23. The greenfield contract may not be accidentally strengthened into a redundant second gate when repair and pivot publish gating are tightened.
-24. Contract-changing package PRs must update the affected root docs, canonical references, validator expectations, and touched generated-template docs in the same change set.
-25. Package root docs must route readers to the canonical truth surface for each major domain instead of duplicating detailed rules inconsistently.
+23. `AGENTS.md`, `skills/skill-flow-manifest.json`, and the reference contracts must agree on authority ownership and publish-gate behavior.
+24. The greenfield contract may not be accidentally strengthened into a redundant second gate when repair and pivot publish gating are tightened.
+25. Contract-changing package PRs must update the affected root docs, canonical references, validator expectations, and touched generated-template docs in the same change set.
+26. Package root docs must route readers to the canonical truth surface for each major domain instead of duplicating detailed rules inconsistently.
 
 ### Validation
 
-26. Every recurring loop class must have a replayable regression fixture.
-27. End-to-end repair tests must assert convergence and publish safety, not only exact strings.
-28. Tier 1 stacks must have real execution proof coverage on proof hosts.
-29. Existing curated fixture families must be preserved and upgraded rather than discarded.
+27. Every recurring loop class must have a replayable regression fixture.
+28. End-to-end repair tests must assert convergence and publish safety, not only exact strings.
+29. Tier 1 stacks must have real execution proof coverage on proof hosts.
+30. Existing curated fixture families must be preserved and upgraded rather than discarded.
 
 ### Adjacent inventory and workers
 
-30. Tracked generated-repo identity, durable or ephemeral class, host bindings, and path binding roles remain orchestration-owned state and must not be inferred from control-plane folder scans.
-31. Worker-host registration and health remain adjacent orchestration state and must not be reconstructed by direct control-plane shell mutation.
-32. Generated-repo inventory or worker-host records may not be serialized into generated canonical repo truth surfaces as a shadow authority layer.
+31. Tracked generated-repo identity, durable or ephemeral class, host bindings, and path binding roles remain orchestration-owned state and must not be inferred from control-plane folder scans.
+32. Worker-host registration and health remain adjacent orchestration state and must not be reconstructed by direct control-plane shell mutation.
+33. Generated-repo inventory or worker-host records may not be serialized into generated canonical repo truth surfaces as a shadow authority layer.

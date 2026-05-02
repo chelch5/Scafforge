@@ -1,13 +1,13 @@
 {
   "version": 1,
   "product": "Scafforge",
-  "output_profiles": ["opencode"],
+  "output_profiles": ["minimal-operable", "full-specialization", "opencode"],
   "optional_extensions": ["asset-pipeline"],
   "flow_graph_sanity": {
     "single_public_entrypoint": "scaffold-kickoff",
     "all_run_types_end_with": "handoff-brief",
     "validate_sequence_modes": true,
-    "acyclic_except_contract_smells": ["CYCLE001"]
+    "acyclic_except_contract_smells": []
   },
   "skill_governance": {
     "intake": {
@@ -51,14 +51,14 @@
     {
       "code": "CYCLE001",
       "title": "Project-skill and team-bootstrap dependency seam",
-      "status": "accepted-temporary-debt",
+      "status": "resolved-2026-05-01",
       "skills": ["project-skill-bootstrap", "opencode-team-bootstrap"],
       "current_order": [
         "project-skill-bootstrap:full-greenfield-pass",
         "opencode-team-bootstrap"
       ],
-      "why_safe_now": "Greenfield keeps project-skill-bootstrap before opencode-team-bootstrap so generated agent allowlists can reference repo-local skills that already exist.",
-      "removal_condition": "Replace this seam only after Scafforge splits minimal-operable managed surfaces from later project-specific specialization."
+      "why_safe_now": "Historical record only. The minimal-operable profile can now stop after managed scaffold and bootstrap-lane verification without running project-specific specialization.",
+      "removal_condition": "Resolved by the first-class minimal-operable versus full-specialization scaffold profile split."
     }
   ],
   "run_types": {
@@ -73,6 +73,15 @@
         "agent-prompt-engineering",
         "ticket-pack-builder:bootstrap",
         "repo-scaffold-factory:verify-generated-scaffold",
+        "handoff-brief"
+      ]
+    },
+    "greenfield-minimal-operable": {
+      "entrypoint": "scaffold-kickoff",
+      "sequence": [
+        "spec-pack-normalizer",
+        "repo-scaffold-factory:minimal-operable",
+        "repo-scaffold-factory:verify-bootstrap-lane",
         "handoff-brief"
       ]
     },
@@ -136,7 +145,7 @@
   "skills": {
     "scaffold-kickoff": {
       "owner": "conductor",
-      "modes": ["greenfield", "retrofit", "managed-repair", "pivot", "diagnosis-review"],
+      "modes": ["greenfield", "greenfield-minimal-operable", "retrofit", "managed-repair", "pivot", "diagnosis-review"],
       "inputs": ["messy project inputs", "normalized decisions"],
       "outputs": ["orchestrated run", "required downstream sequence"],
       "required_outputs": [
@@ -164,7 +173,7 @@
     },
     "repo-scaffold-factory": {
       "owner": "scaffold",
-      "modes": ["full", "opencode", "verify-bootstrap-lane", "verify-generated-scaffold"],
+      "modes": ["minimal-operable", "full-specialization", "full", "opencode", "verify-bootstrap-lane", "verify-generated-scaffold"],
       "inputs": ["canonical brief", "provider/model choices", "project identifiers"],
       "outputs": ["repo skeleton", "template docs", ".opencode layer", "bootstrap provenance"],
       "upstreams": ["spec-pack-normalizer", "scaffold-kickoff"],
@@ -181,7 +190,7 @@
         "lease-ownership and delegation consistency"
       ],
       "upstreams": ["project-skill-bootstrap", "spec-pack-normalizer", "scaffold-kickoff", "scafforge-repair"],
-      "downstreams": ["project-skill-bootstrap", "agent-prompt-engineering", "ticket-pack-builder", "scafforge-audit"]
+      "downstreams": ["agent-prompt-engineering", "ticket-pack-builder", "scafforge-audit"]
     },
     "ticket-pack-builder": {
       "owner": "queue",
@@ -207,7 +216,7 @@
         ".opencode/skills/model-operating-profile/SKILL.md",
         "no scaffold placeholder text in generated local skills"
       ],
-      "upstreams": ["repo-scaffold-factory", "opencode-team-bootstrap", "scaffold-kickoff", "scafforge-repair"],
+      "upstreams": ["repo-scaffold-factory", "scaffold-kickoff", "scafforge-repair"],
       "downstreams": ["opencode-team-bootstrap", "agent-prompt-engineering", "scafforge-audit"]
     },
     "agent-prompt-engineering": {

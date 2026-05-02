@@ -1,0 +1,5 @@
+
+> @scafforge/core@0.1.0 validate:contract
+> node scripts/run_python.mjs scripts/validate_scafforge_contract.py && node scripts/run_python.mjs scripts/test_scaffold_adapter.py
+
+Scafforge contract validation passed.

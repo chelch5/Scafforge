@@ -1,0 +1,5 @@
+COMMAND: python scripts/integration_test_scafforge.py
+START: 2026-05-01T09:45:49.1414111+01:00
+Scafforge integration test passed.
+EXIT_CODE: 0
+END: 2026-05-01T09:48:29.0351942+01:00

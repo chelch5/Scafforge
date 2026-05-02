@@ -53,12 +53,24 @@ The orchestration graph lives in `skills/skill-flow-manifest.json`.
 
 ## Default routes
 
-Greenfield remains the primary package path:
+Greenfield now has two explicit scaffold profiles.
+
+`minimal-operable` is the backend-safe stop point:
 
 ```text
 scaffold-kickoff
   -> spec-pack-normalizer
-  -> repo-scaffold-factory
+  -> repo-scaffold-factory:minimal-operable
+  -> repo-scaffold-factory:verify-bootstrap-lane
+  -> handoff-brief
+```
+
+`full-specialization` remains the primary package path for a generated repo that is ready for development:
+
+```text
+scaffold-kickoff
+  -> spec-pack-normalizer
+  -> repo-scaffold-factory:minimal-operable
   -> repo-scaffold-factory:verify-bootstrap-lane
   -> project-skill-bootstrap
   -> opencode-team-bootstrap
@@ -68,7 +80,7 @@ scaffold-kickoff
   -> handoff-brief
 ```
 
-The same run still allows one batched blocking-decision round, requires one uninterrupted same-session generation pass, and must finish with immediate continuation proof before handoff publication. Asset-heavy game repos may insert `asset-pipeline` between `project-skill-bootstrap` and `opencode-team-bootstrap`.
+The full-specialization run still allows one batched blocking-decision round, requires one uninterrupted same-session generation pass after minimal bootstrap proof, and must finish with immediate continuation proof before handoff publication. Asset-heavy game repos may insert `asset-pipeline` between `project-skill-bootstrap` and `opencode-team-bootstrap`.
 
 Other run types stay bounded:
 

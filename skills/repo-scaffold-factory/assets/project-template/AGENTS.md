@@ -26,6 +26,15 @@ If this file conflicts with any global AI instruction file, this file wins for t
 - `.opencode/meta/bootstrap-provenance.json` owns bootstrap and repair provenance
 - `START-HERE.md`, `.opencode/state/context-snapshot.md`, and `.opencode/state/latest-handoff.md` are derived restart surfaces
 
+## Scaffold Profile
+
+The active scaffold profile is recorded in `.opencode/meta/bootstrap-provenance.json` and mirrored in `.opencode/state/workflow-state.json`.
+
+- `minimal-operable` means managed restart, workflow, ticket, provenance, and validation-hook surfaces exist, but project-specific specialization is still pending.
+- `full-specialization` means repo-local skills, project-specific agents, prompt hardening, and bootstrap tickets have been generated and must pass final continuation verification before downstream PR work begins.
+
+Do not claim project-specific skills, agents, prompts, or backlog expansion are complete when the profile says specialization is pending.
+
 ## Required read order
 
 1. `START-HERE.md`

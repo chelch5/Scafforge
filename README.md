@@ -30,14 +30,23 @@ The package repo contains:
 
 Generated repos inherit OpenCode-oriented operating surfaces such as `.opencode/agents/`, `.opencode/tools/`, `.opencode/plugins/`, `.opencode/commands/`, `.opencode/skills/`, `tickets/`, `docs/spec/CANONICAL-BRIEF.md`, `START-HERE.md`, and `.opencode/skills/model-operating-profile/SKILL.md`.
 
-## Default lifecycle
+## Scaffold Profiles
 
-Greenfield generation is one kickoff run.
+Scafforge now has two first-class greenfield profiles:
+
+- `minimal-operable` renders the managed scaffold surfaces needed for a durable restart: canonical brief, `START-HERE.md`, workflow state, ticket manifest and board, bootstrap provenance, validation hooks, and one legal next move (`environment_bootstrap`).
+- `full-specialization` starts from the minimal-operable scaffold and continues through repo-local skills, project-specific agents, prompt hardening, backlog generation, final continuation verification, and handoff publication.
+
+The minimal profile lets an adjacent backend stop after bootstrap-lane proof when it needs a fast durable scaffold. The full profile remains the default human-facing one-shot path for a ready-to-develop generated repo.
+
+## Default Lifecycle
+
+Greenfield generation is one kickoff run. Full-specialization continues from the minimal-operable scaffold in that same run.
 
 ```text
 scaffold-kickoff
   -> spec-pack-normalizer
-  -> repo-scaffold-factory
+  -> repo-scaffold-factory:minimal-operable
   -> repo-scaffold-factory:verify-bootstrap-lane
   -> project-skill-bootstrap
   -> opencode-team-bootstrap
@@ -50,8 +59,6 @@ scaffold-kickoff
 This path allows one batched blocking-decision round and then completes in one uninterrupted same-session generation run. No second Scafforge generation pass is required before development begins. Greenfield completion requires immediate continuation proof, not only surface agreement.
 
 For game and asset-heavy repos, `asset-pipeline` is an optional extension after `project-skill-bootstrap` and before `opencode-team-bootstrap`.
-
-The package still carries one explicit temporary contract smell: `project-skill-bootstrap` and `opencode-team-bootstrap` remain ordered together until Scafforge has a minimal-operable-versus-specialization split.
 
 ## Lifecycle boundaries
 
@@ -81,7 +88,10 @@ An adjacent orchestration service may invoke `scaffold-kickoff` from a persisted
 
 - It owns job envelopes, idempotency or retry tokens, PR automation, and pause or resume controls.
 - It stays read-only with respect to generated `tickets/manifest.json` and `.opencode/state/workflow-state.json`.
-- `scaffold-verified` means the one-shot generation pass cleared VERIFY009 and has zero blocking VERIFY010 or VERIFY011 findings before downstream PR work begins.
+- `minimal-operable-verified` means bootstrap-lane proof passed with specialization truthfully pending.
+- `scaffold-verified` means the full-specialization pass cleared VERIFY009 and has zero blocking VERIFY010 or VERIFY011 findings before downstream PR work begins.
+
+The backend-callable scaffold adapter is `scripts/run_scaffold_adapter.py`. It accepts a versioned JSON input containing an approved brief path, target generated-repo root, repo slug, lifecycle preference, scaffold profile, idempotency key, and operator identity. It returns `scafforge-core.scaffold-adapter.v1` JSON with generated repo path, repo id, scaffold profile, minimal-operable status, specialization status, proof refs, roadmap ref, ticket manifest ref, validation status, blockers, and idempotency key. The adapter writes bootstrap-lane verification evidence into the generated repo and returns an idempotent replay for repeated calls with the same key.
 
 ## Adjacent control plane
 

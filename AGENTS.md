@@ -219,7 +219,7 @@ Skill evolution is a bounded package lifecycle, not permissionless skill accumul
 
 1. Keep core package behavior host-agnostic unless a file is clearly adapter-specific.
 2. Keep the default generated repo OpenCode-oriented.
-3. Prefer one orchestrated full-cycle build over a base-pass-plus-manual-enrichment design.
+3. Prefer the selected scaffold profile explicitly: minimal-operable for a durable managed scaffold, full-specialization for a ready-to-develop generated repo.
 4. Prefer deterministic workflow contracts over verbose prompting.
 5. Preserve clear ownership boundaries between diagnosis, mutation, restart publication, and proof.
 6. Generate the smallest surface compatible with the selected profile; keep heavier packs thin or lazy-activated until they are actually needed.
@@ -243,25 +243,29 @@ These skills are the backbone of the default greenfield path:
 
 The greenfield proof chain includes environment bootstrap detection, bootstrap-blocker persistence and routing, stack-specific execution proof where available, and reference-integrity verification before handoff.
 
-The shipped package still carries one explicit temporary contract smell: `project-skill-bootstrap` and `opencode-team-bootstrap` form a dependency seam, and the current order remains until Scafforge has a real minimal-operable-versus-specialization split.
+The package now splits minimal-operable managed scaffold generation from full-specialization. `project-skill-bootstrap` and `opencode-team-bootstrap` still run in that order during full-specialization so agent allowlists can reference repo-local skills, but the minimal-operable profile can stop before either specialization step.
 
 ## Canonical workflow contract
 
-### Greenfield full-cycle scaffold
+### Greenfield scaffold profiles
 
-The default route is:
+The minimal-operable route is:
 
 1. `scaffold-kickoff` decides this is a greenfield build.
 2. `spec-pack-normalizer` produces the canonical brief.
-3. `repo-scaffold-factory` renders the base scaffold.
+3. `repo-scaffold-factory:minimal-operable` renders canonical brief, restart, workflow state, ticket manifest, ticket board, bootstrap provenance, validation hooks, and one legal next move.
 4. Environment bootstrap detection runs and halts the flow with explicit blocker guidance when prerequisites are still missing.
 5. The kickoff-owned bootstrap-lane proof confirms one canonical first move before specialization begins, including VERIFY009 bootstrap-blocker persistence and routing.
-6. `project-skill-bootstrap` completes the repo-local skill pass.
-7. `opencode-team-bootstrap` designs the project-specific agent team.
-8. `agent-prompt-engineering` performs the same-session prompt-hardening pass.
-9. `ticket-pack-builder` runs in bootstrap mode.
-10. The kickoff-owned immediate-continuation verification gate proves the repo is truthful and immediately runnable, including VERIFY010 execution-surface checks and VERIFY011 reference-integrity checks.
-11. `handoff-brief` refreshes the restart surface.
+6. `handoff-brief` refreshes the restart surface with specialization truthfully marked pending.
+
+The full-specialization route continues from the verified minimal-operable scaffold:
+
+1. `project-skill-bootstrap` completes the repo-local skill pass.
+2. `opencode-team-bootstrap` designs the project-specific agent team.
+3. `agent-prompt-engineering` performs the same-session prompt-hardening pass.
+4. `ticket-pack-builder` runs in bootstrap mode.
+5. The kickoff-owned immediate-continuation verification gate proves the repo is truthful and immediately runnable, including VERIFY010 execution-surface checks and VERIFY011 reference-integrity checks.
+6. `handoff-brief` refreshes the restart surface.
 
 The greenfield contract remains one-shot: one batched blocking-decision round, one uninterrupted same-session generation pass, then direct handoff into development. No second Scafforge generation pass is required before development begins.
 
@@ -323,7 +327,7 @@ These refinements govern the package contract and implementation priorities:
 
 - intake is opportunistic first: scan messy docs, notes, and fragmented inputs before normalizing them into a canonical brief
 - meaningful ambiguity must be converted into a batched decision packet and asked, not silently assumed
-- the default output remains one full orchestration OpenCode scaffold
+- greenfield output is selected by profile: minimal-operable for a durable managed scaffold, full-specialization for the complete ready-to-develop orchestration scaffold
 - `scaffold-kickoff` remains the single public entrypoint for greenfield, retrofit, pivot, managed repair or update, and diagnosis or review flows
 - approved factory briefs are valid upstream inputs only when their handoff bundle is persisted
 - the greenfield handoff must be immediately continuable: one legal next move, one named owner, no bootstrap-first ambiguity, and zero unresolved stack-specific execution or canonical-reference failures
@@ -332,7 +336,7 @@ These refinements govern the package contract and implementation priorities:
 - orchestration-owned phase grouping, PR numbers, reviewer assignment, and package-change wait states must stay outside generated canonical repo state
 - managed-surface process replacement must leave explicit version and verification state so the generated repo can tell when its workflow contract changed
 - post-repair verification must prove both current-state cleanliness and causal-regression coverage whenever the repair basis was transcript-backed
-- the package still carries one explicit temporary contract smell until a minimal-operable-versus-specialization split exists between minimal managed surfaces and later specialization
+- minimal-operable-versus-full-specialization profile truth must be recorded in bootstrap provenance and workflow state
 
 ## Canonical generated-repo truth hierarchy
 
@@ -385,7 +389,7 @@ When changing the package:
 
 1. Verify the skill chain still makes sense end to end.
 2. Verify `scaffold-kickoff` still describes the real default workflow.
-3. Verify bootstrap-mode ticket generation still happens in the full-cycle path.
+3. Verify bootstrap-mode ticket generation still happens in the full-specialization path.
 4. Verify stack-adapter coverage, bootstrap guidance, and proof-host expectations still match `references/stack-adapter-contract.md`.
 5. Verify post-repair verification still uses stack-specific execution and reference-integrity checks where available.
 6. Verify audit still produces code-quality findings for non-Python stacks, not only workflow findings.

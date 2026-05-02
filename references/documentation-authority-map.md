@@ -22,7 +22,7 @@ This is the current source-of-truth map for Scafforge package documentation. Sta
 | `references/external-source-evaluation-rubric.md` | canonical reference | External-source evaluation, distillation, and source disposition rules |
 | `references/skill-validation-policy.md` | canonical reference | Skill-catalog thresholds, validation surface, and manual review gates |
 | `references/rejected-sources.md` | canonical reference | Quarantined or rejected external skill sources |
-| `references/one-shot-generation-contract.md` | canonical reference | One-shot greenfield lifecycle and publication gate |
+| `references/one-shot-generation-contract.md` | canonical reference | One-shot greenfield lifecycle, minimal-operable versus full-specialization profiles, and publication gate |
 | `references/stack-adapter-contract.md` | canonical reference | Stack detection, bootstrap, execution proof, and release-proof contract |
 | `references/generated-repo-inventory-contract.md` | canonical reference | Tracked generated-repo records, host/path bindings, and durable or ephemeral lifecycle classification |
 | `references/worker-host-contract.md` | canonical reference | Worker-host registration, capability reporting, and dispatch boundary |
@@ -33,7 +33,7 @@ This is the current source-of-truth map for Scafforge package documentation. Sta
 | --- | --- | --- | --- |
 | bootstrap `docs/plans/active-plans-index.md` | portfolio index | Plan ordering, portfolio shape, and plan-document expectations | Updated as a reminder, not a second policy source |
 | bootstrap `docs/plans/active-plans-docs-policy.md` | planning-format policy | Placement and naming rules for planning docs | Keeps plan formatting aligned to the standing rule from `AGENTS.md` |
-| bootstrap `docs/plans/scafforge-core/20-contract-validation-restoration/README.md` | current core plan | Core validation recovery work | Used in canonical workspace; not required for standalone package clone |
+| bootstrap `docs/plans/README.md` | active-plan index | Current workspace plan status and archival routing | Use to confirm whether workspace-level plan folders are active, archived, or intentionally empty |
 
 ## Generated-template docs
 

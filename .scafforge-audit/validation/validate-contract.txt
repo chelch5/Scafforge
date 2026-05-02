@@ -1,0 +1,27 @@
+COMMAND: npm run validate:contract
+START: 2026-05-01T09:45:49.1325285+01:00
+
+> @scafforge/core@0.1.0 validate:contract
+> node scripts/run_python.mjs scripts/validate_scafforge_contract.py
+
+Traceback (most recent call last):
+  File "C:\Users\rowan\Documents\GitHub\scafforge\platform\scafforge-core\scripts\validate_scafforge_contract.py", line 5073, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "C:\Users\rowan\Documents\GitHub\scafforge\platform\scafforge-core\scripts\validate_scafforge_contract.py", line 5054, in main
+    validate_core_docs(findings)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\rowan\Documents\GitHub\scafforge\platform\scafforge-core\scripts\validate_scafforge_contract.py", line 1014, in validate_core_docs
+    require_paths(findings, [WORKSPACE_CORE_PLANS_ROOT / "20-contract-validation-restoration" / "README.md"])
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rowan\Documents\GitHub\scafforge\platform\scafforge-core\scripts\validate_scafforge_contract.py", line 157, in require_paths
+    add_missing(findings, path)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\rowan\Documents\GitHub\scafforge\platform\scafforge-core\scripts\validate_scafforge_contract.py", line 37, in add_missing
+    Finding("error", f"Missing required file: {path.relative_to(ROOT)}")
+                                               ~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Python314\Lib\pathlib\__init__.py", line 490, in relative_to
+    raise ValueError(f"{str(self)!r} is not in the subpath of {str(other)!r}")
+ValueError: 'C:\\Users\\rowan\\Documents\\GitHub\\scafforge\\docs\\plans\\scafforge-core\\20-contract-validation-restoration\\README.md' is not in the subpath of 'C:\\Users\\rowan\\Documents\\GitHub\\scafforge\\platform\\scafforge-core'
+EXIT_CODE: 1
+END: 2026-05-01T09:45:50.1964414+01:00

@@ -1,0 +1,9 @@
+COMMAND: npm run validate:contract
+START: 2026-05-01T10:03:09.7346929+01:00
+
+> @scafforge/core@0.1.0 validate:contract
+> node scripts/run_python.mjs scripts/validate_scafforge_contract.py
+
+[ERROR] Missing required file: workspace:docs/plans/scafforge-core/20-contract-validation-restoration/README.md
+EXIT_CODE: 1
+END: 2026-05-01T10:03:15.8878271+01:00

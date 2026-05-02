@@ -10,12 +10,27 @@ The authority baseline for this lifecycle is documented in [authority-adr.md](au
 
 ## Greenfield contract
 
-A greenfield run follows this exact sequence:
+Greenfield generation has two explicit profiles.
+
+The `minimal-operable` profile follows this exact sequence:
 
 ```text
 scaffold-kickoff
   -> spec-pack-normalizer
-  -> repo-scaffold-factory
+  -> repo-scaffold-factory:minimal-operable
+  -> environment bootstrap detection and blocker routing
+  -> repo-scaffold-factory:verify-bootstrap-lane
+  -> handoff-brief
+```
+
+Minimal-operable output must include the canonical brief, `START-HERE.md`, workflow state, ticket manifest and board, bootstrap provenance, validation hooks, and one legal next move. It must record project-specific specialization as pending instead of implying repo-local skills, project-specific agents, prompt hardening, or backlog expansion already ran.
+
+The `full-specialization` profile starts from the minimal-operable scaffold and continues:
+
+```text
+scaffold-kickoff
+  -> spec-pack-normalizer
+  -> repo-scaffold-factory:minimal-operable
   -> environment bootstrap detection and blocker routing
   -> repo-scaffold-factory:verify-bootstrap-lane
   -> project-skill-bootstrap
@@ -40,12 +55,13 @@ The proof layers inside that sequence are part of the same one-shot pass:
 
 ## Same-session completion
 
-- After the blocking-decision round, generation completes in one uninterrupted same-session generation pass.
-- The host agent must complete every downstream greenfield generation skill in the same session.
+- After the blocking-decision round, full-specialization generation completes in one uninterrupted same-session generation pass.
+- The host agent must complete every downstream full-specialization generation skill in the same session.
 - No second Scafforge generation pass is required before development begins.
-- Greenfield completion requires immediate continuation proof, not only surface agreement.
+- Full-specialization completion requires immediate continuation proof, not only surface agreement.
 - That proof must complete before handoff publication.
 - Environment detection and bootstrap routing are part of that same pass. If missing prerequisites remain, the pass must halt with explicit user-actionable blockers instead of continuing into specialization or handoff.
+- An adjacent backend may stop at the verified minimal-operable profile when the job asks for a fast durable scaffold; that stop must leave specialization status as `pending`.
 
 The same final-state publish gate applies to greenfield, repair, and pivot publication. Restart surfaces may only be published from the verified final snapshot; repair-side restart rendering is not an alternate authority.
 
@@ -54,7 +70,8 @@ The same final-state publish gate applies to greenfield, repair, and pivot publi
 - An adjacent orchestration service may invoke `scaffold-kickoff` only after the approved-brief handoff bundle is persisted and addressable.
 - The wrapper owns the job envelope, idempotency keys, retry tokens, phase grouping, PR automation, and pause or resume controls.
 - The wrapper stays read-only with respect to `tickets/manifest.json`, `.opencode/state/workflow-state.json`, and restart publication. It may read those surfaces plus `docs/spec/CANONICAL-BRIEF.md`, `START-HERE.md`, and `.opencode/meta/bootstrap-provenance.json`.
-- `scaffold-verified` means the one-shot pass cleared VERIFY009 bootstrap persistence and has zero blocking VERIFY010 and VERIFY011 findings.
+- `scaffold-verified` for a full-specialization job means the one-shot pass cleared VERIFY009 bootstrap persistence and has zero blocking VERIFY010 and VERIFY011 findings.
+- `minimal-operable-verified` means the managed scaffold cleared bootstrap-lane proof and truthfully records specialization as pending.
 - No downstream phase, branch, or PR work may begin until `scaffold-verified` is true and `handoff-brief` has published restart surfaces from the verified final snapshot.
 - Downstream PR-based phase work happens after the generation cycle. It must not be modeled as a second Scafforge generation pass or by mutating package-owned truth directly.
 

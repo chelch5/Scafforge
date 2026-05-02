@@ -19,3 +19,5 @@ Adapter responsibilities:
 For GitHub Copilot specifically, the supported installation shape is the Scafforge `skills/` folders themselves. Copy or symlink each skill directory into `~/.copilot/skills/` so the skill-local `SKILL.md`, `scripts/`, `assets/`, and `references/` remain together.
 
 Use `adapters/manifest.json` as the machine-readable version of this split.
+
+The orchestration backend adapter entrypoint is `../scripts/run_scaffold_adapter.py`. It is intentionally a package-side adapter: it invokes the deterministic scaffold script with an explicit `scaffold_profile`, records approved-brief and verification evidence in the generated repo, and returns refs to generated truth surfaces. It can stop after `minimal-operable` bootstrap-lane proof or return the `full-specialization` contract surface; it does not let the backend write generated repo canonical truth directly.

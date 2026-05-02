@@ -29,6 +29,7 @@ Rules:
 - let `ticket_update` derive the matching queue status from the lifecycle stage unless a compatible status is explicitly required
 - stop on repeated lifecycle-tool contradictions; re-run `ticket_lookup`, inspect `transition_guidance`, and return a blocker instead of probing alternate stage/status values
 - treat bootstrap readiness as a pre-lifecycle execution gate; if `ticket_lookup.bootstrap.status` is not `ready`, run `environment_bootstrap` first, then rerun `ticket_lookup` before any stage change
+- respect scaffold profile truth from `.opencode/meta/bootstrap-provenance.json`: `minimal-operable` may only claim managed scaffold readiness, while `full-specialization` may claim project-specific skills, agents, prompts, backlog expansion, and final continuation proof after those stages actually run
 - if repeated bootstrap artifacts show the same command trace but it still omits the extra or group flags the repo layout requires, treat that as a managed bootstrap defect and stop retrying until audit or repair refreshes the tool
 - only Wave 0 setup work may claim a write-capable lease before bootstrap is ready
 - the team leader owns `ticket_claim` and `ticket_release`; planning, implementation, review, QA, and optional handoff specialists write only under the already-active ticket lease

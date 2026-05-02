@@ -1,0 +1,9 @@
+COMMAND: npm run validate:contract
+START: 2026-05-01T10:04:25.0609679+01:00
+
+> @scafforge/core@0.1.0 validate:contract
+> node scripts/run_python.mjs scripts/validate_scafforge_contract.py
+
+Scafforge contract validation passed.
+EXIT_CODE: 0
+END: 2026-05-01T10:04:28.5020530+01:00

@@ -1,0 +1,10 @@
+COMMAND: npm run validate:smoke
+START: 2026-05-01T09:45:49.1477166+01:00
+
+> @scafforge/core@0.1.0 validate:smoke
+> node scripts/run_python.mjs scripts/smoke_test_scafforge.py
+
+Skipping uv-dependent source-follow-up public repair assertions because `uv` is not available on this host.
+Scafforge smoke test passed.
+EXIT_CODE: 0
+END: 2026-05-01T09:54:16.1156871+01:00

@@ -10,7 +10,7 @@
   },
   "core_responsibilities": [
     "normalize inputs",
-    "render scaffold",
+    "render scaffold with explicit minimal-operable or full-specialization profile",
     "maintain OpenCode output contract",
     "validate docs and template integrity"
   ],

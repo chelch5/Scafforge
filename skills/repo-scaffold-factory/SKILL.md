@@ -9,7 +9,9 @@ Use this skill to generate the initial repository file tree. This is a TWO-PHASE
 
 ## Mode selection
 
-- If this skill is reached from `scaffold-kickoff` for a new repo, use the full scaffold path (`--scope full`).
+- If this skill is reached from `scaffold-kickoff` for a new repo, render `--scope full` with an explicit `--scaffold-profile`.
+- Use `--scaffold-profile minimal-operable` when an adjacent backend needs a durable scaffold that can stop after bootstrap-lane proof.
+- Use `--scaffold-profile full-specialization` for the default ready-to-develop greenfield path.
 - If the user explicitly wants only the OpenCode operating layer for an existing repo, use `--scope opencode`.
 - If the destination already contains code or curated project files and the user has not made clear whether to overwrite the full repo or add only the operating layer, ask the user before choosing the scope.
 
@@ -39,6 +41,7 @@ Optional flags:
 - `--utility-model <model>` — set a different model for utility agents (defaults to planner model)
 - `--stack-label <label>` — stack label for generated docs (defaults to "framework-agnostic")
 - `--scope opencode` — generate only the .opencode/ layer (for retrofit)
+- `--scaffold-profile minimal-operable|full-specialization` — choose the managed stop point
 - `--force` — overwrite existing files
 
 ### What the script generates
@@ -54,9 +57,11 @@ The script copies files from `assets/project-template/` and substitutes these pl
 - `__UTILITY_MODEL__` → utility agent model string
 - `__STACK_LABEL__` → stack/framework label
 
-Output includes: README.md, AGENTS.md, START-HERE.md, docs/, tickets/, opencode.jsonc, .opencode/ (agents, tools, plugins, commands, skills, config, state), and .opencode/meta/bootstrap-provenance.json.
+Minimal-operable output includes: README.md, AGENTS.md, START-HERE.md, docs/, tickets/, opencode.jsonc, .opencode/ managed validation hooks, workflow state, and .opencode/meta/bootstrap-provenance.json with specialization marked pending.
 
-For Godot Android game stacks, the script also seeds the base asset-pipeline surfaces so later skills start from a real repo layout instead of prose-only guidance:
+Full-specialization output additionally keeps the same managed base ready for repo-local skill synthesis, project-specific agents, prompt hardening, backlog generation, final continuation verification, and handoff publication.
+
+For Godot Android game stacks in the full-specialization profile, the script also seeds the base asset-pipeline surfaces so later skills start from a real repo layout instead of prose-only guidance:
 - `assets/requirements.json`
 - `assets/pipeline.json`
 - `assets/manifest.json`
@@ -80,7 +85,7 @@ The arguments should come from the canonical brief and user decisions:
 
 ## Phase B: Customize with project-specific content (agent-driven)
 
-After the script generates the base files, you MUST customize them with actual project content in the same session. Phase B is mandatory completion work, not an optional revisit. The generated files contain generic placeholder text that must be replaced before handoff.
+After the script generates the base files for full-specialization, you MUST customize them with actual project content in the same session. Phase B is mandatory completion work for full-specialization, not an optional revisit. The minimal-operable profile may stop after managed scaffold verification, but it must record specialization as pending and must not claim project-specific local skills, agents, prompts, or backlog expansion already ran.
 
 ### Files to customize
 
@@ -126,7 +131,7 @@ That early gate must prove one canonical bootstrap ticket, one valid bootstrap s
 
 The final verifier now also rejects placeholder residue, invalid canonical JSON or JSONC, broken generated agent references, project-name drift across key handoff surfaces, and missing asset-pipeline starter surfaces for generated game repos.
 
-Then continue to `../project-skill-bootstrap/SKILL.md` for the full greenfield local-skill pass, and later use `scripts/verify_generated_scaffold.py` again with the default verification kind as the final immediate-continuation gate before handoff.
+For the minimal-operable profile, stop here after restart publication with specialization marked pending. For the full-specialization profile, continue to `../project-skill-bootstrap/SKILL.md` for the full greenfield local-skill pass, and later use `scripts/verify_generated_scaffold.py` again with the default verification kind as the final immediate-continuation gate before handoff.
 
 ## References
 

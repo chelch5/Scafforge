@@ -56,6 +56,9 @@ PRESERVED_OPENCODE_RUNTIME_FILES = {
 PROCESS_CONTRACT_VERSION = 7
 TICKET_CONTRACT_VERSION = 3
 DEFAULT_PARALLEL_MODE = "sequential"
+SCAFFOLD_PROFILE_MINIMAL = "minimal-operable"
+SCAFFOLD_PROFILE_FULL = "full-specialization"
+SCAFFOLD_PROFILES = (SCAFFOLD_PROFILE_MINIMAL, SCAFFOLD_PROFILE_FULL)
 PLACEHOLDER_PATTERN = re.compile(r"__[A-Z0-9_]+__")
 DEFAULT_DELIVERABLE_KIND = "prototype unless the normalized brief records a stricter final product bar"
 DEFAULT_PLACEHOLDER_POLICY = "placeholder_ok unless the normalized brief records a stricter finish policy"
@@ -352,20 +355,27 @@ def ensure_idempotent_target(dest_root: Path) -> None:
             f"Refusing to scaffold into {dest_root}: an existing .opencode/ layer was found. "
             "Use the retrofit or repair flow instead of double-scaffolding an existing repo."
         )
-def should_copy(root_name: str, scope: str, stack_label: str) -> bool:
+def should_copy(root_name: str, scope: str, stack_label: str, scaffold_profile: str) -> bool:
     if scope == "opencode":
         return root_name in OPENCODE_SCOPE_FILES
     if root_name in {"export_presets.cfg", "android"}:
-        return renders_godot_android_assets(stack_label)
+        return scaffold_profile == SCAFFOLD_PROFILE_FULL and renders_godot_android_assets(stack_label)
     return root_name in FULL_SCOPE_FILES
 
 
-def copy_template(template_root: Path, dest_root: Path, replacements: dict[str, str], scope: str, force: bool) -> list[Path]:
+def copy_template(
+    template_root: Path,
+    dest_root: Path,
+    replacements: dict[str, str],
+    scope: str,
+    force: bool,
+    scaffold_profile: str,
+) -> list[Path]:
     created: list[Path] = []
     stack_label = replacements.get("__STACK_LABEL__", "")
 
     for source in template_root.iterdir():
-        if not should_copy(source.name, scope, stack_label):
+        if not should_copy(source.name, scope, stack_label, scaffold_profile):
             continue
         target = dest_root / source.name
         if source.is_dir():
@@ -1286,6 +1296,7 @@ def write_bootstrap_provenance(
     package_name: str,
     agent_prefix: str,
     scope: str,
+    scaffold_profile: str,
     model_tier: str,
     model_provider: str,
     planner_model: str,
@@ -1310,11 +1321,15 @@ def write_bootstrap_provenance(
         visual_finish_target=visual_finish_target,
         finish_acceptance_signals=finish_acceptance_signals,
     )
-    steps = (
-        ["repo-scaffold-factory/render-full-scaffold"]
-        if scope == "full"
-        else ["opencode-team-bootstrap/render-opencode-layer", "repo-scaffold-factory/render-opencode-scope"]
-    )
+    if scope == "opencode":
+        steps = ["opencode-team-bootstrap/render-opencode-layer", "repo-scaffold-factory/render-opencode-scope"]
+    elif scaffold_profile == SCAFFOLD_PROFILE_MINIMAL:
+        steps = [
+            "repo-scaffold-factory/render-minimal-operable-scaffold",
+            "repo-scaffold-factory/verify-bootstrap-lane",
+        ]
+    else:
+        steps = ["repo-scaffold-factory/render-full-specialization-scaffold"]
     payload = {
         "managed_repo": str(managed_repo_root()),
         "template_commit": template_commit_result.get("commit") or "missing_provenance",
@@ -1325,6 +1340,27 @@ def write_bootstrap_provenance(
         "package_name": package_name,
         "agent_prefix": agent_prefix,
         "generation_scope": scope,
+        "scaffold_profile": scaffold_profile,
+        "profile_contract": {
+            "minimal_operable_surfaces": [
+                "docs/spec/CANONICAL-BRIEF.md",
+                "START-HERE.md",
+                "tickets/manifest.json",
+                "tickets/BOARD.md",
+                ".opencode/state/workflow-state.json",
+                ".opencode/tools/environment_bootstrap.ts",
+                ".opencode/tools/ticket_lookup.ts",
+                ".opencode/tools/handoff_publish.ts",
+            ],
+            "minimal_operable_next_move": "environment_bootstrap",
+            "specialization_status": profile_specialization_status(scaffold_profile),
+            "specialization_stages": [
+                "project-skill-bootstrap",
+                "opencode-team-bootstrap",
+                "agent-prompt-engineering",
+                "ticket-pack-builder",
+            ],
+        },
         "runtime_models": {
             "tier": model_tier,
             "provider": model_provider,
@@ -1367,7 +1403,8 @@ def write_bootstrap_provenance(
             "ticket_contract_version": TICKET_CONTRACT_VERSION,
             "parallel_mode": DEFAULT_PARALLEL_MODE,
             "manager_hierarchy": {
-                "first_class_scaffold_profile": False,
+                "first_class_scaffold_profile": True,
+                "active_scaffold_profile": scaffold_profile,
                 "advanced_customization_allowed": True,
             },
             "post_migration_verification": {
@@ -1430,6 +1467,76 @@ def ensure_state_directories(dest_root: Path) -> None:
         (dest_root / relative).mkdir(parents=True, exist_ok=True)
 
 
+def profile_specialization_status(scaffold_profile: str) -> str:
+    return "pending" if scaffold_profile == SCAFFOLD_PROFILE_MINIMAL else "selected"
+
+
+def apply_scaffold_profile_metadata(dest_root: Path, *, scaffold_profile: str) -> None:
+    """Record profile truth in generated restart and state surfaces."""
+    status = profile_specialization_status(scaffold_profile)
+    workflow_path = dest_root / ".opencode" / "state" / "workflow-state.json"
+    if workflow_path.exists():
+        workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+        if isinstance(workflow, dict):
+            workflow["scaffold_profile"] = {
+                "name": scaffold_profile,
+                "minimal_operable": True,
+                "specialization_status": status,
+                "pending_specialization_stages": (
+                    [
+                        "project-skill-bootstrap",
+                        "opencode-team-bootstrap",
+                        "agent-prompt-engineering",
+                        "ticket-pack-builder",
+                    ]
+                    if scaffold_profile == SCAFFOLD_PROFILE_MINIMAL
+                    else []
+                ),
+            }
+            workflow_path.write_text(json.dumps(workflow, indent=2) + "\n", encoding="utf-8")
+
+    readme_path = dest_root / "README.md"
+    if readme_path.exists():
+        readme = readme_path.read_text(encoding="utf-8")
+        if "## Scaffold Profile" not in readme:
+            readme = readme.replace(
+                "## Workflow Notes\n",
+                "\n".join(
+                    [
+                        "## Scaffold Profile",
+                        "",
+                        f"- profile: {scaffold_profile}",
+                        "- minimal_operable_surfaces: docs/spec/CANONICAL-BRIEF.md, START-HERE.md, tickets/manifest.json, tickets/BOARD.md, .opencode/state/workflow-state.json, and validation hooks",
+                        f"- specialization_status: {status}",
+                        "",
+                        "## Workflow Notes",
+                        "",
+                    ]
+                ),
+                1,
+            )
+            readme_path.write_text(readme, encoding="utf-8")
+
+    start_here_path = dest_root / "START-HERE.md"
+    if start_here_path.exists():
+        start_here = start_here_path.read_text(encoding="utf-8")
+        if "- scaffold_profile:" not in start_here:
+            start_here = start_here.replace(
+                "## Generation Status\n\n",
+                "\n".join(
+                    [
+                        "## Generation Status",
+                        "",
+                        f"- scaffold_profile: {scaffold_profile}",
+                        f"- specialization_status: {status}",
+                    ]
+                )
+                + "\n",
+                1,
+            )
+            start_here_path.write_text(start_here, encoding="utf-8")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render the repository scaffold template.")
     parser.add_argument("--dest", required=True, help="Destination repository root")
@@ -1466,6 +1573,15 @@ def parse_args() -> argparse.Namespace:
         choices=("full", "opencode"),
         default="full",
         help="Render the full scaffold or only the OpenCode layer",
+    )
+    parser.add_argument(
+        "--scaffold-profile",
+        choices=SCAFFOLD_PROFILES,
+        default=SCAFFOLD_PROFILE_FULL,
+        help=(
+            "Render a minimal-operable scaffold that can stop after bootstrap-lane proof, "
+            "or the full-specialization profile that continues through project-specific skills, agents, prompts, and tickets."
+        ),
     )
     parser.add_argument(
         "--stack-label",
@@ -1532,7 +1648,11 @@ def main() -> int:
         finish_acceptance_signals=args.finish_acceptance_signals,
     )
     asset_pipeline_preview: tuple[dict[str, object], dict[str, object]] | None = None
-    if args.scope == "full" and renders_godot_android_assets(args.stack_label):
+    if (
+        args.scope == "full"
+        and args.scaffold_profile == SCAFFOLD_PROFILE_FULL
+        and renders_godot_android_assets(args.stack_label)
+    ):
         asset_pipeline_preview = ASSET_PIPELINE_INIT.preview_asset_pipeline(
             stack_label=args.stack_label,
             deliverable_kind=args.deliverable_kind,
@@ -1596,51 +1716,60 @@ def main() -> int:
     validate_replacement_values(replacements)
 
     dest_root.mkdir(parents=True, exist_ok=True)
-    created = copy_template(template_root, dest_root, replacements, args.scope, args.force)
-    created.extend(
-        ensure_asset_pipeline_surfaces(
+    created = copy_template(
+        template_root,
+        dest_root,
+        replacements,
+        args.scope,
+        args.force,
+        args.scaffold_profile,
+    )
+    if args.scaffold_profile == SCAFFOLD_PROFILE_FULL:
+        created.extend(
+            ensure_asset_pipeline_surfaces(
+                dest_root,
+                scope=args.scope,
+                stack_label=args.stack_label,
+                deliverable_kind=args.deliverable_kind,
+                placeholder_policy=args.placeholder_policy,
+                content_source_plan=args.content_source_plan,
+                licensing_or_provenance_constraints=args.licensing_or_provenance_constraints,
+                finish_acceptance_signals=finish_acceptance_signals,
+                force=args.force,
+            )
+        )
+        created.extend(
+            ensure_blender_route_operating_surfaces(
+                dest_root,
+                agent_prefix=agent_prefix,
+                full_implementer_model=replacements["__FULL_IMPLEMENTER_MODEL__"],
+                force=args.force,
+            )
+        )
+        ensure_finish_ownership_tickets(
             dest_root,
-            scope=args.scope,
             stack_label=args.stack_label,
             deliverable_kind=args.deliverable_kind,
             placeholder_policy=args.placeholder_policy,
+            visual_finish_target=args.visual_finish_target,
+            audio_finish_target=args.audio_finish_target,
             content_source_plan=args.content_source_plan,
-            licensing_or_provenance_constraints=args.licensing_or_provenance_constraints,
             finish_acceptance_signals=finish_acceptance_signals,
-            force=args.force,
         )
-    )
-    created.extend(
-        ensure_blender_route_operating_surfaces(
+        ensure_godot_android_completion_tickets(
             dest_root,
-            agent_prefix=agent_prefix,
-            full_implementer_model=replacements["__FULL_IMPLEMENTER_MODEL__"],
-            force=args.force,
+            slug,
+            args.stack_label,
+            deliverable_kind=args.deliverable_kind,
         )
-    )
-    ensure_finish_ownership_tickets(
-        dest_root,
-        stack_label=args.stack_label,
-        deliverable_kind=args.deliverable_kind,
-        placeholder_policy=args.placeholder_policy,
-        visual_finish_target=args.visual_finish_target,
-        audio_finish_target=args.audio_finish_target,
-        content_source_plan=args.content_source_plan,
-        finish_acceptance_signals=finish_acceptance_signals,
-    )
-    ensure_godot_android_completion_tickets(
-        dest_root,
-        slug,
-        args.stack_label,
-        deliverable_kind=args.deliverable_kind,
-    )
-    ensure_finish_validation_lane(
-        dest_root,
-        stack_label=args.stack_label,
-        deliverable_kind=args.deliverable_kind,
-        finish_acceptance_signals=finish_acceptance_signals,
-    )
+        ensure_finish_validation_lane(
+            dest_root,
+            stack_label=args.stack_label,
+            deliverable_kind=args.deliverable_kind,
+            finish_acceptance_signals=finish_acceptance_signals,
+        )
     ensure_state_directories(dest_root)
+    apply_scaffold_profile_metadata(dest_root, scaffold_profile=args.scaffold_profile)
     write_bootstrap_provenance(
         dest_root,
         project_name=args.project_name,
@@ -1648,6 +1777,7 @@ def main() -> int:
         package_name=package_name,
         agent_prefix=agent_prefix,
         scope=args.scope,
+        scaffold_profile=args.scaffold_profile,
         model_tier=args.model_tier,
         model_provider=args.model_provider,
         planner_model=planner_model,

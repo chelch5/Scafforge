@@ -19,11 +19,20 @@ Before starting, classify the run type:
 
 If the repo state and the user's request do not make the run type clear, ask the user before proceeding. Do not silently choose between greenfield, retrofit, pivot, managed repair, and diagnosis/review when that choice would materially change scope.
 
-## Full greenfield workflow
+## Greenfield profiles
+
+Scafforge has two greenfield profiles:
+
+- `minimal-operable` stops after a verified managed scaffold with specialization marked pending.
+- `full-specialization` continues through repo-local skills, project-specific agents, prompt hardening, backlog generation, final continuation proof, and handoff.
+
+The human default is full-specialization. The adjacent backend may request minimal-operable when it needs a fast durable scaffold.
+
+## Full-specialization greenfield workflow
 
 Follow these steps in order. Each step references a sibling skill. Read it at the relative path shown.
 
-Greenfield generation has no further user-selectable submodes. After the blocking-decision round is resolved, you must complete every downstream generation skill in the same session. Do not route the initial generation pass into `scafforge-audit` or `scafforge-repair`.
+After the blocking-decision round is resolved, full-specialization generation must complete every downstream specialization skill in the same session. Do not route the initial generation pass into `scafforge-audit` or `scafforge-repair`.
 
 ### Step 1: Normalize the spec pack
 
@@ -62,8 +71,8 @@ Do not guess at blocking choices. Do not proceed until they are resolved.
 Read `../repo-scaffold-factory/SKILL.md` and follow its procedure.
 
 This has two phases:
-- Phase A: run the Python script to generate the template file tree with placeholder substitution
-- Phase B: customize the generated files with project-specific content from the canonical brief
+- Phase A: run the Python script with `--scope full --scaffold-profile minimal-operable` or `--scope full --scaffold-profile full-specialization`
+- Phase B: for full-specialization, customize the generated files with project-specific content from the canonical brief
 
 Record the selected `model_tier` during this step. It tunes prompt density only; it does not permit skipping bootstrap, verification, or handoff proof.
 
@@ -90,7 +99,11 @@ This early gate is narrower than the final handoff gate. It must prove:
 Do not continue into project-specific specialization if this bootstrap-lane proof fails.
 If the verifier reports `is_user_action: true`, stop and surface the prerequisite gap to the operator. If it reports `is_user_action: false`, repair the generated repo automatically and rerun the proof before moving on.
 
-### Step 5: Bootstrap project-local skills
+### Step 5: Minimal-operable stop gate
+
+If the selected profile is `minimal-operable`, publish the restart surface with `handoff-brief`, leave `specialization_status` as `pending` in bootstrap provenance and workflow state, and stop. Do not claim repo-local skills, project-specific agents, prompt hardening, or backlog expansion ran.
+
+### Step 6: Bootstrap project-local skills
 
 Read `../project-skill-bootstrap/SKILL.md` and follow its greenfield procedure.
 
@@ -99,7 +112,7 @@ Populate the repo-local skill pack in one pass:
 - create any required synthesized skills from project evidence
 - write the downstream model operating profile skill for the selected model profile
 
-### Step 6: Design and customize the agent team
+### Step 7: Design and customize the agent team
 
 Read `../opencode-team-bootstrap/SKILL.md` and follow its procedure.
 
@@ -109,13 +122,13 @@ The scaffold creates generic agent templates. You must now customize them:
 - keep the topology conservative unless the brief proves disjoint domains
 - reference only repo-local skills that already exist
 
-### Step 7: Harden agent prompts
+### Step 8: Harden agent prompts
 
 Read `../agent-prompt-engineering/SKILL.md` and follow its procedure.
 
 This is a required same-session hardening pass in the standard greenfield scaffold flow.
 
-### Step 8: Build the ticket backlog
+### Step 9: Build the ticket backlog
 
 Read `../ticket-pack-builder/SKILL.md` and follow its procedure in bootstrap mode.
 
@@ -124,7 +137,7 @@ Create implementation-ready tickets only after local skills, team topology, and 
 - keep each ticket small enough for one agent session
 - convert unresolved major decisions into blocked or decision tickets instead of guesses
 
-### Step 9: Verify immediate continuation before handoff
+### Step 10: Verify immediate continuation before handoff
 
 Before you begin the handoff step, run one same-session immediate-continuation verification gate across the generated workflow surfaces:
 
@@ -156,15 +169,15 @@ Confirm that they agree on:
 
 If these surfaces disagree, fix the contract before handing off the repo.
 If continuation verification fails with `is_user_action: true`, surface the blocker to the user instead of continuing. If the verifier returns `is_user_action: false`, fix the generated repo and rerun verification before handoff.
-This gate is the only package-owned basis for an adjacent orchestration service to call the repo `scaffold-verified`. Do not let downstream phase, branch, or PR work start from a successful render alone.
+This gate is the only package-owned basis for an adjacent orchestration service to call a full-specialization repo `scaffold-verified`. A minimal-operable repo may only claim `minimal-operable-verified` until specialization and final continuation proof run. Do not let downstream phase, branch, or PR work start from a successful render alone.
 
-### Step 10: Write the handoff surface
+### Step 11: Write the handoff surface
 
 Read `../handoff-brief/SKILL.md` and follow its procedure.
 
 Generate `START-HERE.md` with actual project state so the repo can be resumed by another agent or session.
 
-### Step 11: Done
+### Step 12: Done
 
 The scaffold is complete when all of these exist:
 - `docs/spec/CANONICAL-BRIEF.md` with real project content

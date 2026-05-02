@@ -14,6 +14,7 @@ TEMPLATE_ROOT = (
     ROOT / "skills" / "repo-scaffold-factory" / "assets" / "project-template"
 )
 WORKSPACE_ROOT = ROOT.parents[1] if len(ROOT.parents) > 1 else ROOT
+WORKSPACE_PLANS_README = WORKSPACE_ROOT / "docs" / "plans" / "README.md"
 WORKSPACE_CORE_PLANS_ROOT = WORKSPACE_ROOT / "docs" / "plans" / "scafforge-core"
 ARCHIVE_DIAGNOSIS_ROOT = WORKSPACE_ROOT / "platform" / "scafforge-archive" / "archived-diagnosis-plans"
 
@@ -32,9 +33,24 @@ def read_json(path: Path) -> object:
     return json.loads(read_text(path))
 
 
+def path_label(path: Path) -> str:
+    """Render paths for findings, including workspace-level files outside Core."""
+    resolved = path.resolve()
+    root = ROOT.resolve()
+    workspace_root = WORKSPACE_ROOT.resolve()
+    try:
+        return resolved.relative_to(root).as_posix()
+    except ValueError:
+        pass
+    try:
+        return f"workspace:{resolved.relative_to(workspace_root).as_posix()}"
+    except ValueError:
+        return str(path)
+
+
 def add_missing(findings: list[Finding], path: Path) -> None:
     findings.append(
-        Finding("error", f"Missing required file: {path.relative_to(ROOT)}")
+        Finding("error", f"Missing required file: {path_label(path)}")
     )
 
 
@@ -46,7 +62,7 @@ def require_contains(findings: list[Finding], path: Path, needle: str) -> None:
         findings.append(
             Finding(
                 "error",
-                f"{path.relative_to(ROOT)} does not contain required text: {needle}",
+                f"{path_label(path)} does not contain required text: {needle}",
             )
         )
 
@@ -59,7 +75,7 @@ def require_absent(findings: list[Finding], path: Path, needle: str) -> None:
         findings.append(
             Finding(
                 "error",
-                f"{path.relative_to(ROOT)} still contains forbidden text: {needle}",
+                f"{path_label(path)} still contains forbidden text: {needle}",
             )
         )
 
@@ -72,7 +88,7 @@ def require_absent_regex(findings: list[Finding], path: Path, pattern: str) -> N
         findings.append(
             Finding(
                 "error",
-                f"{path.relative_to(ROOT)} still matches forbidden pattern: {pattern}",
+                f"{path_label(path)} still matches forbidden pattern: {pattern}",
             )
         )
 
@@ -88,7 +104,7 @@ def require_order(findings: list[Finding], path: Path, first: str, second: str) 
         findings.append(
             Finding(
                 "error",
-                f"{path.relative_to(ROOT)} must contain ordered text: {first!r} before {second!r}",
+                f"{path_label(path)} must contain ordered text: {first!r} before {second!r}",
             )
         )
         return
@@ -96,7 +112,7 @@ def require_order(findings: list[Finding], path: Path, first: str, second: str) 
         findings.append(
             Finding(
                 "error",
-                f"{path.relative_to(ROOT)} must place {first!r} before {second!r}",
+                f"{path_label(path)} must place {first!r} before {second!r}",
             )
         )
 
@@ -106,7 +122,7 @@ def require_not_exists(findings: list[Finding], path: Path) -> None:
         findings.append(
             Finding(
                 "error",
-                f"Deprecated or private surface should not exist: {path.relative_to(ROOT)}",
+                f"Deprecated or private surface should not exist: {path_label(path)}",
             )
         )
 
@@ -139,14 +155,14 @@ def require_reference_sync(
         findings.append(
             Finding(
                 "error",
-                f"{secondary.relative_to(ROOT)} is out of sync with {primary.relative_to(ROOT)} for {label}; missing codes: {', '.join(missing)}",
+                f"{path_label(secondary)} is out of sync with {path_label(primary)} for {label}; missing codes: {', '.join(missing)}",
             )
         )
     if extra:
         findings.append(
             Finding(
                 "error",
-                f"{secondary.relative_to(ROOT)} diverges from {primary.relative_to(ROOT)} for {label}; unexpected codes: {', '.join(extra)}",
+                f"{path_label(secondary)} diverges from {path_label(primary)} for {label}; unexpected codes: {', '.join(extra)}",
             )
         )
 
@@ -170,7 +186,7 @@ def require_json_field(
             findings.append(
                 Finding(
                     "error",
-                    f"{path.relative_to(ROOT)} is missing JSON key path: {'.'.join(key_path)}",
+                    f"{path_label(path)} is missing JSON key path: {'.'.join(key_path)}",
                 )
             )
             return
@@ -179,7 +195,7 @@ def require_json_field(
         findings.append(
             Finding(
                 "error",
-                f"{path.relative_to(ROOT)} expected {'.'.join(key_path)} == {expected!r}, found {cursor!r}",
+                f"{path_label(path)} expected {'.'.join(key_path)} == {expected!r}, found {cursor!r}",
             )
         )
 
@@ -195,7 +211,7 @@ def require_files_equal(findings: list[Finding], left: Path, right: Path) -> Non
         findings.append(
             Finding(
                 "error",
-                f"Shared reference surfaces diverged: {left.relative_to(ROOT)} != {right.relative_to(ROOT)}",
+                f"Shared reference surfaces diverged: {path_label(left)} != {path_label(right)}",
             )
         )
 
@@ -226,7 +242,7 @@ def require_script_help_runs(findings: list[Finding], path: Path) -> None:
         findings.append(
             Finding(
                 "error",
-                f"{path.relative_to(ROOT)} --help failed with exit code {result.returncode}: {summary}",
+                f"{path_label(path)} --help failed with exit code {result.returncode}: {summary}",
             )
         )
 
@@ -310,11 +326,11 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
                     "flow_graph_sanity.validate_sequence_modes must remain true",
                 )
             )
-        if flow_graph_sanity.get("acyclic_except_contract_smells") != ["CYCLE001"]:
+        if flow_graph_sanity.get("acyclic_except_contract_smells") != []:
             findings.append(
                 Finding(
                     "error",
-                    "flow_graph_sanity.acyclic_except_contract_smells must only list CYCLE001",
+                    "flow_graph_sanity.acyclic_except_contract_smells must be empty now that the minimal-operable profile split exists",
                 )
             )
 
@@ -330,10 +346,10 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
             )
         )
     else:
-        if cycle_smell.get("status") != "accepted-temporary-debt":
+        if cycle_smell.get("status") != "resolved-2026-05-01":
             findings.append(
                 Finding(
-                    "error", "CYCLE001 must remain marked as accepted-temporary-debt"
+                    "error", "CYCLE001 must remain marked as resolved-2026-05-01"
                 )
             )
         if cycle_smell.get("skills") != [
@@ -356,11 +372,12 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
                     "CYCLE001 must record the current greenfield order for the project-skill/team-bootstrap seam",
                 )
             )
-        if "minimal-operable" not in str(cycle_smell.get("removal_condition", "")):
+        removal_condition = str(cycle_smell.get("removal_condition", ""))
+        if "minimal-operable" not in removal_condition or "full-specialization" not in removal_condition:
             findings.append(
                 Finding(
                     "error",
-                    "CYCLE001 removal_condition must point to a minimal-operable versus specialization split",
+                    "CYCLE001 removal_condition must point to the minimal-operable versus full-specialization split",
                 )
             )
 
@@ -459,6 +476,22 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
             Finding("error", "Greenfield sequence must not include scafforge-repair")
         )
 
+    expected_minimal_greenfield = [
+        "spec-pack-normalizer",
+        "repo-scaffold-factory:minimal-operable",
+        "repo-scaffold-factory:verify-bootstrap-lane",
+        "handoff-brief",
+    ]
+    minimal_greenfield_sequence = run_types.get("greenfield-minimal-operable", {}).get("sequence", [])
+    if minimal_greenfield_sequence != expected_minimal_greenfield:
+        findings.append(
+            Finding(
+                "error",
+                "greenfield-minimal-operable sequence must stop after managed scaffold bootstrap proof and handoff: "
+                + " -> ".join(expected_minimal_greenfield),
+            )
+        )
+
     expected_retrofit = [
         "spec-pack-normalizer:if_needed",
         "opencode-team-bootstrap",
@@ -525,6 +558,7 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
     kickoff_modes = skills.get("scaffold-kickoff", {}).get("modes", [])
     for mode in (
         "greenfield",
+        "greenfield-minimal-operable",
         "retrofit",
         "managed-repair",
         "pivot",
@@ -552,28 +586,28 @@ def validate_flow_manifest(findings: list[Finding]) -> None:
         findings.append(
             Finding(
                 "error",
-                "project-skill-bootstrap must flow into opencode-team-bootstrap while CYCLE001 remains active",
+                "project-skill-bootstrap must still flow into opencode-team-bootstrap during full specialization",
             )
         )
-    if "opencode-team-bootstrap" not in project_skill.get("upstreams", []):
+    if "opencode-team-bootstrap" in project_skill.get("upstreams", []):
         findings.append(
             Finding(
                 "error",
-                "project-skill-bootstrap must record opencode-team-bootstrap as an upstream while CYCLE001 remains active",
+                "project-skill-bootstrap must not record opencode-team-bootstrap as an upstream after the profile split",
             )
         )
-    if "project-skill-bootstrap" not in team_bootstrap.get("downstreams", []):
+    if "project-skill-bootstrap" in team_bootstrap.get("downstreams", []):
         findings.append(
             Finding(
                 "error",
-                "opencode-team-bootstrap must record project-skill-bootstrap as a downstream while CYCLE001 remains active",
+                "opencode-team-bootstrap must not flow back into project-skill-bootstrap after the profile split",
             )
         )
     if "project-skill-bootstrap" not in team_bootstrap.get("upstreams", []):
         findings.append(
             Finding(
                 "error",
-                "opencode-team-bootstrap must record project-skill-bootstrap as an upstream while CYCLE001 remains active",
+                "opencode-team-bootstrap must record project-skill-bootstrap as the full-specialization upstream",
             )
         )
 
@@ -965,8 +999,9 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, readme, "references/competence-contract.md")
     require_contains(findings, readme, "validation-proof-matrix.json")
     require_contains(findings, readme, "one legal next move")
-    require_contains(findings, readme, "temporary contract smell")
-    require_contains(findings, readme, "minimal-operable-versus-specialization split")
+    require_contains(findings, readme, "## Scaffold Profiles")
+    require_contains(findings, readme, "`minimal-operable`")
+    require_contains(findings, readme, "`full-specialization`")
     require_contains(findings, readme, "## Adjacent control plane")
     require_contains(findings, readme, "control-plane-client-contract.md")
     require_contains(findings, readme, "control-plane-operator-workflows.md")
@@ -990,8 +1025,8 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, agents, "references/rejected-sources.md")
     require_contains(findings, agents, "references/skill-validation-policy.md")
     require_contains(findings, agents, "one legal next move")
-    require_contains(findings, agents, "explicit temporary contract smell")
-    require_contains(findings, agents, "minimal-operable-versus-specialization split")
+    require_contains(findings, agents, "minimal-operable managed scaffold generation from full-specialization")
+    require_contains(findings, agents, "minimal-operable-versus-full-specialization profile truth")
     require_contains(findings, agents, "scafforge-pivot")
     require_contains(findings, agents, "immediately continuable")
     require_contains(findings, agents, "what \"done\" means per repo family")
@@ -1011,7 +1046,8 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, agents, "## What Not To Reintroduce")
     require_contains(findings, agents, "## Host-side validation hygiene")
     if WORKSPACE_CORE_PLANS_ROOT.exists():
-        require_paths(findings, [WORKSPACE_CORE_PLANS_ROOT / "20-contract-validation-restoration" / "README.md"])
+        require_paths(findings, [WORKSPACE_PLANS_README])
+        require_contains(findings, WORKSPACE_PLANS_README, "No active implementation plan folders remain")
     require_contains(findings, documentation_authority_map, "## Root package docs")
     require_contains(findings, documentation_authority_map, "## Standing rule")
     require_contains(findings, documentation_authority_map, "references/skill-evolution-policy.md")
@@ -1084,7 +1120,8 @@ def validate_core_docs(findings: list[Finding]) -> None:
         orchestration_wrapper,
         "The orchestration service is read-only with respect to generated `tickets/manifest.json` and `.opencode/state/workflow-state.json`.",
     )
-    require_contains(findings, orchestration_wrapper, "`scaffold-verified` means VERIFY009 persistence confirmation plus zero blocking VERIFY010 and VERIFY011 findings.")
+    require_contains(findings, orchestration_wrapper, "`minimal-operable-verified` means VERIFY009 persistence confirmation passed and specialization is recorded as pending.")
+    require_contains(findings, orchestration_wrapper, "`scaffold-verified` means the full-specialization profile has VERIFY009 persistence confirmation plus zero blocking VERIFY010 and VERIFY011 findings.")
     require_contains(findings, orchestration_wrapper, "Dashboard or control-plane clients consume wrapper-owned read models and event streams")
     require_contains(findings, orchestration_wrapper, "Operator commands coming from a control plane must call orchestration APIs")
     require_contains(findings, control_plane_contract, "The control plane must route all approvals, overrides, pause/resume, retry, merge-approval, and router-policy changes through backend APIs.")
@@ -1138,7 +1175,7 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(
         findings,
         one_shot,
-        "Greenfield completion requires immediate continuation proof, not only surface agreement.",
+        "Full-specialization completion requires immediate continuation proof, not only surface agreement.",
     )
     require_contains(
         findings, one_shot, "Audit and repair are outside the generation cycle."
@@ -1285,12 +1322,12 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(
         findings,
         scaffold_kickoff,
-        "Greenfield generation has no further user-selectable submodes.",
+        "Scafforge has two greenfield profiles:",
     )
     require_contains(
         findings,
         scaffold_kickoff,
-        "you must complete every downstream generation skill in the same session",
+        "full-specialization generation must complete every downstream specialization skill in the same session",
     )
     require_contains(
         findings,
@@ -1420,7 +1457,7 @@ def validate_skill_contracts(findings: list[Finding]) -> None:
     require_contains(
         findings,
         repo_factory,
-        "Phase B is mandatory completion work, not an optional revisit.",
+        "Phase B is mandatory completion work for full-specialization, not an optional revisit.",
     )
     require_contains(
         findings,
@@ -4838,7 +4875,7 @@ def validate_audit_repair_surfaces(findings: list[Finding]) -> None:
             findings.append(
                 Finding(
                     "error",
-                    f"Deprecated surface should not exist: {path.relative_to(ROOT)}",
+                    f"Deprecated surface should not exist: {path_label(path)}",
                 )
             )
 
@@ -4867,7 +4904,7 @@ def validate_no_hidden_defaults(findings: list[Finding]) -> None:
                 findings.append(
                     Finding(
                         "error",
-                        f"{path.relative_to(ROOT)} still contains disallowed legacy text: {needle}",
+                        f"{path_label(path)} still contains disallowed legacy text: {needle}",
                     )
                 )
 
@@ -4892,7 +4929,7 @@ def validate_no_hidden_defaults(findings: list[Finding]) -> None:
                     findings.append(
                         Finding(
                             "error",
-                            f"{path.relative_to(ROOT)} contains host branding that should not appear in generated surfaces: {needle}",
+                            f"{path_label(path)} contains host branding that should not appear in generated surfaces: {needle}",
                         )
                     )
 
@@ -5005,7 +5042,7 @@ def validate_curated_fixtures(findings: list[Finding]) -> None:
                     findings.append(
                         Finding(
                             "error",
-                            f"Fixture family `{slug}` notes file is missing: {notes_path.relative_to(ROOT)}",
+                            f"Fixture family `{slug}` notes file is missing: {path_label(notes_path)}",
                         )
                     )
             if not isinstance(coverage, list) or not coverage:

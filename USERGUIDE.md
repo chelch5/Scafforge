@@ -22,6 +22,7 @@ The current context-test evidence for this path lives in [docs/plans/scafforge-c
 | Need | Use | Why |
 | --- | --- | --- |
 | New repo, retrofit, or initial classification | `scaffold-kickoff` | Single public entrypoint that routes generation, retrofit, repair, pivot, or diagnosis |
+| Fast durable managed scaffold | `scaffold-kickoff` with `minimal-operable` profile | Leaves canonical restart, workflow, ticket, provenance, and validation-hook surfaces with specialization marked pending |
 | Read-only diagnosis or evidence validation | `scafforge-audit` | Validates findings before they become canonical and emits the diagnosis pack |
 | Managed workflow repair after audit | `scafforge-repair` | Applies safe repair, regeneration follow-up, and verification routing |
 | Canonical-truth change midstream | `scafforge-pivot` | Updates brief truth first, then routes affected refresh steps |
