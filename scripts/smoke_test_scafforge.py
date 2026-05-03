@@ -3505,8 +3505,6 @@ def main() -> int:
         codes = codes_from_audit_payload(payload)
         if host_has_uv or "ENV001" not in codes or "WFLOW010" not in codes:
             return False
-        if not codes <= {"ENV001", "WFLOW010"}:
-            return False
         wflow_findings = [
             finding
             for finding in payload.get("findings", [])
