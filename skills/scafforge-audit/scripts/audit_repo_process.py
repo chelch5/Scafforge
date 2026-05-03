@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
@@ -861,14 +862,30 @@ def _run(cmd: list[str], cwd: Path, timeout: int = 30) -> tuple[int, str]:
                 )
                 if resolved:
                     resolved_cmd[0] = resolved
-        result = subprocess.run(
+        popen_kwargs: dict[str, Any] = {
+            "cwd": str(cwd),
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+        }
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        else:
+            popen_kwargs["start_new_session"] = True
+        process = subprocess.Popen(  # noqa: S603
             resolved_cmd,
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            **popen_kwargs,
         )
-        return result.returncode, (result.stdout + result.stderr).strip()
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            if os.name == "nt":
+                process.kill()
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
+            stdout, stderr = process.communicate()
+            return -1, f"[timeout after {timeout}s]\n{(stdout + stderr).strip()}".strip()
+        return process.returncode, (stdout + stderr).strip()
     except subprocess.TimeoutExpired:
         return -1, f"[timeout after {timeout}s]"
     except FileNotFoundError:

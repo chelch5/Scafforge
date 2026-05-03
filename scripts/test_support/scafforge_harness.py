@@ -108,6 +108,9 @@ BOOTSTRAP_HOST_PATH_CANDIDATES = {
         str(Path.home() / "Android" / "Sdk"),
         str(Path.home() / "Library" / "Android" / "sdk"),
         str(Path.home() / "AppData" / "Local" / "Android" / "Sdk"),
+        "/usr/local/lib/android/sdk",
+        "/opt/android-sdk",
+        "/opt/android-sdk-linux",
     ),
     "java_home_default": (
         "/usr/lib/jvm/default-java",

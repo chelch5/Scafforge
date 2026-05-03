@@ -1047,7 +1047,12 @@ def validate_core_docs(findings: list[Finding]) -> None:
     require_contains(findings, agents, "## Host-side validation hygiene")
     if WORKSPACE_CORE_PLANS_ROOT.exists():
         require_paths(findings, [WORKSPACE_PLANS_README])
-        require_contains(findings, WORKSPACE_PLANS_README, "No active implementation plan folders remain")
+        require_contains(findings, WORKSPACE_PLANS_README, "## Current Plan Set")
+        require_contains(
+            findings,
+            WORKSPACE_PLANS_README,
+            "scafforge-core/2026-05-03-greenfield-adapter-proof/",
+        )
     require_contains(findings, documentation_authority_map, "## Root package docs")
     require_contains(findings, documentation_authority_map, "## Standing rule")
     require_contains(findings, documentation_authority_map, "references/skill-evolution-policy.md")

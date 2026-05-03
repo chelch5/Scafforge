@@ -579,6 +579,16 @@ def write_python_wrapper(path: Path, *, allow_pytest: bool) -> None:
                 f"ALLOW_PYTEST = {allow_pytest!r}",
                 'if not ALLOW_PYTEST and len(args) >= 2 and args[0] == "-m" and args[1] == "pytest":',
                 "    sys.exit(1)",
+                'if ALLOW_PYTEST and len(args) >= 2 and args[0] == "-m" and args[1] == "pytest":',
+                "    pytest_args = args[2:]",
+                '    if "--version" in pytest_args:',
+                '        print("pytest 8.1.0")',
+                "        raise SystemExit(0)",
+                '    if "--collect-only" in pytest_args:',
+                '        print("2 tests collected")',
+                "        raise SystemExit(0)",
+                '    print("1 failed, 1 passed in 0.10s")',
+                "    raise SystemExit(1)",
                 "raise SystemExit(subprocess.run([REAL_PYTHON, *args], check=False).returncode)",
             ]
         )
@@ -892,6 +902,19 @@ def seed_failing_pytest_suite(dest: Path) -> None:
             encoding="utf-8",
         )
         (venv_bin / "pytest").chmod(0o755)
+
+
+def seed_reference_scan_exclusion_case(dest: Path) -> None:
+    (dest / "src").mkdir(parents=True, exist_ok=True)
+    (dest / "src" / "owned_bad.py").write_text(
+        "from .missing_module import demo\n",
+        encoding="utf-8",
+    )
+    (dest / "node_modules" / "fakepkg").mkdir(parents=True, exist_ok=True)
+    (dest / "node_modules" / "fakepkg" / "index.js").write_text(
+        'require("./missing-runtime")\n',
+        encoding="utf-8",
+    )
 
 
 def seed_closed_ticket_with_new_active_artifact_write(dest: Path) -> None:

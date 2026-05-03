@@ -1349,6 +1349,9 @@ const BOOTSTRAP_HOST_PATH_CANDIDATES = {
     join(homedir(), "Android", "Sdk"),
     join(homedir(), "Library", "Android", "sdk"),
     join(homedir(), "AppData", "Local", "Android", "Sdk"),
+    join("/usr", "local", "lib", "android", "sdk"),
+    join("/opt", "android-sdk"),
+    join("/opt", "android-sdk-linux"),
   ],
   java_home_default: [
     join("/usr", "lib", "jvm", "default-java"),

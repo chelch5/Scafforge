@@ -121,8 +121,9 @@ def publish_candidate_root(candidate_root: Path, repo_root: Path) -> None:
                 f"The recovery backup was preserved at {publish_backup_root} for manual restoration."
             ) from restore_exc
         raise RuntimeError("Repair publish failed, but the repo was restored from the recovery backup.") from exc
-    if publish_succeeded or restore_succeeded:
-        cleanup_backup_root(publish_backup_parent)
+    finally:
+        if publish_succeeded or restore_succeeded:
+            cleanup_backup_root(publish_backup_parent)
 
 
 def _is_godot_android_repo(repo_root: Path) -> bool:
@@ -1059,6 +1060,45 @@ def remediation_follow_up_script_path() -> Path:
     return Path(__file__).resolve().parents[2] / "ticket-pack-builder" / "scripts" / "apply_remediation_follow_up.py"
 
 
+def normalize_remediation_surface(surface: Any, repo_root: Path) -> str:
+    value = str(surface).strip()
+    if not value:
+        return ""
+    path = Path(value)
+    if path.is_absolute():
+        try:
+            return str(path.resolve().relative_to(repo_root.resolve())).replace("\\", "/")
+        except ValueError:
+            parts = path.parts
+            for index, part in enumerate(parts[:-1]):
+                if (
+                    part == "candidate"
+                    and index > 0
+                    and parts[index - 1].startswith("scafforge-repair-candidate-")
+                    and index + 1 < len(parts)
+                ):
+                    return str(Path(*parts[index + 1:])).replace("\\", "/")
+    return value.replace("\\", "/")
+
+
+def normalize_remediation_recommendation_surfaces(
+    recommendation: dict[str, Any],
+    repo_root: Path,
+) -> dict[str, Any]:
+    normalized = dict(recommendation)
+    for field in ("source_files", "affected_files"):
+        surfaces = recommendation.get(field)
+        if not isinstance(surfaces, list):
+            continue
+        normalized_surfaces: list[str] = []
+        for surface in surfaces:
+            value = normalize_remediation_surface(surface, repo_root)
+            if value and value not in normalized_surfaces:
+                normalized_surfaces.append(value)
+        normalized[field] = normalized_surfaces
+    return normalized
+
+
 def create_remediation_follow_up_tickets(repo_root: Path, diagnosis_manifest_or_dir: str) -> dict[str, Any]:
     diagnosis_path = Path(diagnosis_manifest_or_dir)
     manifest_path = diagnosis_path / "manifest.json" if diagnosis_path.is_dir() else diagnosis_path
@@ -1074,10 +1114,11 @@ def create_remediation_follow_up_tickets(repo_root: Path, diagnosis_manifest_or_
         for item in recommendations:
             if not isinstance(item, dict):
                 continue
-            route = str(item.get("route", "")).strip()
-            surfaces = item.get("affected_files")
+            normalized_item = normalize_remediation_recommendation_surfaces(item, repo_root)
+            route = str(normalized_item.get("route", "")).strip()
+            surfaces = normalized_item.get("affected_files")
             if not isinstance(surfaces, list):
-                surfaces = item.get("source_files")
+                surfaces = normalized_item.get("source_files")
             normalized_surfaces = [str(surface).strip() for surface in surfaces if str(surface).strip()] if isinstance(surfaces, list) else []
             candidate_only = (
                 route == "ticket-pack-builder"
@@ -1087,13 +1128,13 @@ def create_remediation_follow_up_tickets(repo_root: Path, diagnosis_manifest_or_
             if candidate_only:
                 skipped_recommendations.append(
                     {
-                        "id": str(item.get("id", "")).strip(),
-                        "source_finding_code": str(item.get("source_finding_code", "")).strip(),
-                        "reason": "candidate-only verification surface",
+                        "id": str(normalized_item.get("id", "")).strip(),
+                        "source_finding_code": str(normalized_item.get("source_finding_code", "")).strip(),
+                        "reason": "unmappable candidate-only verification surface",
                     }
                 )
                 continue
-            filtered_recommendations.append(item)
+            filtered_recommendations.append(normalized_item)
         filtered_recommendation_count = len(filtered_recommendations)
         if skipped_recommendations:
             filtered_manifest = dict(manifest)

@@ -128,7 +128,8 @@ In the canonical workspace:
 
 - the bootstrap repo `docs/plans/active-plans-index.md` is the canonical portfolio index
 - each numbered `docs/plans/scafforge-core/NN-kebab-case/README.md` (and similar for other repos) is the authoritative implementation plan for that plan
-- the bootstrap repo `docs/plans/active-plans-docs-policy.md` is the planning-surface placement policy
+- the bootstrap repo `docs/plans/README.md` is the current plan-set overview and archive pointer
+- the bootstrap repo `docs/plans/verification-register.md` tracks historical completion claims that still need fresh evidence
 - package-root `.opencode/` runtime state must not be created to manage package work
 - package-root `tickets/manifest.json` and `tickets/BOARD.md` are not current package planning surfaces and must not be reintroduced as shadow workflow state
 

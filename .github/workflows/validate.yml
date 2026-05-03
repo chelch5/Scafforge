@@ -19,18 +19,29 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      - name: Install host validation prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+          rg --version
+
       - name: Validate contract
         run: npm run validate:contract
 
       - name: Validate smoke
         run: npm run validate:smoke
+
+      - name: Install integration prerequisites
+        run: |
+          python3 -m pip install uv
+          uv --version
 
       - name: Integration test
         run: python3 scripts/integration_test_scafforge.py

@@ -164,6 +164,9 @@ async function discoverAndroidSdkPath(): Promise<string | null> {
 		join(home, "Android", "Sdk"),
 		join(home, "Library", "Android", "sdk"),
 		join(home, "AppData", "Local", "Android", "Sdk"),
+		join("/usr", "local", "lib", "android", "sdk"),
+		join("/opt", "android-sdk"),
+		join("/opt", "android-sdk-linux"),
 	]) {
 		if (await exists(candidate)) return candidate
 	}
