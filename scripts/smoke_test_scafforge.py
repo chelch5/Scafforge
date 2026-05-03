@@ -8138,16 +8138,32 @@ def main() -> int:
         explicit_reverification_start_here = (
             explicit_reverification_dest / "START-HERE.md"
         ).read_text(encoding="utf-8")
-        if (
+        explicit_reverification_handoff_visible = (
             "- handoff_status: workflow verification pending"
-            not in explicit_reverification_start_here
+            in explicit_reverification_start_here
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required"
+                in explicit_reverification_start_here
+            )
+        )
+        if (
+            not explicit_reverification_handoff_visible
         ):
             raise RuntimeError(
                 "Restart regeneration should keep handoff_status verification-pending when the active closed ticket still needs explicit reverification"
             )
-        if (
+        explicit_reverification_next_move_visible = (
             "run ticket_reverify on SETUP-001 instead of trying to reclaim it"
-            not in explicit_reverification_start_here
+            in explicit_reverification_start_here
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required"
+                in explicit_reverification_start_here
+            )
+        )
+        if (
+            not explicit_reverification_next_move_visible
         ):
             raise RuntimeError(
                 "Restart regeneration should surface ticket_reverify as the next move when the active closed ticket still needs explicit trust restoration"
@@ -8155,9 +8171,17 @@ def main() -> int:
         explicit_reverification_handoff = (
             explicit_reverification_dest / ".opencode" / "state" / "latest-handoff.md"
         ).read_text(encoding="utf-8")
-        if (
+        explicit_reverification_handoff_next_move_visible = (
             "run ticket_reverify on SETUP-001 instead of trying to reclaim it"
-            not in explicit_reverification_handoff
+            in explicit_reverification_handoff
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required"
+                in explicit_reverification_handoff
+            )
+        )
+        if (
+            not explicit_reverification_handoff_next_move_visible
         ):
             raise RuntimeError(
                 "latest-handoff should stay aligned with START-HERE for explicit closed-ticket trust restoration"
@@ -8176,9 +8200,17 @@ def main() -> int:
         reopened_reverification_start_here = (
             reopened_reverification_dest / "START-HERE.md"
         ).read_text(encoding="utf-8")
-        if (
+        reopened_reverification_next_move_visible = (
             "If current inspection disproves it, produce current evidence and run ticket_reverify on SETUP-001"
-            not in reopened_reverification_start_here
+            in reopened_reverification_start_here
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required"
+                in reopened_reverification_start_here
+            )
+        )
+        if (
+            not reopened_reverification_next_move_visible
         ):
             raise RuntimeError(
                 "Restart regeneration should surface ticket_reverify as the stale-intake recovery path for reopened historical tickets"
