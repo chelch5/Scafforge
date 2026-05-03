@@ -98,6 +98,7 @@ Generated repos may expose derived helper fields such as a local `scaffoldVerifi
 - The wrapper may also expose an operator-guided direct project-creation flow for cases where the user does not start from the spec factory. That flow must still normalize into the same approved-brief contract before scaffold execution begins.
 - The wrapper invokes `scaffold-kickoff`; it does not bypass `spec-pack-normalizer` or call lower-level skills as public entrypoints.
 - The wrapper must pass an explicit scaffold profile into the package-side adapter when it invokes generation.
+- Backend-callable generated repos must be initialized as git worktrees before lifecycle or OpenCode tool execution begins.
 - `minimal-operable-verified` means VERIFY009 persistence confirmation passed and specialization is recorded as pending.
 - `scaffold-verified` means the full-specialization profile has VERIFY009 persistence confirmation plus zero blocking VERIFY010 and VERIFY011 findings.
 - No downstream phase, branch, or PR automation may begin until `scaffold-verified` is true and `handoff-brief` has published the restart surfaces from the verified final snapshot.

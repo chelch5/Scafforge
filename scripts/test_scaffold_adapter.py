@@ -62,6 +62,7 @@ def assert_common_completed_payload(payload: dict[str, object]) -> Path:
     assert (repo_root / ".opencode" / "state" / "workflow-state.json").exists()
     assert (repo_root / ".opencode" / "state" / "scaffold-adapter-verification.json").exists()
     assert (repo_root / "docs" / "spec" / "APPROVED-BRIEF.json").exists()
+    assert (repo_root / ".git").exists()
     return repo_root
 
 

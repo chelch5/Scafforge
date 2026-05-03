@@ -115,6 +115,39 @@ def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def run_in_repo(repo_root: Path, command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def ensure_generated_repo_git_worktree(repo_root: Path) -> list[str]:
+    if (repo_root / ".git").exists():
+        return []
+
+    git = shutil.which("git")
+    if git is None:
+        return ["git executable is required to initialize generated repo worktrees."]
+
+    init = run_in_repo(repo_root, [git, "init", "-b", "main"])
+    if init.returncode == 0:
+        return []
+
+    fallback = run_in_repo(repo_root, [git, "init"])
+    if fallback.returncode != 0:
+        return [fallback.stderr or fallback.stdout or init.stderr or init.stdout or "git init failed."]
+
+    rename = run_in_repo(repo_root, [git, "branch", "-m", "main"])
+    if rename.returncode != 0:
+        return [rename.stderr or rename.stdout or "git branch -m main failed."]
+
+    return []
+
+
 def write_adapter_output(repo_root: Path, payload: dict[str, Any]) -> None:
     output_path = repo_root / OUTPUT_RELATIVE
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -236,6 +269,10 @@ def run_adapter(input_path: Path) -> tuple[int, dict[str, Any]]:
     approved_brief_target = repo_root / "docs" / "spec" / "APPROVED-BRIEF.json"
     approved_brief_target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(approved_brief_path, approved_brief_target)
+
+    git_blockers = ensure_generated_repo_git_worktree(repo_root)
+    if git_blockers:
+        return 2, blocked("Generated repo git initialization failed.", payload, git_blockers)
 
     verify = run_command([
         sys.executable,

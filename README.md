@@ -91,7 +91,7 @@ An adjacent orchestration service may invoke `scaffold-kickoff` from a persisted
 - `minimal-operable-verified` means bootstrap-lane proof passed with specialization truthfully pending.
 - `scaffold-verified` means the full-specialization pass cleared VERIFY009 and has zero blocking VERIFY010 or VERIFY011 findings before downstream PR work begins.
 
-The backend-callable scaffold adapter is `scripts/run_scaffold_adapter.py`. It accepts a versioned JSON input containing an approved brief path, target generated-repo root, repo slug, lifecycle preference, scaffold profile, idempotency key, and operator identity. It returns `scafforge-core.scaffold-adapter.v1` JSON with generated repo path, repo id, scaffold profile, minimal-operable status, specialization status, proof refs, roadmap ref, ticket manifest ref, validation status, blockers, and idempotency key. The adapter writes bootstrap-lane verification evidence into the generated repo and returns an idempotent replay for repeated calls with the same key.
+The backend-callable scaffold adapter is `scripts/run_scaffold_adapter.py`. It accepts a versioned JSON input containing an approved brief path, target generated-repo root, repo slug, lifecycle preference, scaffold profile, idempotency key, and operator identity. It returns `scafforge-core.scaffold-adapter.v1` JSON with generated repo path, repo id, scaffold profile, minimal-operable status, specialization status, proof refs, roadmap ref, ticket manifest ref, validation status, blockers, and idempotency key. The adapter initializes the generated repo as a git worktree, writes bootstrap-lane verification evidence into it, and returns an idempotent replay for repeated calls with the same key.
 
 ## Adjacent control plane
 
