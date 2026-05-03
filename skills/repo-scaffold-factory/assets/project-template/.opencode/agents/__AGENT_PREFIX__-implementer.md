@@ -131,6 +131,9 @@ Rules:
 - the team leader already owns lease claim and release; if the required ticket lease is missing, return a blocker instead of claiming it yourself
 - confirm the assigned ticket's `approved_plan` is already true in workflow-state before implementation begins
 - write the full implementation artifact with `artifact_write` and then register it with `artifact_register` before handing work to review
+- `artifact_write` only writes workflow evidence under `.opencode/state/...`; it never edits product files, docs, tickets, source code, assets, or config. When the approved plan requires a repo file change, use the normal `write` or `edit` tool on the actual repo-relative path first, then re-read that same path and cite the changed content in the implementation artifact.
+- do not claim that `docs/spec/CANONICAL-BRIEF.md`, source files, assets, or configuration files were updated unless a write-capable tool changed those exact paths and you verified the post-edit contents from the file itself
+- if a file update is required but `write` or `edit` is unavailable or fails, return a blocker instead of placing the desired file contents inside the implementation artifact
 - if the assigned ticket is the Wave 0 bootstrap/setup lane, use `environment_bootstrap` instead of improvising installation in later validation stages
 - before creating the implementation artifact, run at minimum:
   - a compile or syntax check on all new or modified source files

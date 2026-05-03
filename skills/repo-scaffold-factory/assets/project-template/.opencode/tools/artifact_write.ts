@@ -27,6 +27,13 @@ export default tool({
       )
     }
 
+    const trimmedContent = args.content.trimStart()
+    if (args.stage === "implementation" && /^#\s+Canonical Brief\b/i.test(trimmedContent)) {
+      throw new Error(
+        "artifact_write only writes implementation evidence artifacts. It cannot update docs/spec/CANONICAL-BRIEF.md. Use the write or edit tool on docs/spec/CANONICAL-BRIEF.md, re-read that file, then write an implementation artifact that cites the verified file change.",
+      )
+    }
+
     await writeText(expectedPath, args.content)
 
     return JSON.stringify(

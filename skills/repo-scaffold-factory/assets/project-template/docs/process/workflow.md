@@ -24,6 +24,7 @@ Rules:
 - keep plan approval in `.opencode/state/workflow-state.json`, not in ticket status
 - treat `tickets/BOARD.md` as a derived human view, not an authoritative workflow surface
 - write planning, implementation, review, QA, and optional handoff artifact bodies with `artifact_write` and then register them with `artifact_register`
+- edit actual project files with write-capable tools before writing the artifact; `artifact_write` is evidence persistence only and must not be used as a replacement for changing docs, source, assets, tickets, or config
 - reserve `smoke-test` proof to the deterministic `smoke_test` tool
 - require a registered stage artifact before advancing to the next stage
 - let `ticket_update` derive the matching queue status from the lifecycle stage unless a compatible status is explicitly required

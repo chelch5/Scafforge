@@ -72,6 +72,9 @@ Rules:
 
 - when a canonical review artifact path is provided, write the full review body with `artifact_write` and then register it with `artifact_register`
 - do not claim that repo files were updated
+- verify file-update claims against the actual repo files, not only against implementation artifact prose. If an artifact says a file was updated but reading that file shows old placeholder or stale content, reject the implementation.
+- if `docs/spec/CANONICAL-BRIEF.md` is in scope, reject while it still contains template phrases such as `Replace this section with`, `Replace with explicit`, `Replace with unresolved`, `Replace with project-specific`, or `Replace with any required assumptions`.
+- do not provide full replacement source/doc contents as your review output. Return findings and a verdict only; file fixes must be routed back to a write-capable implementer.
 - if artifact creation is blocked because the ticket lease is missing, return that blocker to the team leader instead of trying to claim a lease yourself
 - verify that new or modified source files compile by running the appropriate compile check (for example `python -m py_compile`, `cargo check`, or `tsc --noEmit`)
 - verify that the primary module imports succeed
