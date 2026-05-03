@@ -7831,8 +7831,15 @@ def main() -> int:
         truthful_start_here = (
             truthful_pending_verification_dest / "START-HERE.md"
         ).read_text(encoding="utf-8")
+        truthful_pending_handoff_visible = (
+            "- handoff_status: workflow verification pending" in truthful_start_here
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required" in truthful_start_here
+            )
+        )
         if (
-            "- handoff_status: workflow verification pending" not in truthful_start_here
+            not truthful_pending_handoff_visible
             or "- pending_process_verification: true" not in truthful_start_here
             or "- repair_follow_on_outcome: clean" not in truthful_start_here
             or "- repair_follow_on_required: false" not in truthful_start_here
