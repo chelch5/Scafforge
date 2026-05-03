@@ -15708,1299 +15708,1302 @@ Overall Result: PASS
                 raise RuntimeError(
                     "reconcile_repair_follow_on should convert repaired placeholder-skill blockers into source_follow_up once the current cycle is complete"
                 )
-        polluted_follow_on_state_dest = workspace / "polluted-follow-on-state"
-        shutil.copytree(full_dest, polluted_follow_on_state_dest)
-        make_stack_skill_non_placeholder(polluted_follow_on_state_dest)
-        seed_failing_pytest_suite(polluted_follow_on_state_dest)
-        polluted_blender_skill_dir = (
-            polluted_follow_on_state_dest
-            / ".opencode"
-            / "skills"
-            / "blender-mcp-workflow"
-        )
-        if polluted_blender_skill_dir.exists():
-            shutil.rmtree(polluted_blender_skill_dir)
-        polluted_provenance_path = (
-            polluted_follow_on_state_dest
-            / ".opencode"
-            / "meta"
-            / "bootstrap-provenance.json"
-        )
-        polluted_provenance = json.loads(
-            polluted_provenance_path.read_text(encoding="utf-8")
-        )
-        polluted_provenance["repair_history"] = []
-        polluted_provenance_path.write_text(
-            json.dumps(polluted_provenance, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        polluted_diagnosis_root = polluted_follow_on_state_dest / "diagnosis"
-        if polluted_diagnosis_root.exists():
-            shutil.rmtree(polluted_diagnosis_root)
-        polluted_initial_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(polluted_follow_on_state_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        polluted_initial = json.loads(polluted_initial_process.stdout)
-        if not polluted_initial["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "A repair run without any valid follow-on completion should remain blocked before polluted-state pruning is tested: "
-                + json.dumps(polluted_initial, indent=2)
+        if host_has_uv:
+            polluted_follow_on_state_dest = workspace / "polluted-follow-on-state"
+            shutil.copytree(full_dest, polluted_follow_on_state_dest)
+            make_stack_skill_non_placeholder(polluted_follow_on_state_dest)
+            seed_failing_pytest_suite(polluted_follow_on_state_dest)
+            polluted_blender_skill_dir = (
+                polluted_follow_on_state_dest
+                / ".opencode"
+                / "skills"
+                / "blender-mcp-workflow"
             )
-        polluted_state_path = (
-            polluted_follow_on_state_dest
-            / ".opencode"
-            / "meta"
-            / "repair-follow-on-state.json"
-        )
-        polluted_state = json.loads(polluted_state_path.read_text(encoding="utf-8"))
-        polluted_state["required_stages"].append("bogus-stage")
-        polluted_state["stage_records"]["bogus-stage"] = {
-            "stage": "bogus-stage",
-            "status": "completed",
-            "completion_mode": "recorded_execution",
-            "evidence_paths": [
-                ".opencode/state/artifacts/history/repair/bogus-stage.md"
-            ],
-            "completed_by": "bogus-stage",
-            "last_recorded_at": "2026-03-30T00:00:00Z",
-            "last_checked_at": "2026-03-30T00:00:00Z",
-            "last_updated_at": "2026-03-30T00:00:00Z",
-        }
-        polluted_state["history"].append(
-            {
-                "recorded_at": "2026-03-30T00:00:00Z",
+            if polluted_blender_skill_dir.exists():
+                shutil.rmtree(polluted_blender_skill_dir)
+            polluted_provenance_path = (
+                polluted_follow_on_state_dest
+                / ".opencode"
+                / "meta"
+                / "bootstrap-provenance.json"
+            )
+            polluted_provenance = json.loads(
+                polluted_provenance_path.read_text(encoding="utf-8")
+            )
+            polluted_provenance["repair_history"] = []
+            polluted_provenance_path.write_text(
+                json.dumps(polluted_provenance, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            polluted_diagnosis_root = polluted_follow_on_state_dest / "diagnosis"
+            if polluted_diagnosis_root.exists():
+                shutil.rmtree(polluted_diagnosis_root)
+            polluted_initial_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(polluted_follow_on_state_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            polluted_initial = json.loads(polluted_initial_process.stdout)
+            if not polluted_initial["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "A repair run without any valid follow-on completion should remain blocked before polluted-state pruning is tested: "
+                    + json.dumps(polluted_initial, indent=2)
+                )
+            polluted_state_path = (
+                polluted_follow_on_state_dest
+                / ".opencode"
+                / "meta"
+                / "repair-follow-on-state.json"
+            )
+            polluted_state = json.loads(polluted_state_path.read_text(encoding="utf-8"))
+            polluted_state["required_stages"].append("bogus-stage")
+            polluted_state["stage_records"]["bogus-stage"] = {
                 "stage": "bogus-stage",
                 "status": "completed",
                 "completion_mode": "recorded_execution",
+                "evidence_paths": [
+                    ".opencode/state/artifacts/history/repair/bogus-stage.md"
+                ],
+                "completed_by": "bogus-stage",
+                "last_recorded_at": "2026-03-30T00:00:00Z",
+                "last_checked_at": "2026-03-30T00:00:00Z",
+                "last_updated_at": "2026-03-30T00:00:00Z",
             }
-        )
-        polluted_state_path.write_text(
-            json.dumps(polluted_state, indent=2) + "\n", encoding="utf-8"
-        )
-        pruned_follow_on_state_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(polluted_follow_on_state_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if pruned_follow_on_state_process.returncode == 0:
-            raise RuntimeError(
-                "Pruning unknown legacy follow-on stage records should not make the repair runner succeed while real ticket follow-up remains"
+            polluted_state["history"].append(
+                {
+                    "recorded_at": "2026-03-30T00:00:00Z",
+                    "stage": "bogus-stage",
+                    "status": "completed",
+                    "completion_mode": "recorded_execution",
+                }
             )
-        pruned_follow_on_state = json.loads(pruned_follow_on_state_process.stdout)
-        if (
-            "bogus-stage"
-            in pruned_follow_on_state["execution_record"][
-                "recorded_completed_stages"
-            ]
-        ):
-            raise RuntimeError(
-                "Managed repair should prune unknown legacy follow-on stage records instead of trusting them as completed"
+            polluted_state_path.write_text(
+                json.dumps(polluted_state, indent=2) + "\n", encoding="utf-8"
             )
-        if pruned_follow_on_state["execution_record"]["pruned_unknown_stages"] != [
-            "bogus-stage"
-        ]:
-            raise RuntimeError(
-                "Managed repair should report which unknown legacy follow-on stages were pruned from polluted state"
+            pruned_follow_on_state_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(polluted_follow_on_state_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
             )
-        if (
-            "bogus-stage"
-            in pruned_follow_on_state["execution_record"][
+            if pruned_follow_on_state_process.returncode == 0:
+                raise RuntimeError(
+                    "Pruning unknown legacy follow-on stage records should not make the repair runner succeed while real ticket follow-up remains"
+                )
+            pruned_follow_on_state = json.loads(pruned_follow_on_state_process.stdout)
+            if (
+                "bogus-stage"
+                in pruned_follow_on_state["execution_record"][
+                    "recorded_completed_stages"
+                ]
+            ):
+                raise RuntimeError(
+                    "Managed repair should prune unknown legacy follow-on stage records instead of trusting them as completed"
+                )
+            if pruned_follow_on_state["execution_record"]["pruned_unknown_stages"] != [
+                "bogus-stage"
+            ]:
+                raise RuntimeError(
+                    "Managed repair should report which unknown legacy follow-on stages were pruned from polluted state"
+                )
+            if (
+                "bogus-stage"
+                in pruned_follow_on_state["execution_record"][
+                    "follow_on_tracking_state"
+                ]["stage_records"]
+            ):
+                raise RuntimeError(
+                    "Managed repair should remove unknown legacy follow-on stage records from the persisted tracking state"
+                )
+            prune_history = pruned_follow_on_state["execution_record"][
                 "follow_on_tracking_state"
-            ]["stage_records"]
-        ):
-            raise RuntimeError(
-                "Managed repair should remove unknown legacy follow-on stage records from the persisted tracking state"
-            )
-        prune_history = pruned_follow_on_state["execution_record"][
-            "follow_on_tracking_state"
-        ].get("history", [])
-        if not any(
-            item.get("status") == "pruned_unknown_stages"
-            and item.get("pruned_unknown_stages") == ["bogus-stage"]
-            for item in prune_history
-            if isinstance(item, dict)
-        ):
-            raise RuntimeError(
-                "Managed repair should leave a history event when polluted unknown follow-on stages are pruned"
-            )
-        if not pruned_follow_on_state["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "Pruning unknown legacy follow-on stage records should not clear the real ticket follow-up blocker"
-            )
-
-        source_follow_on_state_path = (
-            source_follow_up_repair_dest
-            / ".opencode"
-            / "meta"
-            / "repair-follow-on-state.json"
-        )
-        source_follow_on_state = json.loads(
-            source_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        source_follow_on_cycle = source_follow_on_state["cycle_id"]
-        source_ticket_pack_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
-        source_ticket_pack_path = (
-            source_follow_up_repair_dest / source_ticket_pack_rel
-        )
-        source_ticket_pack_path.parent.mkdir(parents=True, exist_ok=True)
-        source_ticket_pack_path.write_text(
-            "# Repair Follow-On Completion\n\n"
-            "- completed_stage: ticket-pack-builder\n"
-            f"- cycle_id: {source_follow_on_cycle}\n"
-            "- completed_by: ticket-pack-builder\n\n"
-            "## Summary\n\n"
-            "- Routed source follow-up into the ticket system.\n",
-            encoding="utf-8",
-        )
-        source_handoff_rel = (
-            ".opencode/state/artifacts/history/repair/handoff-brief-completion.md"
-        )
-        source_handoff_path = source_follow_up_repair_dest / source_handoff_rel
-        source_handoff_path.parent.mkdir(parents=True, exist_ok=True)
-        source_handoff_path.write_text(
-            "# Repair Follow-On Completion\n\n"
-            "- completed_stage: handoff-brief\n"
-            f"- cycle_id: {source_follow_on_cycle}\n"
-            "- completed_by: handoff-brief\n\n"
-            "## Summary\n\n"
-            "- Refreshed restart surfaces after converged managed repair.\n",
-            encoding="utf-8",
-        )
-        run_json(
-            [
-                sys.executable,
-                str(RECORD_REPAIR_STAGE),
-                str(source_follow_up_repair_dest),
-                "--stage",
-                "ticket-pack-builder",
-                "--completed-by",
-                "ticket-pack-builder",
-                "--summary",
-                "Routed source follow-up into the ticket system.",
-                "--evidence",
-                source_ticket_pack_rel,
-            ],
-            ROOT,
-        )
-        run_json(
-            [
-                sys.executable,
-                str(RECORD_REPAIR_STAGE),
-                str(source_follow_up_repair_dest),
-                "--stage",
-                "handoff-brief",
-                "--completed-by",
-                "handoff-brief",
-                "--summary",
-                "Refreshed restart surfaces after converged managed repair.",
-                "--evidence",
-                source_handoff_rel,
-            ],
-            ROOT,
-        )
-        reconcile_source_follow_up = run_json(
-            [
-                sys.executable,
-                str(RECONCILE_REPAIR),
-                str(source_follow_up_repair_dest),
-            ],
-            ROOT,
-        )
-        if reconcile_source_follow_up.get("status") != "reconciled":
-            raise RuntimeError(
-                "reconcile_repair_follow_on should reconcile completed current-cycle follow-on stages into source_follow_up when only EXEC findings remain"
-            )
-        reconciled_workflow = json.loads(
-            (
+            ].get("history", [])
+            if not any(
+                item.get("status") == "pruned_unknown_stages"
+                and item.get("pruned_unknown_stages") == ["bogus-stage"]
+                for item in prune_history
+                if isinstance(item, dict)
+            ):
+                raise RuntimeError(
+                    "Managed repair should leave a history event when polluted unknown follow-on stages are pruned"
+                )
+            if not pruned_follow_on_state["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "Pruning unknown legacy follow-on stage records should not clear the real ticket follow-up blocker"
+                )
+    
+            source_follow_on_state_path = (
                 source_follow_up_repair_dest
                 / ".opencode"
-                / "state"
-                / "workflow-state.json"
-            ).read_text(encoding="utf-8")
-        )
-        if (
-            reconciled_workflow["repair_follow_on"]["outcome"]
-            != "source_follow_up"
-        ):
-            raise RuntimeError(
-                "reconcile_repair_follow_on should update workflow-state to source_follow_up when only source follow-up remains"
+                / "meta"
+                / "repair-follow-on-state.json"
             )
-        if (
-            reconciled_workflow["repair_follow_on"]["handoff_allowed"]
-            is not True
-        ):
-            raise RuntimeError(
-                "reconcile_repair_follow_on should allow handoff once required follow-on stages are complete and only source follow-up remains"
+            source_follow_on_state = json.loads(
+                source_follow_on_state_path.read_text(encoding="utf-8")
             )
-        if reconciled_workflow["repair_follow_on"]["blocking_reasons"]:
-            raise RuntimeError(
-                "reconcile_repair_follow_on should clear stage-only repair blocking reasons once the current cycle is reconciled"
+            source_follow_on_cycle = source_follow_on_state["cycle_id"]
+            source_ticket_pack_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+            source_ticket_pack_path = (
+                source_follow_up_repair_dest / source_ticket_pack_rel
             )
-        source_follow_up_repair = run_json(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(source_follow_up_repair_dest),
-                "--skip-deterministic-refresh",
-            ],
-            ROOT,
-        )
-        if source_follow_up_repair["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "Source-layer EXEC follow-up alone should not keep managed repair follow-on blocked once the required follow-on stages are complete"
+            source_ticket_pack_path.parent.mkdir(parents=True, exist_ok=True)
+            source_ticket_pack_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: ticket-pack-builder\n"
+                f"- cycle_id: {source_follow_on_cycle}\n"
+                "- completed_by: ticket-pack-builder\n\n"
+                "## Summary\n\n"
+                "- Routed source follow-up into the ticket system.\n",
+                encoding="utf-8",
             )
-        if source_follow_up_repair["execution_record"]["verification_status"][
-            "source_follow_up_codes"
-        ] != ["EXEC003"]:
-            raise RuntimeError(
-                "Public managed repair runner should classify EXEC findings as source follow-up instead of managed repair blockers"
+            source_handoff_rel = (
+                ".opencode/state/artifacts/history/repair/handoff-brief-completion.md"
             )
-        required_stage_details = source_follow_up_repair["execution_record"][
-            "required_follow_on_stage_details"
-        ]
-        if required_stage_details != [
-            {
-                "stage": "ticket-pack-builder",
-                "owner": "ticket-pack-builder",
-                "category": "ticket_follow_up",
-                "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
+            source_handoff_path = source_follow_up_repair_dest / source_handoff_rel
+            source_handoff_path.parent.mkdir(parents=True, exist_ok=True)
+            source_handoff_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: handoff-brief\n"
+                f"- cycle_id: {source_follow_on_cycle}\n"
+                "- completed_by: handoff-brief\n\n"
+                "## Summary\n\n"
+                "- Refreshed restart surfaces after converged managed repair.\n",
+                encoding="utf-8",
+            )
+            run_json(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(source_follow_up_repair_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "ticket-pack-builder",
+                    "--summary",
+                    "Routed source follow-up into the ticket system.",
+                    "--evidence",
+                    source_ticket_pack_rel,
+                ],
+                ROOT,
+            )
+            run_json(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(source_follow_up_repair_dest),
+                    "--stage",
+                    "handoff-brief",
+                    "--completed-by",
+                    "handoff-brief",
+                    "--summary",
+                    "Refreshed restart surfaces after converged managed repair.",
+                    "--evidence",
+                    source_handoff_rel,
+                ],
+                ROOT,
+            )
+            reconcile_source_follow_up = run_json(
+                [
+                    sys.executable,
+                    str(RECONCILE_REPAIR),
+                    str(source_follow_up_repair_dest),
+                ],
+                ROOT,
+            )
+            if reconcile_source_follow_up.get("status") != "reconciled":
+                raise RuntimeError(
+                    "reconcile_repair_follow_on should reconcile completed current-cycle follow-on stages into source_follow_up when only EXEC findings remain"
+                )
+            reconciled_workflow = json.loads(
+                (
+                    source_follow_up_repair_dest
+                    / ".opencode"
+                    / "state"
+                    / "workflow-state.json"
+                ).read_text(encoding="utf-8")
+            )
+            if (
+                reconciled_workflow["repair_follow_on"]["outcome"]
+                != "source_follow_up"
+            ):
+                raise RuntimeError(
+                    "reconcile_repair_follow_on should update workflow-state to source_follow_up when only source follow-up remains"
+                )
+            if (
+                reconciled_workflow["repair_follow_on"]["handoff_allowed"]
+                is not True
+            ):
+                raise RuntimeError(
+                    "reconcile_repair_follow_on should allow handoff once required follow-on stages are complete and only source follow-up remains"
+                )
+            if reconciled_workflow["repair_follow_on"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "reconcile_repair_follow_on should clear stage-only repair blocking reasons once the current cycle is reconciled"
+                )
+            source_follow_up_repair = run_json(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(source_follow_up_repair_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                ROOT,
+            )
+            if source_follow_up_repair["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "Source-layer EXEC follow-up alone should not keep managed repair follow-on blocked once the required follow-on stages are complete"
+                )
+            if source_follow_up_repair["execution_record"]["verification_status"][
+                "source_follow_up_codes"
+            ] != ["EXEC003"]:
+                raise RuntimeError(
+                    "Public managed repair runner should classify EXEC findings as source follow-up instead of managed repair blockers"
+                )
+            required_stage_details = source_follow_up_repair["execution_record"][
+                "required_follow_on_stage_details"
+            ]
+            if required_stage_details != [
+                {
+                    "stage": "ticket-pack-builder",
+                    "owner": "ticket-pack-builder",
+                    "category": "ticket_follow_up",
+                    "reason": "Repair left remediation or reverification follow-up that must be routed into the repo ticket system.",
+                }
+            ]:
+                raise RuntimeError(
+                    "Public managed repair runner should expose machine-readable owner/category metadata for required follow-on stages"
+                )
+            if source_follow_up_repair["execution_record"]["verification_status"][
+                "current_state_clean"
+            ]:
+                raise RuntimeError(
+                    "Public managed repair runner should not call EXEC-only residual work current_state_clean"
+                )
+            if not source_follow_up_repair["execution_record"]["verification_status"][
+                "causal_regression_verified"
+            ]:
+                raise RuntimeError(
+                    "Public managed repair runner should still mark managed repair verification as satisfied when only source follow-up remains"
+                )
+            if (
+                source_follow_up_repair["execution_record"]["repair_follow_on_outcome"]
+                != "source_follow_up"
+            ):
+                raise RuntimeError(
+                    "Public managed repair runner should classify EXEC-only residual work as source_follow_up"
+                )
+            if not source_follow_up_repair["execution_record"]["handoff_allowed"]:
+                raise RuntimeError(
+                    "Public managed repair runner should allow handoff once only source follow-up remains and the required follow-on stages are complete"
+                )
+            source_follow_up_workflow = json.loads(
+                (
+                    source_follow_up_repair_dest
+                    / ".opencode"
+                    / "state"
+                    / "workflow-state.json"
+                ).read_text(encoding="utf-8")
+            )
+            if (
+                source_follow_up_workflow["repair_follow_on"]["handoff_allowed"]
+                is not True
+            ):
+                raise RuntimeError(
+                    "Managed repair should write a cleared repair_follow_on state when only source-layer follow-up remains"
+                )
+            if (
+                source_follow_up_workflow["repair_follow_on"]["outcome"]
+                != "source_follow_up"
+            ):
+                raise RuntimeError(
+                    "Managed repair should record source_follow_up when only source-layer remediation remains"
+                )
+            if (
+                source_follow_up_workflow["repair_follow_on"]["current_state_clean"]
+                is not False
+            ):
+                raise RuntimeError(
+                    "Managed repair should not record current_state_clean when source-layer remediation remains"
+                )
+            if (
+                source_follow_up_workflow["repair_follow_on"]["tracking_mode"]
+                != "persistent_recorded_state"
+            ):
+                raise RuntimeError(
+                    "Managed repair should record persistent follow-on tracking mode in workflow state"
+                )
+            if (
+                source_follow_up_workflow["repair_follow_on"]["required_stage_details"]
+                != required_stage_details
+            ):
+                raise RuntimeError(
+                    "Managed repair should persist machine-readable required stage details into workflow-state"
+                )
+            remediation_ticket_ids = source_follow_up_repair["execution_record"].get(
+                "remediation_ticket_ids", []
+            )
+            if not remediation_ticket_ids:
+                raise RuntimeError(
+                    "Public managed repair runner should create remediation follow-up tickets when EXEC or REF findings remain after repair"
+                )
+            remediation_manifest = json.loads(
+                (
+                    source_follow_up_repair_dest / "tickets" / "manifest.json"
+                ).read_text(encoding="utf-8")
+            )
+            remediation_tickets = {
+                ticket["id"]: ticket
+                for ticket in remediation_manifest.get("tickets", [])
+                if isinstance(ticket, dict)
             }
-        ]:
-            raise RuntimeError(
-                "Public managed repair runner should expose machine-readable owner/category metadata for required follow-on stages"
+            first_remediation_ticket = remediation_tickets.get(remediation_ticket_ids[0])
+            if not first_remediation_ticket or not str(
+                first_remediation_ticket.get("finding_source", "")
+            ).startswith("EXEC"):
+                raise RuntimeError(
+                    "Auto-created repair remediation tickets should preserve the source finding code"
+                )
+            if not source_follow_on_state_path.exists():
+                raise RuntimeError(
+                    "Managed repair should persist follow-on stage state in repo metadata"
+                )
+            follow_on_state = json.loads(
+                source_follow_on_state_path.read_text(encoding="utf-8")
             )
-        if source_follow_up_repair["execution_record"]["verification_status"][
-            "current_state_clean"
-        ]:
-            raise RuntimeError(
-                "Public managed repair runner should not call EXEC-only residual work current_state_clean"
+            if follow_on_state["tracking_mode"] != "persistent_recorded_state":
+                raise RuntimeError(
+                    "Persisted follow-on stage state should record persistent tracking mode"
+                )
+            if (
+                follow_on_state["stage_records"]["ticket-pack-builder"]["status"]
+                != "completed"
+            ):
+                raise RuntimeError(
+                    "Persisted follow-on stage state should keep recorded follow-on stage completion"
+                )
+            if (
+                follow_on_state["stage_records"]["ticket-pack-builder"]["owner"]
+                != "ticket-pack-builder"
+                or follow_on_state["stage_records"]["ticket-pack-builder"]["category"]
+                != "ticket_follow_up"
+            ):
+                raise RuntimeError(
+                    "Persisted follow-on stage state should keep machine-readable owner/category metadata for canonical stages"
+                )
+            if not any(
+                item.get("status") == "completed"
+                and item.get("stage") == "ticket-pack-builder"
+                and item.get("owner") == "ticket-pack-builder"
+                and item.get("category") == "ticket_follow_up"
+                for item in follow_on_state.get("history", [])
+                if isinstance(item, dict)
+            ):
+                raise RuntimeError(
+                    "Persisted follow-on history should keep owner/category metadata for recorded stage completion events"
+                )
+    
+            source_follow_up_repair_reuse = run_json(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(source_follow_up_repair_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                ROOT,
             )
-        if not source_follow_up_repair["execution_record"]["verification_status"][
-            "causal_regression_verified"
-        ]:
-            raise RuntimeError(
-                "Public managed repair runner should still mark managed repair verification as satisfied when only source follow-up remains"
+            if source_follow_up_repair_reuse["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "Recorded follow-on stage state should let later repair runs reuse prior explicit recorded completion without re-recording the stage"
+                )
+            if source_follow_up_repair_reuse["execution_record"][
+                "recorded_completed_stages"
+            ] != ["handoff-brief", "ticket-pack-builder"]:
+                raise RuntimeError(
+                    "Public managed repair runner should expose persisted recorded follow-on completions"
+                )
+            if (
+                source_follow_up_repair_reuse["execution_record"][
+                    "repair_follow_on_outcome"
+                ]
+                != "source_follow_up"
+            ):
+                raise RuntimeError(
+                    "Reused follow-on stage state should preserve the same source_follow_up outcome"
+                )
+            if not source_follow_up_repair_reuse["execution_record"]["handoff_allowed"]:
+                raise RuntimeError(
+                    "Reused follow-on stage state should still allow handoff when only source follow-up remains"
+                )
+            recorded_stage_results = {
+                item["stage"]: item["status"]
+                for item in source_follow_up_repair_reuse["stage_results"]
+                if item.get("status") == "recorded_completed"
+            }
+            if recorded_stage_results != {
+                "handoff-brief": "recorded_completed",
+                "ticket-pack-builder": "recorded_completed",
+            }:
+                raise RuntimeError(
+                    "Managed repair should expose reused follow-on completions as recorded_completed stage results"
+                )
+    
+            auto_detected_follow_on_dest = workspace / "auto-detected-follow-on-repair"
+            shutil.copytree(full_dest, auto_detected_follow_on_dest)
+            make_stack_skill_non_placeholder(auto_detected_follow_on_dest)
+            remove_stale_blender_workflow_skill(auto_detected_follow_on_dest)
+            seed_failing_pytest_suite(auto_detected_follow_on_dest)
+            auto_detected_initial_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(auto_detected_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
             )
-        if (
-            source_follow_up_repair["execution_record"]["repair_follow_on_outcome"]
-            != "source_follow_up"
-        ):
-            raise RuntimeError(
-                "Public managed repair runner should classify EXEC-only residual work as source_follow_up"
-            )
-        if not source_follow_up_repair["execution_record"]["handoff_allowed"]:
-            raise RuntimeError(
-                "Public managed repair runner should allow handoff once only source follow-up remains and the required follow-on stages are complete"
-            )
-        source_follow_up_workflow = json.loads(
-            (
-                source_follow_up_repair_dest
+            if auto_detected_initial_process.returncode == 0:
+                raise RuntimeError(
+                    "A repair run with unresolved ticket follow-up should fail closed before any canonical completion artifact exists"
+                )
+            auto_detected_initial = json.loads(auto_detected_initial_process.stdout)
+            if not auto_detected_initial["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "A repair run with unresolved ticket follow-up should stay blocked before any canonical completion artifact exists"
+                )
+            auto_follow_on_state_path = (
+                auto_detected_follow_on_dest
                 / ".opencode"
-                / "state"
-                / "workflow-state.json"
-            ).read_text(encoding="utf-8")
-        )
-        if (
-            source_follow_up_workflow["repair_follow_on"]["handoff_allowed"]
-            is not True
-        ):
-            raise RuntimeError(
-                "Managed repair should write a cleared repair_follow_on state when only source-layer follow-up remains"
+                / "meta"
+                / "repair-follow-on-state.json"
             )
-        if (
-            source_follow_up_workflow["repair_follow_on"]["outcome"]
-            != "source_follow_up"
-        ):
-            raise RuntimeError(
-                "Managed repair should record source_follow_up when only source-layer remediation remains"
+            auto_follow_on_state = json.loads(
+                auto_follow_on_state_path.read_text(encoding="utf-8")
             )
-        if (
-            source_follow_up_workflow["repair_follow_on"]["current_state_clean"]
-            is not False
-        ):
-            raise RuntimeError(
-                "Managed repair should not record current_state_clean when source-layer remediation remains"
+            auto_cycle_id = auto_follow_on_state["cycle_id"]
+            auto_evidence_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+            auto_evidence_path = auto_detected_follow_on_dest / auto_evidence_rel
+            auto_handoff_evidence_rel = (
+                ".opencode/state/artifacts/history/repair/handoff-brief-completion.md"
             )
-        if (
-            source_follow_up_workflow["repair_follow_on"]["tracking_mode"]
-            != "persistent_recorded_state"
-        ):
-            raise RuntimeError(
-                "Managed repair should record persistent follow-on tracking mode in workflow state"
+            auto_handoff_evidence_path = (
+                auto_detected_follow_on_dest / auto_handoff_evidence_rel
             )
-        if (
-            source_follow_up_workflow["repair_follow_on"]["required_stage_details"]
-            != required_stage_details
-        ):
-            raise RuntimeError(
-                "Managed repair should persist machine-readable required stage details into workflow-state"
+            auto_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            auto_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: ticket-pack-builder\n"
+                "- cycle_id: stale-cycle\n"
+                "- completed_by: ticket-pack-builder\n\n"
+                "## Summary\n\n"
+                "- Created or updated the canonical repair follow-up tickets required by the current repair cycle.\n",
+                encoding="utf-8",
             )
-        remediation_ticket_ids = source_follow_up_repair["execution_record"].get(
-            "remediation_ticket_ids", []
-        )
-        if not remediation_ticket_ids:
-            raise RuntimeError(
-                "Public managed repair runner should create remediation follow-up tickets when EXEC or REF findings remain after repair"
+            auto_handoff_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            auto_handoff_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: handoff-brief\n"
+                "- cycle_id: stale-cycle\n"
+                "- completed_by: handoff-brief\n\n"
+                "## Summary\n\n"
+                "- Refreshed START-HERE.md, context-snapshot.md, and latest-handoff.md for the current repair cycle.\n",
+                encoding="utf-8",
             )
-        remediation_manifest = json.loads(
-            (
-                source_follow_up_repair_dest / "tickets" / "manifest.json"
-            ).read_text(encoding="utf-8")
-        )
-        remediation_tickets = {
-            ticket["id"]: ticket
-            for ticket in remediation_manifest.get("tickets", [])
-            if isinstance(ticket, dict)
-        }
-        first_remediation_ticket = remediation_tickets.get(remediation_ticket_ids[0])
-        if not first_remediation_ticket or not str(
-            first_remediation_ticket.get("finding_source", "")
-        ).startswith("EXEC"):
-            raise RuntimeError(
-                "Auto-created repair remediation tickets should preserve the source finding code"
+            wrong_cycle_auto_detect_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(auto_detected_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
             )
-        if not source_follow_on_state_path.exists():
-            raise RuntimeError(
-                "Managed repair should persist follow-on stage state in repo metadata"
+            if wrong_cycle_auto_detect_process.returncode == 0:
+                raise RuntimeError(
+                    "Managed repair should fail closed when only a stale-cycle canonical completion artifact exists"
+                )
+            if not wrong_cycle_auto_detect_process.stdout.strip():
+                raise RuntimeError(
+                    "Managed repair should emit a JSON execution record when stale-cycle canonical completion evidence fails closed.\n"
+                    f"STDERR:\n{wrong_cycle_auto_detect_process.stderr}"
+                )
+            wrong_cycle_auto_detect = json.loads(wrong_cycle_auto_detect_process.stdout)
+            if wrong_cycle_auto_detect["execution_record"][
+                "auto_detected_recorded_stages"
+            ]:
+                raise RuntimeError(
+                    "Managed repair should not auto-detect canonical stage evidence whose cycle_id does not match the current repair cycle"
+                )
+            if not wrong_cycle_auto_detect["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "Managed repair should remain blocked when only a stale-cycle completion artifact exists"
+                )
+            wrong_cycle_manual_record = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(auto_detected_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "ticket-pack-builder",
+                    "--summary",
+                    "Stale-cycle canonical evidence should fail.",
+                    "--evidence",
+                    auto_evidence_rel,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
             )
-        follow_on_state = json.loads(
-            source_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        if follow_on_state["tracking_mode"] != "persistent_recorded_state":
-            raise RuntimeError(
-                "Persisted follow-on stage state should record persistent tracking mode"
+            if wrong_cycle_manual_record.returncode == 0:
+                raise RuntimeError(
+                    "record_repair_stage_completion should reject stale-cycle canonical repair evidence instead of trusting it as explicit recorded execution"
+                )
+            if (
+                "must match the current repair cycle"
+                not in wrong_cycle_manual_record.stderr
+                and "must match the current repair cycle"
+                not in wrong_cycle_manual_record.stdout
+            ):
+                raise RuntimeError(
+                    "record_repair_stage_completion should explain stale-cycle canonical evidence rejection"
+                )
+            auto_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: ticket-pack-builder\n"
+                f"- cycle_id: {auto_cycle_id}\n"
+                "- completed_by: ticket-pack-builder\n\n"
+                "## Summary\n\n"
+                "- Created or updated the canonical repair follow-up tickets required by the current repair cycle.\n",
+                encoding="utf-8",
             )
-        if (
-            follow_on_state["stage_records"]["ticket-pack-builder"]["status"]
-            != "completed"
-        ):
-            raise RuntimeError(
-                "Persisted follow-on stage state should keep recorded follow-on stage completion"
+            auto_handoff_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: handoff-brief\n"
+                f"- cycle_id: {auto_cycle_id}\n"
+                "- completed_by: handoff-brief\n\n"
+                "## Summary\n\n"
+                "- Refreshed START-HERE.md, context-snapshot.md, and latest-handoff.md for the current repair cycle.\n",
+                encoding="utf-8",
             )
-        if (
-            follow_on_state["stage_records"]["ticket-pack-builder"]["owner"]
-            != "ticket-pack-builder"
-            or follow_on_state["stage_records"]["ticket-pack-builder"]["category"]
-            != "ticket_follow_up"
-        ):
-            raise RuntimeError(
-                "Persisted follow-on stage state should keep machine-readable owner/category metadata for canonical stages"
+            auto_detected_reuse = run_json(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(auto_detected_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                ROOT,
             )
-        if not any(
-            item.get("status") == "completed"
-            and item.get("stage") == "ticket-pack-builder"
-            and item.get("owner") == "ticket-pack-builder"
-            and item.get("category") == "ticket_follow_up"
-            for item in follow_on_state.get("history", [])
-            if isinstance(item, dict)
-        ):
-            raise RuntimeError(
-                "Persisted follow-on history should keep owner/category metadata for recorded stage completion events"
+            if auto_detected_reuse["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "Managed repair should auto-recognize current-cycle canonical ticket-pack-builder completion evidence without a separate recording command"
+                )
+            if auto_detected_reuse["execution_record"][
+                "auto_detected_recorded_stages"
+            ] != ["handoff-brief", "ticket-pack-builder"]:
+                raise RuntimeError(
+                    "Managed repair should report both current-cycle canonical repair artifacts as auto-detected recorded stages"
+                )
+            if auto_detected_reuse["execution_record"][
+                "recorded_execution_completed_stages"
+            ] != ["handoff-brief", "ticket-pack-builder"]:
+                raise RuntimeError(
+                    "Auto-detected canonical repair artifacts should count as recorded_execution completion for both stages"
+                )
+            auto_detected_state = json.loads(
+                auto_follow_on_state_path.read_text(encoding="utf-8")
             )
-
-        source_follow_up_repair_reuse = run_json(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(source_follow_up_repair_dest),
-                "--skip-deterministic-refresh",
-            ],
-            ROOT,
-        )
-        if source_follow_up_repair_reuse["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "Recorded follow-on stage state should let later repair runs reuse prior explicit recorded completion without re-recording the stage"
+            if (
+                auto_detected_state["stage_records"]["ticket-pack-builder"][
+                    "completed_by"
+                ]
+                != "ticket-pack-builder:auto-detected"
+            ):
+                raise RuntimeError(
+                    "Auto-detected canonical ticket-pack-builder evidence should persist completed_by as ticket-pack-builder:auto-detected"
+                )
+            if auto_detected_state["stage_records"]["ticket-pack-builder"][
+                "evidence_paths"
+            ] != [auto_evidence_rel]:
+                raise RuntimeError(
+                    "Auto-detected canonical ticket-pack-builder evidence should preserve the canonical repair artifact path"
+                )
+            if (
+                auto_detected_state["stage_records"]["handoff-brief"]["completed_by"]
+                != "handoff-brief:auto-detected"
+            ):
+                raise RuntimeError(
+                    "Auto-detected canonical handoff-brief evidence should persist completed_by as handoff-brief:auto-detected"
+                )
+            if auto_detected_state["stage_records"]["handoff-brief"][
+                "evidence_paths"
+            ] != [auto_handoff_evidence_rel]:
+                raise RuntimeError(
+                    "Auto-detected canonical handoff-brief evidence should preserve the canonical repair artifact path"
+                )
+    
+            zero_evidence_follow_on_dest = workspace / "zero-evidence-follow-on-repair"
+            shutil.copytree(full_dest, zero_evidence_follow_on_dest)
+            make_stack_skill_non_placeholder(zero_evidence_follow_on_dest)
+            remove_stale_blender_workflow_skill(zero_evidence_follow_on_dest)
+            seed_failing_pytest_suite(zero_evidence_follow_on_dest)
+            zero_evidence_initial_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(zero_evidence_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
             )
-        if source_follow_up_repair_reuse["execution_record"][
-            "recorded_completed_stages"
-        ] != ["handoff-brief", "ticket-pack-builder"]:
-            raise RuntimeError(
-                "Public managed repair runner should expose persisted recorded follow-on completions"
+            zero_evidence_initial = json.loads(zero_evidence_initial_process.stdout)
+            if not zero_evidence_initial["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "A repair run without any follow-on completion record should remain blocked before zero-evidence pollution is tested"
+                )
+            zero_evidence_state_path = (
+                zero_evidence_follow_on_dest
+                / ".opencode"
+                / "meta"
+                / "repair-follow-on-state.json"
             )
-        if (
-            source_follow_up_repair_reuse["execution_record"][
-                "repair_follow_on_outcome"
-            ]
-            != "source_follow_up"
-        ):
-            raise RuntimeError(
-                "Reused follow-on stage state should preserve the same source_follow_up outcome"
+            zero_evidence_state = json.loads(
+                zero_evidence_state_path.read_text(encoding="utf-8")
             )
-        if not source_follow_up_repair_reuse["execution_record"]["handoff_allowed"]:
-            raise RuntimeError(
-                "Reused follow-on stage state should still allow handoff when only source follow-up remains"
-            )
-        recorded_stage_results = {
-            item["stage"]: item["status"]
-            for item in source_follow_up_repair_reuse["stage_results"]
-            if item.get("status") == "recorded_completed"
-        }
-        if recorded_stage_results != {
-            "handoff-brief": "recorded_completed",
-            "ticket-pack-builder": "recorded_completed",
-        }:
-            raise RuntimeError(
-                "Managed repair should expose reused follow-on completions as recorded_completed stage results"
-            )
-
-        auto_detected_follow_on_dest = workspace / "auto-detected-follow-on-repair"
-        shutil.copytree(full_dest, auto_detected_follow_on_dest)
-        make_stack_skill_non_placeholder(auto_detected_follow_on_dest)
-        remove_stale_blender_workflow_skill(auto_detected_follow_on_dest)
-        seed_failing_pytest_suite(auto_detected_follow_on_dest)
-        auto_detected_initial_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(auto_detected_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if auto_detected_initial_process.returncode == 0:
-            raise RuntimeError(
-                "A repair run with unresolved ticket follow-up should fail closed before any canonical completion artifact exists"
-            )
-        auto_detected_initial = json.loads(auto_detected_initial_process.stdout)
-        if not auto_detected_initial["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "A repair run with unresolved ticket follow-up should stay blocked before any canonical completion artifact exists"
-            )
-        auto_follow_on_state_path = (
-            auto_detected_follow_on_dest
-            / ".opencode"
-            / "meta"
-            / "repair-follow-on-state.json"
-        )
-        auto_follow_on_state = json.loads(
-            auto_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        auto_cycle_id = auto_follow_on_state["cycle_id"]
-        auto_evidence_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
-        auto_evidence_path = auto_detected_follow_on_dest / auto_evidence_rel
-        auto_handoff_evidence_rel = (
-            ".opencode/state/artifacts/history/repair/handoff-brief-completion.md"
-        )
-        auto_handoff_evidence_path = (
-            auto_detected_follow_on_dest / auto_handoff_evidence_rel
-        )
-        auto_evidence_path.parent.mkdir(parents=True, exist_ok=True)
-        auto_evidence_path.write_text(
-            "# Repair Follow-On Completion\n\n"
-            "- completed_stage: ticket-pack-builder\n"
-            "- cycle_id: stale-cycle\n"
-            "- completed_by: ticket-pack-builder\n\n"
-            "## Summary\n\n"
-            "- Created or updated the canonical repair follow-up tickets required by the current repair cycle.\n",
-            encoding="utf-8",
-        )
-        auto_handoff_evidence_path.parent.mkdir(parents=True, exist_ok=True)
-        auto_handoff_evidence_path.write_text(
-            "# Repair Follow-On Completion\n\n"
-            "- completed_stage: handoff-brief\n"
-            "- cycle_id: stale-cycle\n"
-            "- completed_by: handoff-brief\n\n"
-            "## Summary\n\n"
-            "- Refreshed START-HERE.md, context-snapshot.md, and latest-handoff.md for the current repair cycle.\n",
-            encoding="utf-8",
-        )
-        wrong_cycle_auto_detect_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(auto_detected_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if wrong_cycle_auto_detect_process.returncode == 0:
-            raise RuntimeError(
-                "Managed repair should fail closed when only a stale-cycle canonical completion artifact exists"
-            )
-        if not wrong_cycle_auto_detect_process.stdout.strip():
-            raise RuntimeError(
-                "Managed repair should emit a JSON execution record when stale-cycle canonical completion evidence fails closed.\n"
-                f"STDERR:\n{wrong_cycle_auto_detect_process.stderr}"
-            )
-        wrong_cycle_auto_detect = json.loads(wrong_cycle_auto_detect_process.stdout)
-        if wrong_cycle_auto_detect["execution_record"][
-            "auto_detected_recorded_stages"
-        ]:
-            raise RuntimeError(
-                "Managed repair should not auto-detect canonical stage evidence whose cycle_id does not match the current repair cycle"
-            )
-        if not wrong_cycle_auto_detect["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "Managed repair should remain blocked when only a stale-cycle completion artifact exists"
-            )
-        wrong_cycle_manual_record = subprocess.run(
-            [
-                sys.executable,
-                str(RECORD_REPAIR_STAGE),
-                str(auto_detected_follow_on_dest),
-                "--stage",
-                "ticket-pack-builder",
-                "--completed-by",
-                "ticket-pack-builder",
-                "--summary",
-                "Stale-cycle canonical evidence should fail.",
-                "--evidence",
-                auto_evidence_rel,
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if wrong_cycle_manual_record.returncode == 0:
-            raise RuntimeError(
-                "record_repair_stage_completion should reject stale-cycle canonical repair evidence instead of trusting it as explicit recorded execution"
-            )
-        if (
-            "must match the current repair cycle"
-            not in wrong_cycle_manual_record.stderr
-            and "must match the current repair cycle"
-            not in wrong_cycle_manual_record.stdout
-        ):
-            raise RuntimeError(
-                "record_repair_stage_completion should explain stale-cycle canonical evidence rejection"
-            )
-        auto_evidence_path.write_text(
-            "# Repair Follow-On Completion\n\n"
-            "- completed_stage: ticket-pack-builder\n"
-            f"- cycle_id: {auto_cycle_id}\n"
-            "- completed_by: ticket-pack-builder\n\n"
-            "## Summary\n\n"
-            "- Created or updated the canonical repair follow-up tickets required by the current repair cycle.\n",
-            encoding="utf-8",
-        )
-        auto_handoff_evidence_path.write_text(
-            "# Repair Follow-On Completion\n\n"
-            "- completed_stage: handoff-brief\n"
-            f"- cycle_id: {auto_cycle_id}\n"
-            "- completed_by: handoff-brief\n\n"
-            "## Summary\n\n"
-            "- Refreshed START-HERE.md, context-snapshot.md, and latest-handoff.md for the current repair cycle.\n",
-            encoding="utf-8",
-        )
-        auto_detected_reuse = run_json(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(auto_detected_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            ROOT,
-        )
-        if auto_detected_reuse["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "Managed repair should auto-recognize current-cycle canonical ticket-pack-builder completion evidence without a separate recording command"
-            )
-        if auto_detected_reuse["execution_record"][
-            "auto_detected_recorded_stages"
-        ] != ["handoff-brief", "ticket-pack-builder"]:
-            raise RuntimeError(
-                "Managed repair should report both current-cycle canonical repair artifacts as auto-detected recorded stages"
-            )
-        if auto_detected_reuse["execution_record"][
-            "recorded_execution_completed_stages"
-        ] != ["handoff-brief", "ticket-pack-builder"]:
-            raise RuntimeError(
-                "Auto-detected canonical repair artifacts should count as recorded_execution completion for both stages"
-            )
-        auto_detected_state = json.loads(
-            auto_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        if (
-            auto_detected_state["stage_records"]["ticket-pack-builder"][
-                "completed_by"
-            ]
-            != "ticket-pack-builder:auto-detected"
-        ):
-            raise RuntimeError(
-                "Auto-detected canonical ticket-pack-builder evidence should persist completed_by as ticket-pack-builder:auto-detected"
-            )
-        if auto_detected_state["stage_records"]["ticket-pack-builder"][
-            "evidence_paths"
-        ] != [auto_evidence_rel]:
-            raise RuntimeError(
-                "Auto-detected canonical ticket-pack-builder evidence should preserve the canonical repair artifact path"
-            )
-        if (
-            auto_detected_state["stage_records"]["handoff-brief"]["completed_by"]
-            != "handoff-brief:auto-detected"
-        ):
-            raise RuntimeError(
-                "Auto-detected canonical handoff-brief evidence should persist completed_by as handoff-brief:auto-detected"
-            )
-        if auto_detected_state["stage_records"]["handoff-brief"][
-            "evidence_paths"
-        ] != [auto_handoff_evidence_rel]:
-            raise RuntimeError(
-                "Auto-detected canonical handoff-brief evidence should preserve the canonical repair artifact path"
-            )
-
-        zero_evidence_follow_on_dest = workspace / "zero-evidence-follow-on-repair"
-        shutil.copytree(full_dest, zero_evidence_follow_on_dest)
-        make_stack_skill_non_placeholder(zero_evidence_follow_on_dest)
-        remove_stale_blender_workflow_skill(zero_evidence_follow_on_dest)
-        seed_failing_pytest_suite(zero_evidence_follow_on_dest)
-        zero_evidence_initial_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(zero_evidence_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        zero_evidence_initial = json.loads(zero_evidence_initial_process.stdout)
-        if not zero_evidence_initial["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "A repair run without any follow-on completion record should remain blocked before zero-evidence pollution is tested"
-            )
-        zero_evidence_state_path = (
-            zero_evidence_follow_on_dest
-            / ".opencode"
-            / "meta"
-            / "repair-follow-on-state.json"
-        )
-        zero_evidence_state = json.loads(
-            zero_evidence_state_path.read_text(encoding="utf-8")
-        )
-        zero_evidence_state["stage_records"]["ticket-pack-builder"] = {
-            "stage": "ticket-pack-builder",
-            "owner": "ticket-pack-builder",
-            "category": "ticket_follow_up",
-            "status": "completed",
-            "completion_mode": "recorded_execution",
-            "evidence_paths": [],
-            "completed_by": "ticket-pack-builder",
-            "summary": "Polluted zero-evidence completion",
-            "last_recorded_at": "2026-03-30T00:00:00Z",
-            "last_checked_at": "2026-03-30T00:00:00Z",
-            "last_updated_at": "2026-03-30T00:00:00Z",
-        }
-        zero_evidence_state["history"].append(
-            {
-                "recorded_at": "2026-03-30T00:00:00Z",
+            zero_evidence_state["stage_records"]["ticket-pack-builder"] = {
                 "stage": "ticket-pack-builder",
                 "owner": "ticket-pack-builder",
                 "category": "ticket_follow_up",
                 "status": "completed",
                 "completion_mode": "recorded_execution",
+                "evidence_paths": [],
                 "completed_by": "ticket-pack-builder",
                 "summary": "Polluted zero-evidence completion",
-                "evidence_paths": [],
-                "cycle_id": zero_evidence_state["cycle_id"],
+                "last_recorded_at": "2026-03-30T00:00:00Z",
+                "last_checked_at": "2026-03-30T00:00:00Z",
+                "last_updated_at": "2026-03-30T00:00:00Z",
             }
-        )
-        zero_evidence_state_path.write_text(
-            json.dumps(zero_evidence_state, indent=2) + "\n", encoding="utf-8"
-        )
-        zero_evidence_follow_on_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(zero_evidence_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        zero_evidence_follow_on = json.loads(zero_evidence_follow_on_process.stdout)
-        if (
-            "ticket-pack-builder"
-            not in zero_evidence_follow_on["execution_record"][
-                "invalidated_recorded_stages"
-            ]
-        ):
-            raise RuntimeError(
-                "Managed repair should invalidate recorded execution state that claims completion with zero evidence paths"
+            zero_evidence_state["history"].append(
+                {
+                    "recorded_at": "2026-03-30T00:00:00Z",
+                    "stage": "ticket-pack-builder",
+                    "owner": "ticket-pack-builder",
+                    "category": "ticket_follow_up",
+                    "status": "completed",
+                    "completion_mode": "recorded_execution",
+                    "completed_by": "ticket-pack-builder",
+                    "summary": "Polluted zero-evidence completion",
+                    "evidence_paths": [],
+                    "cycle_id": zero_evidence_state["cycle_id"],
+                }
             )
-        if zero_evidence_follow_on["execution_record"][
-            "recorded_execution_completed_stages"
-        ]:
-            raise RuntimeError(
-                "Managed repair should not report zero-evidence recorded execution as completed work"
+            zero_evidence_state_path.write_text(
+                json.dumps(zero_evidence_state, indent=2) + "\n", encoding="utf-8"
             )
-        if not zero_evidence_follow_on["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "Managed repair should block again when polluted zero-evidence recorded execution is invalidated"
+            zero_evidence_follow_on_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(zero_evidence_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
             )
-        zero_evidence_follow_on_state = json.loads(
-            zero_evidence_state_path.read_text(encoding="utf-8")
-        )
-        if (
-            zero_evidence_follow_on_state["stage_records"]["ticket-pack-builder"][
-                "status"
-            ]
-            != "evidence_missing"
-        ):
-            raise RuntimeError(
-                "Follow-on tracking should persist evidence_missing when polluted recorded execution has zero evidence paths"
-            )
-        if (
-            zero_evidence_follow_on_state["stage_records"][
+            zero_evidence_follow_on = json.loads(zero_evidence_follow_on_process.stdout)
+            if (
                 "ticket-pack-builder"
-            ].get("evidence_validation_error")
-            != "missing_recorded_evidence"
-        ):
-            raise RuntimeError(
-                "Follow-on tracking should record why zero-evidence recorded execution was invalidated"
+                not in zero_evidence_follow_on["execution_record"][
+                    "invalidated_recorded_stages"
+                ]
+            ):
+                raise RuntimeError(
+                    "Managed repair should invalidate recorded execution state that claims completion with zero evidence paths"
+                )
+            if zero_evidence_follow_on["execution_record"][
+                "recorded_execution_completed_stages"
+            ]:
+                raise RuntimeError(
+                    "Managed repair should not report zero-evidence recorded execution as completed work"
+                )
+            if not zero_evidence_follow_on["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "Managed repair should block again when polluted zero-evidence recorded execution is invalidated"
+                )
+            zero_evidence_follow_on_state = json.loads(
+                zero_evidence_state_path.read_text(encoding="utf-8")
             )
-
-        recorded_follow_on_dest = workspace / "recorded-follow-on-repair"
-        shutil.copytree(full_dest, recorded_follow_on_dest)
-        make_stack_skill_non_placeholder(recorded_follow_on_dest)
-        remove_stale_blender_workflow_skill(recorded_follow_on_dest)
-        seed_failing_pytest_suite(recorded_follow_on_dest)
-        recorded_follow_on_initial_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(recorded_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        recorded_follow_on_initial = json.loads(
-            recorded_follow_on_initial_process.stdout
-        )
-        if not recorded_follow_on_initial["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "A repair run without any follow-on completion record should remain blocked when ticket follow-up is still required"
+            if (
+                zero_evidence_follow_on_state["stage_records"]["ticket-pack-builder"][
+                    "status"
+                ]
+                != "evidence_missing"
+            ):
+                raise RuntimeError(
+                    "Follow-on tracking should persist evidence_missing when polluted recorded execution has zero evidence paths"
+                )
+            if (
+                zero_evidence_follow_on_state["stage_records"][
+                    "ticket-pack-builder"
+                ].get("evidence_validation_error")
+                != "missing_recorded_evidence"
+            ):
+                raise RuntimeError(
+                    "Follow-on tracking should record why zero-evidence recorded execution was invalidated"
+                )
+    
+            recorded_follow_on_dest = workspace / "recorded-follow-on-repair"
+            shutil.copytree(full_dest, recorded_follow_on_dest)
+            make_stack_skill_non_placeholder(recorded_follow_on_dest)
+            remove_stale_blender_workflow_skill(recorded_follow_on_dest)
+            seed_failing_pytest_suite(recorded_follow_on_dest)
+            recorded_follow_on_initial_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(recorded_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
             )
-        recorded_follow_on_state_path = (
-            recorded_follow_on_dest
-            / ".opencode"
-            / "meta"
-            / "repair-follow-on-state.json"
-        )
-        recorded_follow_on_initial_state = json.loads(
-            recorded_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        recorded_cycle_id = recorded_follow_on_initial_state["cycle_id"]
-        no_evidence_record_stage = subprocess.run(
-            [
-                sys.executable,
-                str(RECORD_REPAIR_STAGE),
-                str(recorded_follow_on_dest),
-                "--stage",
-                "ticket-pack-builder",
-                "--completed-by",
-                "tester",
-                "--summary",
-                "Missing evidence should fail.",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if no_evidence_record_stage.returncode == 0:
-            raise RuntimeError(
-                "record_repair_stage_completion should reject explicit recorded execution that provides zero evidence paths"
+            recorded_follow_on_initial = json.loads(
+                recorded_follow_on_initial_process.stdout
             )
-        if (
-            "requires at least one repo-relative evidence path"
-            not in no_evidence_record_stage.stderr
-            and "requires at least one repo-relative evidence path"
-            not in no_evidence_record_stage.stdout
-        ):
-            raise RuntimeError(
-                "record_repair_stage_completion should explain zero-evidence recorded execution rejection"
-            )
-        manual_recorded_evidence_rel = (
-            ".opencode/state/artifacts/history/repair/manual-recorded-evidence.md"
-        )
-        manual_recorded_evidence_path = (
-            recorded_follow_on_dest / manual_recorded_evidence_rel
-        )
-        manual_recorded_evidence_path.parent.mkdir(parents=True, exist_ok=True)
-        manual_recorded_evidence_path.write_text(
-            "# Manual recorded evidence\n", encoding="utf-8"
-        )
-        blank_completed_by_record_stage = subprocess.run(
-            [
-                sys.executable,
-                str(RECORD_REPAIR_STAGE),
-                str(recorded_follow_on_dest),
-                "--stage",
-                "ticket-pack-builder",
-                "--completed-by",
-                "   ",
-                "--summary",
-                "Blank completed_by should fail.",
-                "--evidence",
-                manual_recorded_evidence_rel,
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if blank_completed_by_record_stage.returncode == 0:
-            raise RuntimeError(
-                "record_repair_stage_completion should reject explicit recorded execution with a blank completed_by value"
-            )
-        if (
-            "requires a non-empty completed_by value"
-            not in blank_completed_by_record_stage.stderr
-            and "requires a non-empty completed_by value"
-            not in blank_completed_by_record_stage.stdout
-        ):
-            raise RuntimeError(
-                "record_repair_stage_completion should explain blank completed_by rejection"
-            )
-        blank_summary_record_stage = subprocess.run(
-            [
-                sys.executable,
-                str(RECORD_REPAIR_STAGE),
-                str(recorded_follow_on_dest),
-                "--stage",
-                "ticket-pack-builder",
-                "--completed-by",
-                "ticket-pack-builder",
-                "--summary",
-                "   ",
-                "--evidence",
-                manual_recorded_evidence_rel,
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if blank_summary_record_stage.returncode == 0:
-            raise RuntimeError(
-                "record_repair_stage_completion should reject explicit recorded execution with a blank summary"
-            )
-        if (
-            "requires a non-empty summary" not in blank_summary_record_stage.stderr
-            and "requires a non-empty summary"
-            not in blank_summary_record_stage.stdout
-        ):
-            raise RuntimeError(
-                "record_repair_stage_completion should explain blank summary rejection"
-            )
-        recorded_evidence_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
-        recorded_evidence_path = recorded_follow_on_dest / recorded_evidence_rel
-        recorded_evidence_path.parent.mkdir(parents=True, exist_ok=True)
-        recorded_evidence_path.write_text(
-            "# Repair Follow-On Completion\n\n"
-            "- completed_stage: ticket-pack-builder\n"
-            f"- cycle_id: {recorded_cycle_id}\n"
-            "- completed_by: ticket-pack-builder\n\n"
-            "## Summary\n\n"
-            "- Refined repair follow-up tickets after managed repair.\n",
-            encoding="utf-8",
-        )
-        recorded_workflow_before_stage = json.loads(
-            (
-                recorded_follow_on_dest
-                / ".opencode"
-                / "state"
-                / "workflow-state.json"
-            ).read_text(encoding="utf-8")
-        )
-        recorded_execution_before_stage = json.loads(
-            (
-                recorded_follow_on_dest
-                / ".opencode"
-                / "meta"
-                / "repair-execution.json"
-            ).read_text(encoding="utf-8")
-        )
-        recorded_start_here_before_stage = (
-            recorded_follow_on_dest / "START-HERE.md"
-        ).read_text(encoding="utf-8")
-        recorded_latest_handoff_before_stage = (
-            recorded_follow_on_dest / ".opencode" / "state" / "latest-handoff.md"
-        ).read_text(encoding="utf-8")
-        recorded_stage_payload = run_json(
-            [
-                sys.executable,
-                str(RECORD_REPAIR_STAGE),
-                str(recorded_follow_on_dest),
-                "--stage",
-                "ticket-pack-builder",
-                "--completed-by",
-                "ticket-pack-builder",
-                "--summary",
-                "Refined repair follow-up tickets after managed repair.",
-                "--evidence",
-                recorded_evidence_rel,
-            ],
-            ROOT,
-        )
-        if recorded_stage_payload["recorded_stage"]["status"] != "completed":
-            raise RuntimeError(
-                "record_repair_stage_completion should persist completed status for explicit recorded execution"
-            )
-        if (
-            recorded_stage_payload["recorded_stage"]["completion_mode"]
-            != "recorded_execution"
-        ):
-            raise RuntimeError(
-                "record_repair_stage_completion should mark explicit stage completion as recorded_execution"
-            )
-        if recorded_stage_payload["recorded_stage"]["evidence_paths"] != [
-            recorded_evidence_rel
-        ]:
-            raise RuntimeError(
-                "record_repair_stage_completion should preserve the recorded evidence paths"
-            )
-        if "publication" in recorded_stage_payload:
-            raise RuntimeError(
-                "record_repair_stage_completion should not publish restart surfaces directly"
-            )
-        recorded_workflow_after_stage = json.loads(
-            (
-                recorded_follow_on_dest
-                / ".opencode"
-                / "state"
-                / "workflow-state.json"
-            ).read_text(encoding="utf-8")
-        )
-        if recorded_workflow_after_stage != recorded_workflow_before_stage:
-            raise RuntimeError(
-                "record_repair_stage_completion should not rewrite workflow-state.json while recording completion"
-            )
-        recorded_execution_after_stage = json.loads(
-            (
-                recorded_follow_on_dest
-                / ".opencode"
-                / "meta"
-                / "repair-execution.json"
-            ).read_text(encoding="utf-8")
-        )
-        if recorded_execution_after_stage != recorded_execution_before_stage:
-            raise RuntimeError(
-                "record_repair_stage_completion should not rewrite repair-execution.json while recording completion"
-            )
-        recorded_start_here_after_stage = (
-            recorded_follow_on_dest / "START-HERE.md"
-        ).read_text(encoding="utf-8")
-        recorded_latest_handoff_after_stage = (
-            recorded_follow_on_dest / ".opencode" / "state" / "latest-handoff.md"
-        ).read_text(encoding="utf-8")
-        if recorded_start_here_after_stage != recorded_start_here_before_stage:
-            raise RuntimeError(
-                "record_repair_stage_completion should not republish START-HERE while recording completion"
-            )
-        if recorded_latest_handoff_after_stage != recorded_latest_handoff_before_stage:
-            raise RuntimeError(
-                "record_repair_stage_completion should not republish latest-handoff while recording completion"
-            )
-        recorded_follow_on_reuse = run_json(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(recorded_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            ROOT,
-        )
-        if recorded_follow_on_reuse["execution_record"]["blocking_reasons"]:
-            raise RuntimeError(
-                "A later repair run should reuse explicit recorded stage completion without needing transitional --stage-complete input"
-            )
-        if recorded_follow_on_reuse["execution_record"][
-            "recorded_execution_completed_stages"
-        ] != ["ticket-pack-builder"]:
-            raise RuntimeError(
-                "Managed repair should report explicit recorded_execution completions separately from asserted stages"
-            )
-        if recorded_follow_on_reuse["execution_record"][
-            "asserted_completed_stages"
-        ]:
-            raise RuntimeError(
-                "Explicit recorded_execution follow-on completion should not populate asserted_completed_stages"
-            )
-        if (
-            recorded_follow_on_reuse["execution_record"]["repair_follow_on_outcome"]
-            != "source_follow_up"
-        ):
-            raise RuntimeError(
-                "Explicit recorded_execution follow-on completion should still converge to source_follow_up when only EXEC findings remain"
-            )
-        recorded_follow_on_state = json.loads(
-            recorded_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        if (
-            recorded_follow_on_state["stage_records"]["ticket-pack-builder"][
-                "completed_by"
-            ]
-            != "ticket-pack-builder"
-        ):
-            raise RuntimeError(
-                "Persisted follow-on tracking should keep completed_by for explicitly recorded execution"
-            )
-        if not any(
-            item.get("status") == "completed"
-            and item.get("stage") == "ticket-pack-builder"
-            and item.get("owner") == "ticket-pack-builder"
-            and item.get("category") == "ticket_follow_up"
-            for item in recorded_follow_on_state.get("history", [])
-            if isinstance(item, dict)
-        ):
-            raise RuntimeError(
-                "Persisted follow-on history should keep owner/category metadata for recorded execution events"
-            )
-        package_mismatch_state = json.loads(
-            recorded_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        package_mismatch_state["repair_package_commit"] = "stale-package-commit"
-        package_mismatch_state["stage_records"]["ticket-pack-builder"][
-            "repair_package_commit"
-        ] = "stale-package-commit"
-        recorded_follow_on_state_path.write_text(
-            json.dumps(package_mismatch_state, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        recorded_follow_on_package_mismatch_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(recorded_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        recorded_follow_on_package_mismatch = json.loads(
-            recorded_follow_on_package_mismatch_process.stdout
-        )
-        if (
-            "ticket-pack-builder"
-            not in recorded_follow_on_package_mismatch["execution_record"][
-                "invalidated_recorded_stages"
-            ]
-        ):
-            raise RuntimeError(
-                "Managed repair should invalidate recorded execution reuse when the recorded stage package provenance is stale"
-            )
-        if recorded_follow_on_package_mismatch["execution_record"][
-            "recorded_execution_completed_stages"
-        ]:
-            raise RuntimeError(
-                "Managed repair should stop reporting recorded execution completion when its repair package provenance is stale"
-            )
-        package_mismatch_after_state = json.loads(
-            recorded_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        if (
-            package_mismatch_after_state["stage_records"]["ticket-pack-builder"].get(
-                "evidence_validation_error"
-            )
-            != "repair_package_commit_mismatch"
-        ):
-            raise RuntimeError(
-                "Follow-on tracking should record repair_package_commit_mismatch when a recorded stage was produced by an older package commit"
-            )
-        run_json(
-            [
-                sys.executable,
-                str(RECORD_REPAIR_STAGE),
-                str(recorded_follow_on_dest),
-                "--stage",
-                "ticket-pack-builder",
-                "--completed-by",
-                "ticket-pack-builder",
-                "--summary",
-                "Refined repair follow-up tickets after managed repair.",
-                "--evidence",
-                recorded_evidence_rel,
-            ],
-            ROOT,
-        )
-        same_head_dirty_state = json.loads(
-            recorded_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        current_provenance = package_commit()
-        current_base = current_provenance.split("+dirty:", 1)[0]
-        same_head_dirty_state["repair_package_commit"] = f"{current_base}+dirty:expected123456"
-        same_head_dirty_state["stage_records"]["ticket-pack-builder"][
-            "repair_package_commit"
-        ] = f"{current_base}+dirty:recorded654321"
-        recorded_follow_on_state_path.write_text(
-            json.dumps(same_head_dirty_state, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        same_head_dirty_reuse_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(recorded_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        same_head_dirty_reuse = json.loads(same_head_dirty_reuse_process.stdout)
-        if "ticket-pack-builder" in same_head_dirty_reuse["execution_record"][
-            "invalidated_recorded_stages"
-        ]:
-            raise RuntimeError(
-                "Managed repair should preserve recorded execution reuse when repair package provenance only differs by a same-HEAD dirty suffix"
-            )
-        if same_head_dirty_reuse["execution_record"][
-            "recorded_execution_completed_stages"
-        ] != ["ticket-pack-builder"]:
-            raise RuntimeError(
-                "Managed repair should keep recorded execution completion when only same-HEAD dirty provenance drift occurred"
-            )
-        same_head_dirty_after_state = json.loads(
-            recorded_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        if (
-            same_head_dirty_after_state["stage_records"]["ticket-pack-builder"][
-                "status"
-            ]
-            != "completed"
-        ):
-            raise RuntimeError(
-                "Follow-on tracking should keep completed status when repair package provenance only differs by a same-HEAD dirty suffix"
-            )
-        recorded_evidence_path.write_text(
-            "# Repair Follow-On Completion\n\n"
-            "- completed_stage: ticket-pack-builder\n"
-            "- cycle_id: stale-cycle\n"
-            "- completed_by: ticket-pack-builder\n\n"
-            "## Summary\n\n"
-            "- Drifted canonical evidence should invalidate reuse.\n",
-            encoding="utf-8",
-        )
-        recorded_follow_on_cycle_mismatch_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(recorded_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        recorded_follow_on_cycle_mismatch = json.loads(
-            recorded_follow_on_cycle_mismatch_process.stdout
-        )
-        if (
-            "ticket-pack-builder"
-            not in recorded_follow_on_cycle_mismatch["execution_record"][
-                "invalidated_recorded_stages"
-            ]
-        ):
-            raise RuntimeError(
-                "Managed repair should invalidate recorded execution reuse when canonical repair evidence drifts to a stale cycle"
-            )
-        if recorded_follow_on_cycle_mismatch["execution_record"][
-            "recorded_execution_completed_stages"
-        ]:
-            raise RuntimeError(
-                "Managed repair should stop reporting canonical recorded execution after its cycle markers drift"
-            )
-        drifted_evidence_state = json.loads(
-            recorded_follow_on_state_path.read_text(encoding="utf-8")
-        )
-        if (
-            drifted_evidence_state["stage_records"]["ticket-pack-builder"].get(
-                "evidence_validation_error"
-            )
-            != "canonical_evidence_cycle_mismatch"
-        ):
-            raise RuntimeError(
-                "Follow-on tracking should record canonical_evidence_cycle_mismatch when a recorded canonical artifact no longer matches the current cycle"
-            )
-        recorded_evidence_path.unlink()
-        recorded_follow_on_missing_evidence_process = subprocess.run(
-            [
-                sys.executable,
-                str(PUBLIC_REPAIR),
-                str(recorded_follow_on_dest),
-                "--skip-deterministic-refresh",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        recorded_follow_on_missing_evidence = json.loads(
-            recorded_follow_on_missing_evidence_process.stdout
-        )
-        if (
-            "ticket-pack-builder"
-            not in recorded_follow_on_missing_evidence["execution_record"][
-                "invalidated_recorded_stages"
-            ]
-        ):
-            raise RuntimeError(
-                "Managed repair should invalidate recorded execution reuse when the supporting evidence path disappears"
-            )
-        if recorded_follow_on_missing_evidence["execution_record"][
-            "recorded_execution_completed_stages"
-        ]:
-            raise RuntimeError(
-                "Managed repair should stop reporting recorded execution completion when its evidence is missing"
-            )
-        if not recorded_follow_on_missing_evidence["execution_record"][
-            "blocking_reasons"
-        ]:
-            raise RuntimeError(
-                "Managed repair should block again when required recorded execution evidence is missing"
-            )
-        missing_evidence_state = json.loads(
-            (
+            if not recorded_follow_on_initial["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "A repair run without any follow-on completion record should remain blocked when ticket follow-up is still required"
+                )
+            recorded_follow_on_state_path = (
                 recorded_follow_on_dest
                 / ".opencode"
                 / "meta"
                 / "repair-follow-on-state.json"
-            ).read_text(encoding="utf-8")
-        )
-        if (
-            missing_evidence_state["stage_records"]["ticket-pack-builder"]["status"]
-            != "evidence_missing"
-        ):
-            raise RuntimeError(
-                "Follow-on tracking should persist evidence_missing when recorded execution evidence disappears"
             )
-
+            recorded_follow_on_initial_state = json.loads(
+                recorded_follow_on_state_path.read_text(encoding="utf-8")
+            )
+            recorded_cycle_id = recorded_follow_on_initial_state["cycle_id"]
+            no_evidence_record_stage = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "tester",
+                    "--summary",
+                    "Missing evidence should fail.",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if no_evidence_record_stage.returncode == 0:
+                raise RuntimeError(
+                    "record_repair_stage_completion should reject explicit recorded execution that provides zero evidence paths"
+                )
+            if (
+                "requires at least one repo-relative evidence path"
+                not in no_evidence_record_stage.stderr
+                and "requires at least one repo-relative evidence path"
+                not in no_evidence_record_stage.stdout
+            ):
+                raise RuntimeError(
+                    "record_repair_stage_completion should explain zero-evidence recorded execution rejection"
+                )
+            manual_recorded_evidence_rel = (
+                ".opencode/state/artifacts/history/repair/manual-recorded-evidence.md"
+            )
+            manual_recorded_evidence_path = (
+                recorded_follow_on_dest / manual_recorded_evidence_rel
+            )
+            manual_recorded_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            manual_recorded_evidence_path.write_text(
+                "# Manual recorded evidence\n", encoding="utf-8"
+            )
+            blank_completed_by_record_stage = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "   ",
+                    "--summary",
+                    "Blank completed_by should fail.",
+                    "--evidence",
+                    manual_recorded_evidence_rel,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if blank_completed_by_record_stage.returncode == 0:
+                raise RuntimeError(
+                    "record_repair_stage_completion should reject explicit recorded execution with a blank completed_by value"
+                )
+            if (
+                "requires a non-empty completed_by value"
+                not in blank_completed_by_record_stage.stderr
+                and "requires a non-empty completed_by value"
+                not in blank_completed_by_record_stage.stdout
+            ):
+                raise RuntimeError(
+                    "record_repair_stage_completion should explain blank completed_by rejection"
+                )
+            blank_summary_record_stage = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "ticket-pack-builder",
+                    "--summary",
+                    "   ",
+                    "--evidence",
+                    manual_recorded_evidence_rel,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if blank_summary_record_stage.returncode == 0:
+                raise RuntimeError(
+                    "record_repair_stage_completion should reject explicit recorded execution with a blank summary"
+                )
+            if (
+                "requires a non-empty summary" not in blank_summary_record_stage.stderr
+                and "requires a non-empty summary"
+                not in blank_summary_record_stage.stdout
+            ):
+                raise RuntimeError(
+                    "record_repair_stage_completion should explain blank summary rejection"
+                )
+            recorded_evidence_rel = ".opencode/state/artifacts/history/repair/ticket-pack-builder-completion.md"
+            recorded_evidence_path = recorded_follow_on_dest / recorded_evidence_rel
+            recorded_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            recorded_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: ticket-pack-builder\n"
+                f"- cycle_id: {recorded_cycle_id}\n"
+                "- completed_by: ticket-pack-builder\n\n"
+                "## Summary\n\n"
+                "- Refined repair follow-up tickets after managed repair.\n",
+                encoding="utf-8",
+            )
+            recorded_workflow_before_stage = json.loads(
+                (
+                    recorded_follow_on_dest
+                    / ".opencode"
+                    / "state"
+                    / "workflow-state.json"
+                ).read_text(encoding="utf-8")
+            )
+            recorded_execution_before_stage = json.loads(
+                (
+                    recorded_follow_on_dest
+                    / ".opencode"
+                    / "meta"
+                    / "repair-execution.json"
+                ).read_text(encoding="utf-8")
+            )
+            recorded_start_here_before_stage = (
+                recorded_follow_on_dest / "START-HERE.md"
+            ).read_text(encoding="utf-8")
+            recorded_latest_handoff_before_stage = (
+                recorded_follow_on_dest / ".opencode" / "state" / "latest-handoff.md"
+            ).read_text(encoding="utf-8")
+            recorded_stage_payload = run_json(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "ticket-pack-builder",
+                    "--summary",
+                    "Refined repair follow-up tickets after managed repair.",
+                    "--evidence",
+                    recorded_evidence_rel,
+                ],
+                ROOT,
+            )
+            if recorded_stage_payload["recorded_stage"]["status"] != "completed":
+                raise RuntimeError(
+                    "record_repair_stage_completion should persist completed status for explicit recorded execution"
+                )
+            if (
+                recorded_stage_payload["recorded_stage"]["completion_mode"]
+                != "recorded_execution"
+            ):
+                raise RuntimeError(
+                    "record_repair_stage_completion should mark explicit stage completion as recorded_execution"
+                )
+            if recorded_stage_payload["recorded_stage"]["evidence_paths"] != [
+                recorded_evidence_rel
+            ]:
+                raise RuntimeError(
+                    "record_repair_stage_completion should preserve the recorded evidence paths"
+                )
+            if "publication" in recorded_stage_payload:
+                raise RuntimeError(
+                    "record_repair_stage_completion should not publish restart surfaces directly"
+                )
+            recorded_workflow_after_stage = json.loads(
+                (
+                    recorded_follow_on_dest
+                    / ".opencode"
+                    / "state"
+                    / "workflow-state.json"
+                ).read_text(encoding="utf-8")
+            )
+            if recorded_workflow_after_stage != recorded_workflow_before_stage:
+                raise RuntimeError(
+                    "record_repair_stage_completion should not rewrite workflow-state.json while recording completion"
+                )
+            recorded_execution_after_stage = json.loads(
+                (
+                    recorded_follow_on_dest
+                    / ".opencode"
+                    / "meta"
+                    / "repair-execution.json"
+                ).read_text(encoding="utf-8")
+            )
+            if recorded_execution_after_stage != recorded_execution_before_stage:
+                raise RuntimeError(
+                    "record_repair_stage_completion should not rewrite repair-execution.json while recording completion"
+                )
+            recorded_start_here_after_stage = (
+                recorded_follow_on_dest / "START-HERE.md"
+            ).read_text(encoding="utf-8")
+            recorded_latest_handoff_after_stage = (
+                recorded_follow_on_dest / ".opencode" / "state" / "latest-handoff.md"
+            ).read_text(encoding="utf-8")
+            if recorded_start_here_after_stage != recorded_start_here_before_stage:
+                raise RuntimeError(
+                    "record_repair_stage_completion should not republish START-HERE while recording completion"
+                )
+            if recorded_latest_handoff_after_stage != recorded_latest_handoff_before_stage:
+                raise RuntimeError(
+                    "record_repair_stage_completion should not republish latest-handoff while recording completion"
+                )
+            recorded_follow_on_reuse = run_json(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(recorded_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                ROOT,
+            )
+            if recorded_follow_on_reuse["execution_record"]["blocking_reasons"]:
+                raise RuntimeError(
+                    "A later repair run should reuse explicit recorded stage completion without needing transitional --stage-complete input"
+                )
+            if recorded_follow_on_reuse["execution_record"][
+                "recorded_execution_completed_stages"
+            ] != ["ticket-pack-builder"]:
+                raise RuntimeError(
+                    "Managed repair should report explicit recorded_execution completions separately from asserted stages"
+                )
+            if recorded_follow_on_reuse["execution_record"][
+                "asserted_completed_stages"
+            ]:
+                raise RuntimeError(
+                    "Explicit recorded_execution follow-on completion should not populate asserted_completed_stages"
+                )
+            if (
+                recorded_follow_on_reuse["execution_record"]["repair_follow_on_outcome"]
+                != "source_follow_up"
+            ):
+                raise RuntimeError(
+                    "Explicit recorded_execution follow-on completion should still converge to source_follow_up when only EXEC findings remain"
+                )
+            recorded_follow_on_state = json.loads(
+                recorded_follow_on_state_path.read_text(encoding="utf-8")
+            )
+            if (
+                recorded_follow_on_state["stage_records"]["ticket-pack-builder"][
+                    "completed_by"
+                ]
+                != "ticket-pack-builder"
+            ):
+                raise RuntimeError(
+                    "Persisted follow-on tracking should keep completed_by for explicitly recorded execution"
+                )
+            if not any(
+                item.get("status") == "completed"
+                and item.get("stage") == "ticket-pack-builder"
+                and item.get("owner") == "ticket-pack-builder"
+                and item.get("category") == "ticket_follow_up"
+                for item in recorded_follow_on_state.get("history", [])
+                if isinstance(item, dict)
+            ):
+                raise RuntimeError(
+                    "Persisted follow-on history should keep owner/category metadata for recorded execution events"
+                )
+            package_mismatch_state = json.loads(
+                recorded_follow_on_state_path.read_text(encoding="utf-8")
+            )
+            package_mismatch_state["repair_package_commit"] = "stale-package-commit"
+            package_mismatch_state["stage_records"]["ticket-pack-builder"][
+                "repair_package_commit"
+            ] = "stale-package-commit"
+            recorded_follow_on_state_path.write_text(
+                json.dumps(package_mismatch_state, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            recorded_follow_on_package_mismatch_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(recorded_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            recorded_follow_on_package_mismatch = json.loads(
+                recorded_follow_on_package_mismatch_process.stdout
+            )
+            if (
+                "ticket-pack-builder"
+                not in recorded_follow_on_package_mismatch["execution_record"][
+                    "invalidated_recorded_stages"
+                ]
+            ):
+                raise RuntimeError(
+                    "Managed repair should invalidate recorded execution reuse when the recorded stage package provenance is stale"
+                )
+            if recorded_follow_on_package_mismatch["execution_record"][
+                "recorded_execution_completed_stages"
+            ]:
+                raise RuntimeError(
+                    "Managed repair should stop reporting recorded execution completion when its repair package provenance is stale"
+                )
+            package_mismatch_after_state = json.loads(
+                recorded_follow_on_state_path.read_text(encoding="utf-8")
+            )
+            if (
+                package_mismatch_after_state["stage_records"]["ticket-pack-builder"].get(
+                    "evidence_validation_error"
+                )
+                != "repair_package_commit_mismatch"
+            ):
+                raise RuntimeError(
+                    "Follow-on tracking should record repair_package_commit_mismatch when a recorded stage was produced by an older package commit"
+                )
+            run_json(
+                [
+                    sys.executable,
+                    str(RECORD_REPAIR_STAGE),
+                    str(recorded_follow_on_dest),
+                    "--stage",
+                    "ticket-pack-builder",
+                    "--completed-by",
+                    "ticket-pack-builder",
+                    "--summary",
+                    "Refined repair follow-up tickets after managed repair.",
+                    "--evidence",
+                    recorded_evidence_rel,
+                ],
+                ROOT,
+            )
+            same_head_dirty_state = json.loads(
+                recorded_follow_on_state_path.read_text(encoding="utf-8")
+            )
+            current_provenance = package_commit()
+            current_base = current_provenance.split("+dirty:", 1)[0]
+            same_head_dirty_state["repair_package_commit"] = f"{current_base}+dirty:expected123456"
+            same_head_dirty_state["stage_records"]["ticket-pack-builder"][
+                "repair_package_commit"
+            ] = f"{current_base}+dirty:recorded654321"
+            recorded_follow_on_state_path.write_text(
+                json.dumps(same_head_dirty_state, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            same_head_dirty_reuse_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(recorded_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            same_head_dirty_reuse = json.loads(same_head_dirty_reuse_process.stdout)
+            if "ticket-pack-builder" in same_head_dirty_reuse["execution_record"][
+                "invalidated_recorded_stages"
+            ]:
+                raise RuntimeError(
+                    "Managed repair should preserve recorded execution reuse when repair package provenance only differs by a same-HEAD dirty suffix"
+                )
+            if same_head_dirty_reuse["execution_record"][
+                "recorded_execution_completed_stages"
+            ] != ["ticket-pack-builder"]:
+                raise RuntimeError(
+                    "Managed repair should keep recorded execution completion when only same-HEAD dirty provenance drift occurred"
+                )
+            same_head_dirty_after_state = json.loads(
+                recorded_follow_on_state_path.read_text(encoding="utf-8")
+            )
+            if (
+                same_head_dirty_after_state["stage_records"]["ticket-pack-builder"][
+                    "status"
+                ]
+                != "completed"
+            ):
+                raise RuntimeError(
+                    "Follow-on tracking should keep completed status when repair package provenance only differs by a same-HEAD dirty suffix"
+                )
+            recorded_evidence_path.write_text(
+                "# Repair Follow-On Completion\n\n"
+                "- completed_stage: ticket-pack-builder\n"
+                "- cycle_id: stale-cycle\n"
+                "- completed_by: ticket-pack-builder\n\n"
+                "## Summary\n\n"
+                "- Drifted canonical evidence should invalidate reuse.\n",
+                encoding="utf-8",
+            )
+            recorded_follow_on_cycle_mismatch_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(recorded_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            recorded_follow_on_cycle_mismatch = json.loads(
+                recorded_follow_on_cycle_mismatch_process.stdout
+            )
+            if (
+                "ticket-pack-builder"
+                not in recorded_follow_on_cycle_mismatch["execution_record"][
+                    "invalidated_recorded_stages"
+                ]
+            ):
+                raise RuntimeError(
+                    "Managed repair should invalidate recorded execution reuse when canonical repair evidence drifts to a stale cycle"
+                )
+            if recorded_follow_on_cycle_mismatch["execution_record"][
+                "recorded_execution_completed_stages"
+            ]:
+                raise RuntimeError(
+                    "Managed repair should stop reporting canonical recorded execution after its cycle markers drift"
+                )
+            drifted_evidence_state = json.loads(
+                recorded_follow_on_state_path.read_text(encoding="utf-8")
+            )
+            if (
+                drifted_evidence_state["stage_records"]["ticket-pack-builder"].get(
+                    "evidence_validation_error"
+                )
+                != "canonical_evidence_cycle_mismatch"
+            ):
+                raise RuntimeError(
+                    "Follow-on tracking should record canonical_evidence_cycle_mismatch when a recorded canonical artifact no longer matches the current cycle"
+                )
+            recorded_evidence_path.unlink()
+            recorded_follow_on_missing_evidence_process = subprocess.run(
+                [
+                    sys.executable,
+                    str(PUBLIC_REPAIR),
+                    str(recorded_follow_on_dest),
+                    "--skip-deterministic-refresh",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            recorded_follow_on_missing_evidence = json.loads(
+                recorded_follow_on_missing_evidence_process.stdout
+            )
+            if (
+                "ticket-pack-builder"
+                not in recorded_follow_on_missing_evidence["execution_record"][
+                    "invalidated_recorded_stages"
+                ]
+            ):
+                raise RuntimeError(
+                    "Managed repair should invalidate recorded execution reuse when the supporting evidence path disappears"
+                )
+            if recorded_follow_on_missing_evidence["execution_record"][
+                "recorded_execution_completed_stages"
+            ]:
+                raise RuntimeError(
+                    "Managed repair should stop reporting recorded execution completion when its evidence is missing"
+                )
+            if not recorded_follow_on_missing_evidence["execution_record"][
+                "blocking_reasons"
+            ]:
+                raise RuntimeError(
+                    "Managed repair should block again when required recorded execution evidence is missing"
+                )
+            missing_evidence_state = json.loads(
+                (
+                    recorded_follow_on_dest
+                    / ".opencode"
+                    / "meta"
+                    / "repair-follow-on-state.json"
+                ).read_text(encoding="utf-8")
+            )
+            if (
+                missing_evidence_state["stage_records"]["ticket-pack-builder"]["status"]
+                != "evidence_missing"
+            ):
+                raise RuntimeError(
+                    "Follow-on tracking should persist evidence_missing when recorded execution evidence disappears"
+                )
+    
+        else:
+            print("Skipping repair follow-on recorded-state smoke coverage because `uv` is not available on this host.")
         run_managed_repair_module = load_python_module(
             PUBLIC_REPAIR, "scafforge_smoke_run_managed_repair"
         )
