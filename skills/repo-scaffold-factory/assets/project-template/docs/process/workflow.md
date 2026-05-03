@@ -113,6 +113,7 @@ Completion validation is family-based and supplements the Tier 1 stack proof ins
 - proof step status values should stay explicit: `passed`, `failed`, `degraded`, or `not_applicable`
 - if a family validator does not exist yet, treat that as a blocker-shaped gap rather than silently skipping proof
 - desktop and web repos should record headless degradation explicitly when they had to stop at process or HTTP truth instead of screenshot or browser/device proof
+- Android or device-bound repos may defer runtime screenshot or capture proof from a non-final visual ticket to `FINISH-VALIDATE-001` when the QA artifact records executable headless or build evidence, names the reviewed surfaces, records no rubric blockers, and an open final-validation ticket owns emulator/device capture
 
 ## Visual proof block
 
@@ -125,6 +126,7 @@ Visually reviewable repos should record visual proof inside the QA artifact inst
 - `visual_style_note`
 - the repo-level trigger is `.opencode/meta/bootstrap-provenance.json -> requires_visual_proof: true`
 - enforcement is scoped to `VISUAL-001`, `FINISH-VALIDATE-001`, `finish-visual` and `finish-validation` tickets, plus tickets whose acceptance criteria explicitly require visual proof; bootstrap/setup tickets can unlock visual work with command evidence instead of needing screenshot proof before any visual surface exists
+- `visual_proof_status: DEFERRED` is valid only for non-final visual tickets when an open `FINISH-VALIDATE-001` owns runtime capture; `FINISH-VALIDATE-001` itself must provide the actual screenshot, render, capture, or video file evidence before closeout
 
 This keeps style choice separate from quality failure while giving the stage gate concrete evidence to enforce.
 
