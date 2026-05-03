@@ -904,6 +904,19 @@ def seed_failing_pytest_suite(dest: Path) -> None:
         (venv_bin / "pytest").chmod(0o755)
 
 
+def seed_reference_scan_exclusion_case(dest: Path) -> None:
+    (dest / "src").mkdir(parents=True, exist_ok=True)
+    (dest / "src" / "owned_bad.py").write_text(
+        "from .missing_module import demo\n",
+        encoding="utf-8",
+    )
+    (dest / "node_modules" / "fakepkg").mkdir(parents=True, exist_ok=True)
+    (dest / "node_modules" / "fakepkg" / "index.js").write_text(
+        'require("./missing-runtime")\n',
+        encoding="utf-8",
+    )
+
+
 def seed_closed_ticket_with_new_active_artifact_write(dest: Path) -> None:
     """Seed a scenario where ticket A is closed, ticket B is active with a lease,
     and an artifact write for B should succeed. This exercises the stage-gate-enforcer

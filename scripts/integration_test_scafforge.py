@@ -42,6 +42,7 @@ from test_support.repo_seeders import (
     seed_failing_pytest_suite,
     seed_godot_target as seed_curated_godot_target,
     seed_ready_bootstrap,
+    seed_reference_scan_exclusion_case,
 )
 from test_support.scafforge_harness import (
     AUDIT,
@@ -1304,6 +1305,7 @@ def repair_integration(workspace: Path) -> None:
     bootstrap_full(dest)
     seed_ready_bootstrap(dest)
     seed_failing_pytest_suite(dest)
+    seed_reference_scan_exclusion_case(dest)
     team_leader = next((dest / ".opencode" / "agents").glob("*team-leader*.md"))
     original_team_leader = team_leader.read_text(encoding="utf-8")
     seed_prompt_drift(dest)
