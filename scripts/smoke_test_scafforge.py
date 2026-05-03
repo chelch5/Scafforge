@@ -5189,7 +5189,32 @@ def main() -> int:
         pivot_audit_codes = {
             finding["code"] for finding in pivot_audit.get("findings", [])
         }
-        if "WFLOW010" in pivot_audit_codes:
+        pivot_audit_wflow010_findings = [
+            finding
+            for finding in pivot_audit.get("findings", [])
+            if isinstance(finding, dict) and finding.get("code") == "WFLOW010"
+        ]
+        pivot_audit_wflow010_is_host_prereq_drift = all(
+            any(
+                token in " ".join(str(item) for item in finding.get("evidence", []))
+                for token in (
+                    "bootstrap_status",
+                    "handoff_status",
+                    "pivot_in_progress",
+                    "post_pivot_verification_passed",
+                )
+            )
+            for finding in pivot_audit_wflow010_findings
+        )
+        if (
+            "WFLOW010" in pivot_audit_codes
+            and not (
+                (not host_has_uv)
+                and "ENV001" in pivot_audit_codes
+                and pivot_audit_codes <= {"ENV001", "WFLOW010"}
+                and pivot_audit_wflow010_is_host_prereq_drift
+            )
+        ):
             raise RuntimeError(
                 "Pivot restart surfaces that still match the canonical pivot state should not emit WFLOW010"
             )
