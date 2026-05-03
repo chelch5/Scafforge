@@ -2197,6 +2197,11 @@ def multi_stack_proof_integration(workspace: Path) -> None:
                     "Godot Android proof targets should scaffold all repo-managed Godot Android surfaces. "
                     f"Missing: {', '.join(missing_android_surfaces)}"
                 )
+            rendered_project_godot = (dest / "project.godot").read_text(encoding="utf-8")
+            if "__PROJECT_NAME__" in rendered_project_godot or "Proof Godot" not in rendered_project_godot:
+                raise RuntimeError(
+                    "Godot Android project.godot should render template placeholders with the canonical project name."
+                )
 
         if bootstrap_status == "ready":
             if target.slug == "proof-node-api":
