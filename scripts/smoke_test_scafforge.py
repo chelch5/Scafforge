@@ -4316,6 +4316,48 @@ def main() -> int:
                 raise RuntimeError(
                     f"Godot Android export_presets.cfg template is missing export-ready Godot 4.6 setting: {expected}"
                 )
+        godot_project_template = (
+            ROOT
+            / "skills"
+            / "repo-scaffold-factory"
+            / "assets"
+            / "project-template"
+            / "project.godot"
+        ).read_text(encoding="utf-8")
+        for expected in (
+            'run/main_scene="res://scenes/main.tscn"',
+            'config/icon="res://icon.svg"',
+            "textures/vram_compression/import_etc2_astc=true",
+        ):
+            if expected not in godot_project_template:
+                raise RuntimeError(
+                    f"Godot Android project.godot template is missing export-ready baseline setting: {expected}"
+                )
+        godot_icon_template = (
+            ROOT
+            / "skills"
+            / "repo-scaffold-factory"
+            / "assets"
+            / "project-template"
+            / "icon.svg"
+        ).read_text(encoding="utf-8")
+        if "<svg" not in godot_icon_template or "res:" in godot_icon_template:
+            raise RuntimeError(
+                "Godot Android icon.svg template must be a real root-level SVG file, not a res:// or res:/ path placeholder."
+            )
+        godot_main_scene_template = (
+            ROOT
+            / "skills"
+            / "repo-scaffold-factory"
+            / "assets"
+            / "project-template"
+            / "scenes"
+            / "main.tscn"
+        ).read_text(encoding="utf-8")
+        if "[gd_scene" not in godot_main_scene_template or "__PROJECT_NAME__" not in godot_main_scene_template:
+            raise RuntimeError(
+                "Godot Android scenes/main.tscn template must be a valid rendered scene baseline."
+            )
 
         generated_workflow = (
             ROOT

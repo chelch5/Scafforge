@@ -29,6 +29,7 @@ TEXT_SUFFIXES = {
     ".yaml",
     ".yml",
     ".cfg",
+    ".tscn",
 }
 
 FULL_SCOPE_FILES = {
@@ -363,7 +364,7 @@ def ensure_idempotent_target(dest_root: Path) -> None:
 def should_copy(root_name: str, scope: str, stack_label: str, scaffold_profile: str) -> bool:
     if scope == "opencode":
         return root_name in OPENCODE_SCOPE_FILES
-    if root_name in {"export_presets.cfg", "android"}:
+    if root_name in {"project.godot", "icon.svg", "scenes", "export_presets.cfg", "android"}:
         return renders_godot_android_assets(stack_label)
     return root_name in FULL_SCOPE_FILES
 
