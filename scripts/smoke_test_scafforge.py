@@ -11358,6 +11358,238 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_update should allow SETUP-001 to enter smoke-test without visual proof even when repo-level visual proof is required; finish-visual tickets own that proof."
             )
+        visual_deferred_dest = workspace / "executed-visual-deferred-to-finish-validation"
+        shutil.copytree(full_dest, visual_deferred_dest)
+        seed_ready_bootstrap(visual_deferred_dest)
+        visual_deferred_provenance_path = (
+            visual_deferred_dest
+            / ".opencode"
+            / "meta"
+            / "bootstrap-provenance.json"
+        )
+        visual_deferred_provenance = json.loads(
+            visual_deferred_provenance_path.read_text(encoding="utf-8")
+        )
+        visual_deferred_provenance["requires_visual_proof"] = True
+        visual_deferred_product_contract = visual_deferred_provenance.setdefault(
+            "product_finish_contract",
+            {},
+        )
+        visual_deferred_product_contract["requires_visual_proof"] = True
+        visual_deferred_provenance_path.write_text(
+            json.dumps(visual_deferred_provenance, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        visual_deferred_manifest_path = (
+            visual_deferred_dest / "tickets" / "manifest.json"
+        )
+        visual_deferred_manifest = json.loads(
+            visual_deferred_manifest_path.read_text(encoding="utf-8")
+        )
+        visual_deferred_template = next(
+            ticket
+            for ticket in visual_deferred_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        visual_ticket = json.loads(json.dumps(visual_deferred_template))
+        visual_ticket.update(
+            {
+                "id": "VISUAL-001",
+                "title": "Implement child-friendly visual surfaces",
+                "wave": 1,
+                "lane": "finish-visual",
+                "stage": "qa",
+                "status": "qa",
+                "depends_on": [],
+                "summary": "Synthetic visual ticket proving runtime capture can defer to final validation without blocking product work.",
+                "acceptance": [
+                    "Visual surfaces are implemented and structurally validated.",
+                    "Runtime screenshot capture is deferred to FINISH-VALIDATE-001.",
+                ],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        finish_ticket = json.loads(json.dumps(visual_deferred_template))
+        finish_ticket.update(
+            {
+                "id": "FINISH-VALIDATE-001",
+                "title": "Validate final runtime proof",
+                "wave": 4,
+                "lane": "finish-validation",
+                "stage": "planning",
+                "status": "todo",
+                "depends_on": ["VISUAL-001"],
+                "summary": "Synthetic final validation ticket that owns runtime screenshot or capture evidence.",
+                "acceptance": [
+                    "Final emulator or device proof records screenshot, render, capture, or video files.",
+                ],
+                "artifacts": [],
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "follow_up_ticket_ids": [],
+            }
+        )
+        visual_deferred_manifest["active_ticket"] = "VISUAL-001"
+        visual_deferred_manifest["tickets"] = [
+            ticket
+            for ticket in visual_deferred_manifest["tickets"]
+            if ticket["id"] not in {"VISUAL-001", "FINISH-VALIDATE-001"}
+        ] + [visual_ticket, finish_ticket]
+        visual_deferred_manifest_path.write_text(
+            json.dumps(visual_deferred_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        visual_deferred_workflow_path = (
+            visual_deferred_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        visual_deferred_workflow = json.loads(
+            visual_deferred_workflow_path.read_text(encoding="utf-8")
+        )
+        visual_deferred_workflow["active_ticket"] = "VISUAL-001"
+        visual_deferred_workflow["stage"] = "qa"
+        visual_deferred_workflow["status"] = "qa"
+        visual_deferred_workflow_path.write_text(
+            json.dumps(visual_deferred_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        register_current_ticket_artifact(
+            visual_deferred_dest,
+            ticket_id="VISUAL-001",
+            kind="qa",
+            stage="qa",
+            relative_path=".opencode/state/qa/visual-001-qa-deferred.md",
+            summary="Synthetic visual QA artifact with runtime capture deferred to final validation.",
+            content="# QA\n\n## Validation Command\n\n`godot4 --headless --path . --quit`\n\n## Raw Command Output\n\n```text\nGodot Engine v4.6.1.stable.official\nEXIT_CODE: 0\nRESULT: PASS\n```\n\n## Verdict\n\nPASS\n\n## Visual Proof Block\n\nvisual_proof_status: DEFERRED\nvisual_proof_evidence: Headless Godot load and Android debug APK build passed; runtime screenshot capture is deferred to FINISH-VALIDATE-001 on emulator or device.\nvisual_proof_surfaces: scenes/main_menu.tscn, scenes/word_screen.tscn, build/android/example-debug.apk\nvisual_rubric_blockers: none\nvisual_style_note: Child-friendly visual surfaces are structurally validated. Runtime capture belongs to FINISH-VALIDATE-001.\n",
+        )
+        visual_deferred_update = run_generated_tool(
+            visual_deferred_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "VISUAL-001", "stage": "smoke-test", "activate": True},
+        )
+        if visual_deferred_update["updated_ticket"]["stage"] != "smoke-test":
+            raise RuntimeError(
+                "ticket_update should allow non-final visual tickets to defer runtime capture proof to FINISH-VALIDATE-001."
+            )
+        register_current_ticket_artifact(
+            visual_deferred_dest,
+            ticket_id="VISUAL-001",
+            kind="smoke-test",
+            stage="smoke-test",
+            relative_path=".opencode/state/smoke-tests/visual-001-smoke-test.md",
+            summary="Synthetic PASS smoke-test artifact for deferred visual proof closeout.",
+            content="# Smoke Test\n\n## Validation Command\n\n`godot4 --headless --path . --quit`\n\n## Raw Command Output\n\n```text\nGodot Engine v4.6.1.stable.official\nProject loaded successfully in headless mode.\nAll current visual scene resources imported without script errors.\nEXIT_CODE: 0\nRESULT: PASS\n```\n\n## Overall Result: PASS\n\nThis synthetic smoke artifact is intentionally longer than the minimum evidence size so closeout proves the PASS result with executable command output.\n",
+        )
+        visual_deferred_closeout = run_generated_tool(
+            visual_deferred_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "VISUAL-001", "stage": "closeout", "activate": True},
+        )
+        if visual_deferred_closeout["updated_ticket"]["status"] != "done":
+            raise RuntimeError(
+                "ticket_update should allow closeout for non-final visual tickets whose runtime capture is explicitly deferred to FINISH-VALIDATE-001."
+            )
+        visual_missing_file_dest = workspace / "executed-visual-missing-file-not-deferred"
+        shutil.copytree(visual_deferred_dest, visual_missing_file_dest)
+        visual_missing_manifest_path = visual_missing_file_dest / "tickets" / "manifest.json"
+        visual_missing_manifest = json.loads(
+            visual_missing_manifest_path.read_text(encoding="utf-8")
+        )
+        visual_missing_ticket = next(
+            ticket
+            for ticket in visual_missing_manifest["tickets"]
+            if ticket["id"] == "VISUAL-001"
+        )
+        visual_missing_ticket["stage"] = "qa"
+        visual_missing_ticket["status"] = "qa"
+        visual_missing_ticket["resolution_state"] = "open"
+        visual_missing_manifest["active_ticket"] = "VISUAL-001"
+        visual_missing_manifest_path.write_text(
+            json.dumps(visual_missing_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        visual_missing_workflow_path = (
+            visual_missing_file_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        visual_missing_workflow = json.loads(
+            visual_missing_workflow_path.read_text(encoding="utf-8")
+        )
+        visual_missing_workflow["active_ticket"] = "VISUAL-001"
+        visual_missing_workflow["stage"] = "qa"
+        visual_missing_workflow["status"] = "qa"
+        visual_missing_workflow_path.write_text(
+            json.dumps(visual_missing_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        register_current_ticket_artifact(
+            visual_missing_file_dest,
+            ticket_id="VISUAL-001",
+            kind="qa",
+            stage="qa",
+            relative_path=".opencode/state/qa/visual-001-qa-missing-file.md",
+            summary="Synthetic visual QA artifact that incorrectly claims a missing screenshot file.",
+            content="# QA\n\n## Validation Command\n\n`godot4 --headless --path . --quit`\n\n## Raw Command Output\n\n```text\nGodot Engine v4.6.1.stable.official\nEXIT_CODE: 0\nRESULT: PASS\n```\n\n## Verdict\n\nPASS\n\n## Visual Proof Block\n\nvisual_proof_status: PASS\nvisual_proof_evidence: screenshots/missing-visual-proof.png\nvisual_proof_surfaces: scenes/main_menu.tscn\nvisual_rubric_blockers: none\nvisual_style_note: This artifact includes generic headless wording but claims an image path that does not exist, so it must not be treated as deferred proof.\n",
+        )
+        visual_missing_error = run_generated_tool_error(
+            visual_missing_file_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "VISUAL-001", "stage": "smoke-test", "activate": True},
+        )
+        if "visual_proof_evidence must reference existing files on disk" not in visual_missing_error:
+            raise RuntimeError(
+                "ticket_update should reject PASS visual proof that names a missing screenshot path instead of treating it as deferred."
+            )
+        final_deferred_dest = workspace / "executed-final-validation-cannot-defer-visual-proof"
+        shutil.copytree(visual_deferred_dest, final_deferred_dest)
+        final_deferred_manifest_path = final_deferred_dest / "tickets" / "manifest.json"
+        final_deferred_manifest = json.loads(
+            final_deferred_manifest_path.read_text(encoding="utf-8")
+        )
+        final_ticket = next(
+            ticket
+            for ticket in final_deferred_manifest["tickets"]
+            if ticket["id"] == "FINISH-VALIDATE-001"
+        )
+        final_ticket["stage"] = "qa"
+        final_ticket["status"] = "qa"
+        final_deferred_manifest["active_ticket"] = "FINISH-VALIDATE-001"
+        final_deferred_manifest_path.write_text(
+            json.dumps(final_deferred_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        final_deferred_workflow_path = (
+            final_deferred_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        final_deferred_workflow = json.loads(
+            final_deferred_workflow_path.read_text(encoding="utf-8")
+        )
+        final_deferred_workflow["active_ticket"] = "FINISH-VALIDATE-001"
+        final_deferred_workflow["stage"] = "qa"
+        final_deferred_workflow["status"] = "qa"
+        final_deferred_workflow_path.write_text(
+            json.dumps(final_deferred_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        register_current_ticket_artifact(
+            final_deferred_dest,
+            ticket_id="FINISH-VALIDATE-001",
+            kind="qa",
+            stage="qa",
+            relative_path=".opencode/state/qa/finish-validate-001-qa-deferred.md",
+            summary="Synthetic final validation QA artifact that incorrectly defers runtime capture.",
+            content="# QA\n\n## Validation Command\n\n`godot4 --headless --path . --quit`\n\n## Raw Command Output\n\n```text\nGodot Engine v4.6.1.stable.official\nEXIT_CODE: 0\nRESULT: PASS\n```\n\n## Verdict\n\nPASS\n\n## Visual Proof Block\n\nvisual_proof_status: DEFERRED\nvisual_proof_evidence: Headless load passed; runtime screenshot capture remains pending.\nvisual_proof_surfaces: scenes/main_menu.tscn\nvisual_rubric_blockers: none\nvisual_style_note: Final runtime proof was not captured.\n",
+        )
+        final_deferred_error = run_generated_tool_error(
+            final_deferred_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "FINISH-VALIDATE-001", "stage": "smoke-test", "activate": True},
+        )
+        if "only non-final visual tickets may defer runtime screenshot" not in final_deferred_error:
+            raise RuntimeError(
+                "ticket_update should reject DEFERRED visual proof on FINISH-VALIDATE-001."
+            )
         qa_compact_heading_dest = workspace / "executed-qa-compact-heading"
         shutil.copytree(full_dest, qa_compact_heading_dest)
         seed_ready_bootstrap(qa_compact_heading_dest)

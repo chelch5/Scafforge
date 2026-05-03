@@ -15,6 +15,7 @@ export type BootstrapBlocker = {
 export type TicketResolutionState = "open" | "done" | "reopened" | "superseded"
 export type TicketVerificationState = "trusted" | "suspect" | "invalidated" | "reverified" | "smoke_verified"
 export type ArtifactVerdict = "PASS" | "FAIL" | "REJECT" | "APPROVED" | "BLOCKED"
+type VisualProofStatus = ArtifactVerdict | "DEFERRED"
 export type ArtifactVerdictInspection = {
   verdict: ArtifactVerdict | null
   verdict_unclear: boolean
@@ -372,6 +373,7 @@ const VISUAL_PROOF_SURFACES_FIELD = "visual_proof_surfaces"
 const VISUAL_RUBRIC_BLOCKERS_FIELD = "visual_rubric_blockers"
 const VISUAL_STYLE_NOTE_FIELD = "visual_style_note"
 const VISUAL_PROOF_EVIDENCE_PATTERN = /\.(?:png|jpe?g|webp|gif|bmp|svg|mp4|webm|mov)$/i
+const VISUAL_PROOF_DEFERRED_TO_FINISH_PATTERN = /\b(?:deferred|pending|headless|display|emulator|device|runtime\s+capture|finish[-_\s]?validate[-_\s]?001|FINISH-VALIDATE-001)\b/i
 
 export function repoVenvExecutableCandidates(root: string, executable: string): string[] {
   const names = executable.toLowerCase().endsWith(".exe") ? [executable] : [executable, `${executable}.exe`]
@@ -1420,6 +1422,13 @@ function normalizeArtifactVerdictToken(token: string): ArtifactVerdict | null {
   if (normalized === "BLOCKED" || normalized === "BLOCKER") return "BLOCKED"
   return null
 }
+function normalizeVisualProofStatusToken(token: string): VisualProofStatus | null {
+  const verdict = normalizeArtifactVerdictToken(token)
+  if (verdict) return verdict
+  const normalized = token.trim().toUpperCase()
+  if (normalized === "DEFERRED" || normalized === "DEGRADED") return "DEFERRED"
+  return null
+}
 export function isRemediationTicket(ticket: Pick<Ticket, "id" | "lane">): boolean {
   return ticket.lane.trim().toLowerCase() === "remediation" || ticket.id.trim().toUpperCase().startsWith("REMED-")
 }
@@ -1621,9 +1630,23 @@ export async function validateVisualProofRequirement(ticket: Ticket, root = root
   if (missing.length > 0) {
     return `Visual-proof repos require structured visual proof in the QA artifact: missing ${missing.join(", ")}.`
   }
-  const status = normalizeArtifactVerdictToken(statusRaw || "")
+  const status = normalizeVisualProofStatusToken(statusRaw || "")
   if (!status) {
-    return "Visual-proof repos require structured visual proof in the QA artifact: visual_proof_status must be PASS, FAIL, REJECT, APPROVED, or BLOCKED."
+    return "Visual-proof repos require structured visual proof in the QA artifact: visual_proof_status must be PASS, FAIL, REJECT, APPROVED, BLOCKED, or DEFERRED."
+  }
+  const surfaces = splitStructuredField(surfacesRaw)
+  if (surfaces.length === 0) {
+    return "Visual-proof repos require structured visual proof in the QA artifact: visual_proof_surfaces must name the reviewed surfaces."
+  }
+  const blockers = rubricBlockersFromField(blockersRaw)
+  if (blockers.length > 0) {
+    return `Visual proof still records blocker-level rubric failures: ${blockers.join(", ")}.`
+  }
+  if (await visualProofMayDeferToFinishValidation(ticket, content, evidenceRaw || "", root, status)) {
+    return null
+  }
+  if (status === "DEFERRED") {
+    return "Visual proof is DEFERRED, but only non-final visual tickets may defer runtime screenshot or capture proof to an open FINISH-VALIDATE-001 ticket."
   }
   const evidence = splitStructuredField(evidenceRaw).map((value) => value.trim()).filter(looksLikeVisualEvidencePath)
   if (evidence.length === 0) {
@@ -1637,17 +1660,34 @@ export async function validateVisualProofRequirement(ticket: Ticket, root = root
   if (missingEvidence.length > 0) {
     return `Visual-proof repos require structured visual proof in the QA artifact: visual_proof_evidence must reference existing files on disk. Missing: ${missingEvidence.join(", ")}.`
   }
-  const surfaces = splitStructuredField(surfacesRaw)
-  if (surfaces.length === 0) {
-    return "Visual-proof repos require structured visual proof in the QA artifact: visual_proof_surfaces must name the reviewed surfaces."
-  }
-  const blockers = rubricBlockersFromField(blockersRaw)
-  if (blockers.length > 0) {
-    return `Visual proof still records blocker-level rubric failures: ${blockers.join(", ")}.`
-  }
   return isBlockingArtifactVerdict(status)
     ? `Visual proof reports ${status}; keep the ticket in QA until blocker-level rubric failures are resolved.`
     : null
+}
+async function visualProofMayDeferToFinishValidation(
+  ticket: Ticket,
+  content: string,
+  evidenceRaw: string,
+  root: string,
+  status: VisualProofStatus,
+): Promise<boolean> {
+  const normalizedId = ticket.id.trim().toUpperCase()
+  const normalizedLane = ticket.lane.trim().toLowerCase()
+  if (normalizedId === "FINISH-VALIDATE-001" || normalizedLane === "finish-validation") return false
+  if (status !== "DEFERRED") return false
+  if (!hasExecutionEvidence(content)) return false
+  if (!VISUAL_PROOF_DEFERRED_TO_FINISH_PATTERN.test(`${evidenceRaw}\n${content}`)) return false
+  try {
+    const manifest = await readManifest(root)
+    return manifest.tickets.some((candidate) => (
+      candidate.id.trim().toUpperCase() === "FINISH-VALIDATE-001"
+      && candidate.id !== ticket.id
+      && candidate.status !== "done"
+      && candidate.resolution_state !== "done"
+    ))
+  } catch {
+    return false
+  }
 }
 function remediationReviewMissingEvidence(content: string): string[] {
   const missing: string[] = []

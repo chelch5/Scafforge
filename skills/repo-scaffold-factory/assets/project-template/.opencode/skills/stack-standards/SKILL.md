@@ -51,11 +51,12 @@ When the repo stack is finalized, rewrite this catalog so review and QA agents g
 ### Visual Proof In QA
 - When `.opencode/meta/bootstrap-provenance.json` says `requires_visual_proof: true`, `VISUAL-001`, `FINISH-VALIDATE-001`, finish-visual, finish-validation, and any ticket with explicit visual-proof acceptance criteria must include a structured visual-proof block before the ticket can enter smoke-test. Bootstrap, setup, and non-visual tickets still need real command evidence, but they do not have to fabricate screenshot proof before visual work exists.
 - The QA artifact should record:
-  - `visual_proof_status: PASS|FAIL|BLOCKED|APPROVED|REJECT`
+  - `visual_proof_status: PASS|FAIL|BLOCKED|APPROVED|REJECT|DEFERRED`
   - `visual_proof_evidence: <comma-separated screenshot/render paths>`
   - `visual_proof_surfaces: <comma-separated reviewed surfaces>`
   - `visual_rubric_blockers: none|<comma-separated blocker categories>`
   - `visual_style_note: <why the style is intentional or why a deviation is acceptable>`
+- `DEFERRED` is only for non-final visual tickets that have executable headless or build evidence while an open `FINISH-VALIDATE-001` owns runtime screenshot/capture proof; the final validation ticket must still provide real screenshot, render, capture, or video file evidence.
 - A repo can be stylized and still pass. It cannot pass while the first screen is clipped, unreadable, corner-pinned, or obviously placeholder-grade.
 
 ### Dependencies
