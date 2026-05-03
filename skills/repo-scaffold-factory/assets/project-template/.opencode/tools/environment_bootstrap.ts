@@ -855,6 +855,12 @@ async function detectGodotBootstrap(root: string): Promise<StackDetectionResult>
 		if (!existsSync(join(root, "export_presets.cfg"))) {
 			detection.warnings.push(`Android target declared in canonical brief, but repo prerequisite ${androidExpectation.repo_prerequisites[0]} is still missing.`)
 		}
+		if (projectText && !/^\s*textures\/vram_compression\/import_etc2_astc\s*=\s*true\s*$/m.test(projectText)) {
+			detection.warnings.push("Godot Android project.godot is missing textures/vram_compression/import_etc2_astc=true; headless APK export fails with empty configuration errors without this setting.")
+		}
+		if (exportPresets && /platform\s*=\s*"Android"/i.test(exportPresets) && !/^\s*architectures\/(?:armeabi-v7a|arm64-v8a|x86|x86_64)\s*=\s*true\s*$/m.test(exportPresets)) {
+			detection.warnings.push("Godot Android export_presets.cfg has no enabled Android ABI; Godot 4.6 requires at least one current architectures/* ABI key such as architectures/arm64-v8a=true.")
+		}
 		if (!hasMeaningfulAndroidSupportSurface(root)) {
 			detection.warnings.push(`Android target declared in canonical brief, but repo prerequisite ${androidExpectation.repo_prerequisites[1]} is still missing.`)
 		}

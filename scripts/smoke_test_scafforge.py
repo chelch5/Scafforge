@@ -4299,6 +4299,23 @@ def main() -> int:
                 raise RuntimeError(
                     f"verify_generated_scaffold.py is missing required phase 8 scaffold validation logic: {expected}"
                 )
+        android_export_template = (
+            ROOT
+            / "skills"
+            / "repo-scaffold-factory"
+            / "assets"
+            / "project-template"
+            / "export_presets.cfg"
+        ).read_text(encoding="utf-8")
+        for expected in (
+            'name="Android Debug"',
+            "architectures/arm64-v8a=true",
+            "architectures/armeabi-v7a=false",
+        ):
+            if expected not in android_export_template:
+                raise RuntimeError(
+                    f"Godot Android export_presets.cfg template is missing export-ready Godot 4.6 setting: {expected}"
+                )
 
         generated_workflow = (
             ROOT
@@ -4342,6 +4359,8 @@ def main() -> int:
             "EXEC-GODOT-009",
             "EXEC-GODOT-005a",
             "EXEC-GODOT-005b",
+            "GODOT-ANDROID-001",
+            "architectures/arm64-v8a",
             "PROJ-VER-001",
             'code="REF-002"',
         ):
@@ -7325,6 +7344,13 @@ def main() -> int:
             raise RuntimeError(
                 "Managed repair should regenerate every Scafforge-owned Android surface. "
                 f"Missing: {', '.join(missing_repair_surfaces)}"
+            )
+        repaired_export_presets = (
+            public_repair_android_dest / "export_presets.cfg"
+        ).read_text(encoding="utf-8")
+        if "architectures/arm64-v8a=true" not in repaired_export_presets:
+            raise RuntimeError(
+                "Managed repair should regenerate a Godot 4.6 Android export preset with an enabled ABI."
             )
         if "ANDROID-001" in release_ticket.get("depends_on", []):
             raise RuntimeError(
@@ -12506,6 +12532,43 @@ def main() -> int:
         if not any("export_presets.cfg" in warning for warning in android_warnings):
             raise RuntimeError(
                 "environment_bootstrap should warn about missing Android export presets when the canonical brief declares a Godot Android target even before export_presets.cfg exists"
+            )
+        if not any("import_etc2_astc" in warning for warning in android_warnings):
+            raise RuntimeError(
+                "environment_bootstrap should warn when a Godot Android project.godot is missing the ETC2/ASTC setting required for headless APK export"
+            )
+        android_abi_warning_dest = workspace / "executed-environment-bootstrap-android-abi-warning"
+        shutil.copytree(full_dest, android_abi_warning_dest)
+        seed_godot_android_target(android_abi_warning_dest)
+        seed_minimal_godot_project(android_abi_warning_dest)
+        export_template = (
+            ROOT
+            / "skills"
+            / "repo-scaffold-factory"
+            / "assets"
+            / "project-template"
+            / "export_presets.cfg"
+        ).read_text(encoding="utf-8")
+        export_template = re.sub(
+            r"architectures/(?:armeabi-v7a|arm64-v8a|x86|x86_64)=true",
+            lambda match: match.group(0).replace("=true", "=false"),
+            export_template,
+        )
+        (android_abi_warning_dest / "export_presets.cfg").write_text(
+            export_template,
+            encoding="utf-8",
+        )
+        android_abi_warning_result = run_generated_tool(
+            android_abi_warning_dest,
+            ".opencode/tools/environment_bootstrap.ts",
+            {"ticket_id": "SETUP-001"},
+        )
+        android_abi_warnings = [
+            warning.lower() for warning in android_abi_warning_result.get("warnings", [])
+        ]
+        if not any("android abi" in warning for warning in android_abi_warnings):
+            raise RuntimeError(
+                "environment_bootstrap should warn when export_presets.cfg has an Android preset but no enabled ABI."
             )
         host_android_sdk = next(
             (

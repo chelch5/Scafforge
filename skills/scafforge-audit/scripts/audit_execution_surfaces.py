@@ -2191,8 +2191,10 @@ def audit_godot_android_export_readiness(root: Path, findings: list[Finding], ct
     if export_presets_file.exists():
         presets_text = ctx.read_text(export_presets_file)
         if 'platform="Android"' in presets_text:
-            if "textures/vram_compression/import_etc2_astc" not in project_text:
+            if not re.search(r"^\s*textures/vram_compression/import_etc2_astc\s*=\s*true\s*$", project_text, re.MULTILINE):
                 issues.append("project.godot missing textures/vram_compression/import_etc2_astc=true under [rendering] (required for Android export on non-mobile hosts)")
+            if not re.search(r"^\s*architectures/(?:armeabi-v7a|arm64-v8a|x86|x86_64)\s*=\s*true\s*$", presets_text, re.MULTILINE):
+                issues.append("export_presets.cfg has no enabled Godot 4.6 Android ABI such as architectures/arm64-v8a=true")
             # Check preset name matches expected format
             if 'name="Android Debug"' not in presets_text and 'name="Android"' in presets_text:
                 issues.append("export_presets.cfg uses preset name 'Android' instead of 'Android Debug' — headless export command must match exactly")
@@ -2205,9 +2207,9 @@ def audit_godot_android_export_readiness(root: Path, findings: list[Finding], ct
         code="GODOT-ANDROID-001",
         severity="error",
         problem="Godot Android export configuration is incomplete.",
-        root_cause="Android APK export requires ETC2/ASTC texture compression enabled in project.godot and correctly named export presets. Without these, headless export fails with empty 'configuration errors'.",
+        root_cause="Android APK export requires ETC2/ASTC texture compression enabled in project.godot, at least one enabled Android ABI in export_presets.cfg, and correctly named export presets. Without these, headless export fails with empty 'configuration errors'.",
         files=[project_file, export_presets_file],
-        safer_pattern="Ensure project.godot includes [rendering] textures/vram_compression/import_etc2_astc=true and export_presets.cfg uses 'Android Debug' as the preset name.",
+        safer_pattern="Ensure project.godot includes [rendering] textures/vram_compression/import_etc2_astc=true, export_presets.cfg enables architectures/arm64-v8a=true or another current ABI, and the preset uses 'Android Debug' as the preset name.",
         evidence=issues,
         root=root,
     )
