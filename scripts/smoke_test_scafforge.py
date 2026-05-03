@@ -13568,6 +13568,38 @@ Overall Result: PASS
             raise RuntimeError(
                 "Godot release-readiness export validation should classify parse/load errors as syntax_error even when export itself exits 0"
             )
+        write_executable(
+            godot_release_guard_dest / "scripts" / "godot4",
+            "\n".join(
+                [
+                    "#!/usr/bin/env python3",
+                    "import sys",
+                    'sys.stderr.write("ERROR: No project icon specified. Please specify one in the Project Settings under Application -> Config -> Icon\\n")',
+                    'sys.stderr.write("ERROR: Can\\\'t open file from path \\\'res://res:/icon.svg\\\'.\\n")',
+                    "sys.stdout.write('Export completed successfully\\n')",
+                    "sys.exit(0)",
+                ]
+            )
+            + "\n",
+        )
+        godot_icon_guard_result = run_generated_tool(
+            godot_release_guard_dest,
+            ".opencode/tools/smoke_test.ts",
+            {
+                "ticket_id": "RELEASE-001",
+                "command_override": [
+                    "./scripts/godot4 --headless --path . --export-debug 'Android Debug' build/android/release-001-debug.apk"
+                ],
+            },
+        )
+        if godot_icon_guard_result["passed"] is True:
+            raise RuntimeError(
+                "smoke_test should reject release-readiness Godot export output that records icon path errors even when the export exits 0"
+            )
+        if godot_icon_guard_result["commands"][0]["failure_classification"] != "syntax_error":
+            raise RuntimeError(
+                "Godot release-readiness export validation should classify icon path export errors as syntax_error even when export itself exits 0"
+            )
 
         executed_smoke_all_commands_dest = workspace / "executed-smoke-test-all-commands"
         shutil.copytree(full_dest, executed_smoke_all_commands_dest)

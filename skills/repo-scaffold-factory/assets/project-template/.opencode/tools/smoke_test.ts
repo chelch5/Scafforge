@@ -717,6 +717,8 @@ function isGodotFatalDiagnosticOutput(output: string): boolean {
   return /SCRIPT ERROR:.*(?:not declared in the current scope|not found in base self|could not parse global class|could not resolve class)/i.test(output)
     || /Parse Error:\s*(?:Could not parse global class|Could not resolve class)/i.test(output)
     || /Failed to load script/i.test(output)
+    || /No project icon specified/i.test(output)
+    || /(?:Error opening file|Can't open file).*res:\/\/res:\//i.test(output)
 }
 
 function isClassNameReloadParseWarning(output: string, exitCode: number): boolean {

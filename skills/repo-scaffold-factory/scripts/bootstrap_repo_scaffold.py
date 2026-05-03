@@ -82,6 +82,11 @@ GAMEPLAY_FINISH_PROOF_ACCEPTANCE = (
     "Gameplay finish proof demonstrates the current build's core loop starts, one primary progression path advances, "
     "a fail-state or critical end-state is reachable, and any player-facing state reporting required by the shipped UI is exercised with current evidence."
 )
+REAL_VOICE_FINISH_ACCEPTANCE = (
+    "When the audio finish target requires voice, speech, spoken prompts, narration, or TTS, finish evidence must name the "
+    "recorded/generated/TTS audio files or generation commands and prove they are wired into the current build; abstract tone "
+    "sequences or melodic cues alone are not acceptable proof for a voice requirement."
+)
 WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
     {
         "release-facing milestones must keep the toy-box flow coherent, maintain immediate touch feedback, and ensure any shipped visual or audio content matches the toddler-safe direction recorded in this brief.",
@@ -820,11 +825,19 @@ def gameplay_finish_proof_required(
     return any(marker in lowered for marker in ("game", "godot", "playable", "toddler", "toy"))
 
 
+def real_voice_finish_required(*, audio_finish_target: str, finish_acceptance_signals: str) -> bool:
+    lowered = _normalize_finish_contract_value(f"{audio_finish_target} {finish_acceptance_signals}")
+    if any(marker in lowered for marker in ("procedural-only", "tone-only", "non-speech")):
+        return False
+    return any(marker in lowered for marker in ("voice", "speech", "spoken", "narration", "tts"))
+
+
 def build_finish_validation_acceptance(
     *,
     finish_acceptance_signals: str,
     interactive_required: bool,
     gameplay_required: bool,
+    real_voice_required: bool,
 ) -> list[str]:
     acceptance = [
         f"Finish proof artifact explicitly maps current evidence to the declared acceptance signals: {finish_acceptance_signals}",
@@ -835,6 +848,8 @@ def build_finish_validation_acceptance(
         acceptance.insert(1, INTERACTIVE_FINISH_PROOF_ACCEPTANCE)
     if gameplay_required:
         acceptance.insert(2 if interactive_required else 1, GAMEPLAY_FINISH_PROOF_ACCEPTANCE)
+    if real_voice_required:
+        acceptance.insert(3 if interactive_required or gameplay_required else 1, REAL_VOICE_FINISH_ACCEPTANCE)
     return acceptance
 
 
@@ -1093,6 +1108,15 @@ def ensure_finish_ownership_tickets(
             audio_finish_target,
             absent_marker="no audio bar applies",
         ):
+            audio_acceptance = [
+                f"The audio finish target is met: {audio_finish_target}",
+                "No placeholder, missing, or temporary user-facing audio remains where the finish contract requires audio delivery",
+            ]
+            if real_voice_finish_required(
+                audio_finish_target=audio_finish_target,
+                finish_acceptance_signals=finish_acceptance_signals,
+            ):
+                audio_acceptance.append(REAL_VOICE_FINISH_ACCEPTANCE)
             tickets.append(
                 {
                     "id": "AUDIO-001",
@@ -1107,10 +1131,7 @@ def ensure_finish_ownership_tickets(
                     "verification_state": "suspect",
                     "depends_on": ["SETUP-001"],
                     "summary": f"Deliver the declared user-facing audio bar: {audio_finish_target}.",
-                    "acceptance": [
-                        f"The audio finish target is met: {audio_finish_target}",
-                        "No placeholder, missing, or temporary user-facing audio remains where the finish contract requires audio delivery",
-                    ],
+                    "acceptance": audio_acceptance,
                     "decision_blockers": [],
                     "artifacts": [],
                     "follow_up_ticket_ids": [],
@@ -1156,6 +1177,7 @@ def ensure_finish_validation_lane(
     *,
     stack_label: str,
     deliverable_kind: str,
+    audio_finish_target: str,
     finish_acceptance_signals: str,
 ) -> None:
     """Create FINISH-VALIDATE-001 and wire RELEASE-001 dependency.
@@ -1217,6 +1239,10 @@ def ensure_finish_validation_lane(
                 gameplay_required=gameplay_finish_proof_required(
                     stack_label=stack_label,
                     deliverable_kind=deliverable_kind,
+                    finish_acceptance_signals=finish_acceptance_signals,
+                ),
+                real_voice_required=real_voice_finish_required(
+                    audio_finish_target=audio_finish_target,
                     finish_acceptance_signals=finish_acceptance_signals,
                 ),
             ),
@@ -1766,6 +1792,7 @@ def main() -> int:
         dest_root,
         stack_label=args.stack_label,
         deliverable_kind=args.deliverable_kind,
+        audio_finish_target=args.audio_finish_target,
         finish_acceptance_signals=finish_acceptance_signals,
     )
     ensure_state_directories(dest_root)
