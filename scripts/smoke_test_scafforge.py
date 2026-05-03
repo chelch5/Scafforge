@@ -4326,6 +4326,7 @@ def main() -> int:
         ).read_text(encoding="utf-8")
         for expected in (
             'run/main_scene="res://scenes/main.tscn"',
+            'config/name="__PROJECT_NAME__"',
             'config/icon="res://icon.svg"',
             "textures/vram_compression/import_etc2_astc=true",
         ):

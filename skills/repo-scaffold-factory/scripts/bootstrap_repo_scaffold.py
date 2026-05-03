@@ -29,6 +29,7 @@ TEXT_SUFFIXES = {
     ".yaml",
     ".yml",
     ".cfg",
+    ".godot",
     ".tscn",
 }
 
