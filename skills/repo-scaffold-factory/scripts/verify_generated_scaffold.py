@@ -230,6 +230,12 @@ def godot_android_export_surface_findings(repo_root: Path) -> list[object]:
     if not _is_godot_android_target(repo_root):
         return []
     missing: list[str] = []
+    if not (repo_root / "project.godot").exists():
+        missing.append("project.godot")
+    if not (repo_root / "icon.svg").exists():
+        missing.append("icon.svg")
+    if not (repo_root / "scenes/main.tscn").exists():
+        missing.append("scenes/main.tscn")
     export_presets_path = repo_root / "export_presets.cfg"
     if not export_presets_path.exists():
         missing.append("export_presets.cfg")
@@ -242,13 +248,14 @@ def godot_android_export_surface_findings(repo_root: Path) -> list[object]:
             code="SCAFFOLD-005",
             problem="A Godot Android scaffold is missing one or more repo-managed Android surfaces.",
             root_cause=(
-                "Scafforge owns the repo-managed Android export preset and managed android support metadata. "
-                "The scaffold must emit both surfaces when the brief declares a Godot Android target."
+                "Scafforge owns the baseline Godot project file, main scene, project icon, repo-managed Android export preset, "
+                "and managed android support metadata. The scaffold must emit all required surfaces when "
+                "the brief declares a Godot Android target."
             ),
             files=missing,
             safer_pattern=(
-                "Render export_presets.cfg and android/scafforge-managed.json from the canonical Scafforge templates during scaffold generation "
-                "and fail verification when either repo-managed Android surface is absent."
+                "Render project.godot, scenes/main.tscn, icon.svg, export_presets.cfg, and android/scafforge-managed.json from the canonical Scafforge templates during scaffold generation "
+                "and fail verification when any repo-managed Godot Android surface is absent."
             ),
             evidence=[f"Missing managed Android surfaces: {', '.join(missing)}"],
         )

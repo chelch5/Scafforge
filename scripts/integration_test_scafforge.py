@@ -2183,12 +2183,18 @@ def multi_stack_proof_integration(workspace: Path) -> None:
         if target.slug == "proof-godot":
             missing_android_surfaces = [
                 relative
-                for relative in ("export_presets.cfg", "android/scafforge-managed.json")
+                for relative in (
+                    "project.godot",
+                    "scenes/main.tscn",
+                    "icon.svg",
+                    "export_presets.cfg",
+                    "android/scafforge-managed.json",
+                )
                 if not (dest / relative).exists()
             ]
             if missing_android_surfaces:
                 raise RuntimeError(
-                    "Godot Android proof targets should scaffold all repo-managed Android surfaces. "
+                    "Godot Android proof targets should scaffold all repo-managed Godot Android surfaces. "
                     f"Missing: {', '.join(missing_android_surfaces)}"
                 )
 

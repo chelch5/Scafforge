@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="18" fill="#2f7d57"/>
+  <circle cx="40" cy="42" r="16" fill="#f6c85f"/>
+  <path d="M38 88c18-28 38-34 58-18-10 26-33 34-58 18z" fill="#7bc96f"/>
+  <path d="M28 94c10-26 28-38 54-36-8 30-28 43-54 36z" fill="#b5e48c"/>
+  <text x="64" y="76" font-family="Arial, sans-serif" font-size="31" font-weight="700" text-anchor="middle" fill="#ffffff">SG</text>
+</svg>
