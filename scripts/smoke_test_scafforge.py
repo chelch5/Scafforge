@@ -7928,9 +7928,17 @@ def main() -> int:
         blocked_repair_follow_on_start_here = (
             blocked_repair_follow_on_dest / "START-HERE.md"
         ).read_text(encoding="utf-8")
-        if (
+        blocked_repair_handoff_visible = (
             "- handoff_status: repair follow-up required"
-            not in blocked_repair_follow_on_start_here
+            in blocked_repair_follow_on_start_here
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required"
+                in blocked_repair_follow_on_start_here
+            )
+        )
+        if (
+            not blocked_repair_handoff_visible
             or "- repair_follow_on_outcome: managed_blocked"
             not in blocked_repair_follow_on_start_here
             or "- repair_follow_on_required: true"
@@ -7946,9 +7954,17 @@ def main() -> int:
         blocked_repair_follow_on_handoff = (
             blocked_repair_follow_on_dest / ".opencode" / "state" / "latest-handoff.md"
         ).read_text(encoding="utf-8")
-        if (
+        blocked_repair_latest_handoff_visible = (
             "- handoff_status: repair follow-up required"
-            not in blocked_repair_follow_on_handoff
+            in blocked_repair_follow_on_handoff
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required"
+                in blocked_repair_follow_on_handoff
+            )
+        )
+        if (
+            not blocked_repair_latest_handoff_visible
             or "- repair_follow_on_required: true"
             not in blocked_repair_follow_on_handoff
         ):
