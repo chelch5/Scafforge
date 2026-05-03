@@ -2087,6 +2087,8 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
     require_contains(findings, smoke_test, "normalizeRepoPath")
     require_contains(findings, artifact_write, "expectedPath = defaultArtifactPath")
     require_contains(findings, artifact_write, "canonicalizeRepoPath(args.path)")
+    require_contains(findings, artifact_write, "artifact_write only writes implementation evidence artifacts")
+    require_contains(findings, artifact_write, "Use the write or edit tool on docs/spec/CANONICAL-BRIEF.md")
     require_contains(findings, artifact_register, "expectedPath = defaultArtifactPath")
     require_contains(findings, artifact_register, "canonicalizeRepoPath(args.path)")
     require_contains(
@@ -2674,6 +2676,21 @@ def validate_template_surfaces(findings: list[Finding]) -> None:
         findings,
         TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
         "when `ticket_lookup.transition_guidance.next_action_kind` is `write_artifact`, do not attempt `artifact_write` or `artifact_register` yourself",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-team-leader.md",
+        "never use `artifact_write` as a substitute for editing a product file",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-implementer.md",
+        "`artifact_write` only writes workflow evidence under `.opencode/state/...`",
+    )
+    require_contains(
+        findings,
+        TEMPLATE_ROOT / ".opencode" / "agents" / "__AGENT_PREFIX__-reviewer-code.md",
+        "verify file-update claims against the actual repo files",
     )
     require_contains(
         findings,

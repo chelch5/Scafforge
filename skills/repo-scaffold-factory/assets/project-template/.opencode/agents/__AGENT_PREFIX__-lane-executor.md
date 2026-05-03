@@ -98,6 +98,9 @@ Rules:
 - confirm the assigned ticket's `approved_plan` is already true in workflow-state before implementation begins
 - if the assigned ticket is the bootstrap/setup lane, use `environment_bootstrap` for prerequisite installation and verification
 - write the full implementation artifact with `artifact_write` and then register it with `artifact_register` before handing work to review
+- `artifact_write` only writes workflow evidence under `.opencode/state/...`; it never edits product files, docs, tickets, source code, assets, or config. When the approved plan requires a repo file change, use the normal `write` or `edit` tool on the actual repo-relative path first, then re-read that same path and cite the changed content in the implementation artifact.
+- do not claim that source files, docs, assets, or configuration files were updated unless a write-capable tool changed those exact paths and you verified the post-edit contents from the file itself
+- if a file update is required but `write` or `edit` is unavailable or fails, return a blocker instead of placing the desired file contents inside the implementation artifact
 - before creating the implementation artifact, run at minimum:
   - a compile or syntax check on all new or modified source files
   - an import check for the primary module
