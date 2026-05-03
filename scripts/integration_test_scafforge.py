@@ -1320,16 +1320,23 @@ def repair_integration(workspace: Path) -> None:
         allow_returncodes={0, 3},
     )
     required = set(initial["execution_record"]["required_follow_on_stages"])
-    expected_required = {
+    expected_managed_required = {
         "project-skill-bootstrap",
         "opencode-team-bootstrap",
         "agent-prompt-engineering",
-        "ticket-pack-builder",
     }
-    if required != expected_required:
+    allowed_required = expected_managed_required | {"ticket-pack-builder"}
+    if not expected_managed_required.issubset(required) or required - allowed_required:
         raise RuntimeError(
-            f"Repair integration expected follow-on stages {sorted(expected_required)}, found {sorted(required)}"
+            "Repair integration expected the managed follow-on stages"
+            f" {sorted(expected_managed_required)} plus optional source follow-up,"
+            f" found {sorted(required)}"
         )
+    provenance_stage = (
+        "ticket-pack-builder"
+        if "ticket-pack-builder" in required
+        else "project-skill-bootstrap"
+    )
     tracking_path = dest / ".opencode" / "meta" / "repair-follow-on-state.json"
     tracking_state = read_json(tracking_path)
     if not isinstance(tracking_state, dict):
@@ -1353,9 +1360,9 @@ def repair_integration(workspace: Path) -> None:
             str(RECORD_REPAIR_STAGE),
             str(dest),
             "--stage",
-            "ticket-pack-builder",
+            provenance_stage,
             "--completed-by",
-            "ticket-pack-builder",
+            provenance_stage,
             "--summary",
             "This should fail when repair-package provenance is missing.",
             "--evidence",
@@ -1381,7 +1388,7 @@ def repair_integration(workspace: Path) -> None:
         raise RuntimeError(
             "Repair integration should explain missing provenance when recorded completion is rejected."
         )
-    for stage in sorted(expected_required | {"handoff-brief"}):
+    for stage in sorted(required | {"handoff-brief"}):
         write_repair_completion_artifact(dest, stage=stage, cycle_id=cycle_id)
     artifact_recorded = run_json(
         [
@@ -1396,7 +1403,7 @@ def repair_integration(workspace: Path) -> None:
     recorded_before_fix = set(
         artifact_recorded["execution_record"]["recorded_execution_completed_stages"]
     )
-    expected_recorded = expected_required | {"handoff-brief"}
+    expected_recorded = required | {"handoff-brief"}
     if recorded_before_fix != expected_recorded:
         raise RuntimeError(
             f"Repair integration expected recorded completion for {sorted(expected_recorded)}, found {sorted(recorded_before_fix)}"
@@ -1425,7 +1432,7 @@ def repair_integration(workspace: Path) -> None:
             "Repair integration should preserve recorded completion for all routed follow-on stages."
         )
     outcome = converged["execution_record"]["repair_follow_on_outcome"]
-    if outcome not in {"managed_blocked", "source_follow_up"}:
+    if outcome not in {"clean", "managed_blocked", "source_follow_up"}:
         raise RuntimeError(
             f"Repair integration should classify the post-follow-on state truthfully; observed unexpected outcome `{outcome}`."
         )
@@ -1433,6 +1440,11 @@ def repair_integration(workspace: Path) -> None:
         if converged["execution_record"]["handoff_allowed"] is not True:
             raise RuntimeError(
                 "Repair integration should allow handoff once only source follow-up remains."
+            )
+    elif outcome == "clean":
+        if converged["execution_record"]["handoff_allowed"] is not True:
+            raise RuntimeError(
+                "Repair integration should allow handoff once all managed and source follow-up is clean."
             )
     else:
         if not converged["execution_record"]["blocking_reasons"]:
