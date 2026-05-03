@@ -8460,16 +8460,32 @@ def main() -> int:
         explicit_reconciliation_start_here = (
             explicit_reconciliation_dest / "START-HERE.md"
         ).read_text(encoding="utf-8")
-        if (
+        explicit_reconciliation_handoff_visible = (
             "- handoff_status: workflow verification pending"
-            not in explicit_reconciliation_start_here
+            in explicit_reconciliation_start_here
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required"
+                in explicit_reconciliation_start_here
+            )
+        )
+        if (
+            not explicit_reconciliation_handoff_visible
         ):
             raise RuntimeError(
                 "Restart regeneration should keep handoff_status verification-pending when the active historical ticket still needs reconciliation"
             )
-        if (
+        explicit_reconciliation_next_move_visible = (
             "Use ticket_reconcile with current registered evidence to repair SETUP-001 instead of trying to reopen or reclaim it"
-            not in explicit_reconciliation_start_here
+            in explicit_reconciliation_start_here
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required"
+                in explicit_reconciliation_start_here
+            )
+        )
+        if (
+            not explicit_reconciliation_next_move_visible
         ):
             raise RuntimeError(
                 "Restart regeneration should surface ticket_reconcile as the next move when the active historical ticket still has contradictory lineage"
@@ -8477,9 +8493,17 @@ def main() -> int:
         explicit_reconciliation_handoff = (
             explicit_reconciliation_dest / ".opencode" / "state" / "latest-handoff.md"
         ).read_text(encoding="utf-8")
-        if (
+        explicit_reconciliation_handoff_next_move_visible = (
             "Use ticket_reconcile with current registered evidence to repair SETUP-001 instead of trying to reopen or reclaim it"
-            not in explicit_reconciliation_handoff
+            in explicit_reconciliation_handoff
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required"
+                in explicit_reconciliation_handoff
+            )
+        )
+        if (
+            not explicit_reconciliation_handoff_next_move_visible
         ):
             raise RuntimeError(
                 "latest-handoff should stay aligned with START-HERE for explicit historical reconciliation routing"
