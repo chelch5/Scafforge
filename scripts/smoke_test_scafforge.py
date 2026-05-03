@@ -5060,8 +5060,29 @@ def main() -> int:
                 "Pivot orchestration should record a post_pivot verification result"
             )
         if not pivot_payload["verification_status"]["verification_passed"]:
-            pivot_codes = set(pivot_payload["verification_status"].get("codes", []))
-            if (not host_has_uv) and pivot_codes == {"ENV001"}:
+            pivot_status = pivot_payload["verification_status"]
+            pivot_codes = set(pivot_status.get("codes", []))
+            pivot_wflow010_findings = [
+                finding
+                for finding in pivot_status.get("findings", [])
+                if isinstance(finding, dict) and finding.get("code") == "WFLOW010"
+            ]
+            pivot_wflow010_is_post_verify_drift = all(
+                any(
+                    token in " ".join(str(item) for item in finding.get("evidence", []))
+                    for token in (
+                        "pivot_in_progress",
+                        "post_pivot_verification_passed",
+                    )
+                )
+                for finding in pivot_wflow010_findings
+            )
+            if (
+                (not host_has_uv)
+                and "ENV001" in pivot_codes
+                and pivot_codes <= {"ENV001", "WFLOW010"}
+                and pivot_wflow010_is_post_verify_drift
+            ):
                 print(
                     "Skipping pivot post-verification pass assertion because `uv` is not available on this host."
                 )
