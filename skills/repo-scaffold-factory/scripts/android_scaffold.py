@@ -23,8 +23,8 @@ def slugify(value: str) -> str:
 
 
 def renders_godot_android_assets(stack_label: str) -> bool:
-    lowered = stack_label.lower()
-    return "godot" in lowered and "android" in lowered
+    normalized = re.sub(r"[^a-z0-9]+", " ", stack_label.lower())
+    return "godot" in normalized and "android" in normalized
 
 
 def normalize_android_package_name(project_slug: str, explicit_package_name: str | None = None) -> str:

@@ -359,7 +359,7 @@ def should_copy(root_name: str, scope: str, stack_label: str, scaffold_profile: 
     if scope == "opencode":
         return root_name in OPENCODE_SCOPE_FILES
     if root_name in {"export_presets.cfg", "android"}:
-        return scaffold_profile == SCAFFOLD_PROFILE_FULL and renders_godot_android_assets(stack_label)
+        return renders_godot_android_assets(stack_label)
     return root_name in FULL_SCOPE_FILES
 
 
@@ -1724,20 +1724,20 @@ def main() -> int:
         args.force,
         args.scaffold_profile,
     )
-    if args.scaffold_profile == SCAFFOLD_PROFILE_FULL:
-        created.extend(
-            ensure_asset_pipeline_surfaces(
-                dest_root,
-                scope=args.scope,
-                stack_label=args.stack_label,
-                deliverable_kind=args.deliverable_kind,
-                placeholder_policy=args.placeholder_policy,
-                content_source_plan=args.content_source_plan,
-                licensing_or_provenance_constraints=args.licensing_or_provenance_constraints,
-                finish_acceptance_signals=finish_acceptance_signals,
-                force=args.force,
-            )
+    created.extend(
+        ensure_asset_pipeline_surfaces(
+            dest_root,
+            scope=args.scope,
+            stack_label=args.stack_label,
+            deliverable_kind=args.deliverable_kind,
+            placeholder_policy=args.placeholder_policy,
+            content_source_plan=args.content_source_plan,
+            licensing_or_provenance_constraints=args.licensing_or_provenance_constraints,
+            finish_acceptance_signals=finish_acceptance_signals,
+            force=args.force,
         )
+    )
+    if args.scaffold_profile == SCAFFOLD_PROFILE_FULL:
         created.extend(
             ensure_blender_route_operating_surfaces(
                 dest_root,
@@ -1746,28 +1746,28 @@ def main() -> int:
                 force=args.force,
             )
         )
-        ensure_finish_ownership_tickets(
-            dest_root,
-            stack_label=args.stack_label,
-            deliverable_kind=args.deliverable_kind,
-            placeholder_policy=args.placeholder_policy,
-            visual_finish_target=args.visual_finish_target,
-            audio_finish_target=args.audio_finish_target,
-            content_source_plan=args.content_source_plan,
-            finish_acceptance_signals=finish_acceptance_signals,
-        )
-        ensure_godot_android_completion_tickets(
-            dest_root,
-            slug,
-            args.stack_label,
-            deliverable_kind=args.deliverable_kind,
-        )
-        ensure_finish_validation_lane(
-            dest_root,
-            stack_label=args.stack_label,
-            deliverable_kind=args.deliverable_kind,
-            finish_acceptance_signals=finish_acceptance_signals,
-        )
+    ensure_finish_ownership_tickets(
+        dest_root,
+        stack_label=args.stack_label,
+        deliverable_kind=args.deliverable_kind,
+        placeholder_policy=args.placeholder_policy,
+        visual_finish_target=args.visual_finish_target,
+        audio_finish_target=args.audio_finish_target,
+        content_source_plan=args.content_source_plan,
+        finish_acceptance_signals=finish_acceptance_signals,
+    )
+    ensure_godot_android_completion_tickets(
+        dest_root,
+        slug,
+        args.stack_label,
+        deliverable_kind=args.deliverable_kind,
+    )
+    ensure_finish_validation_lane(
+        dest_root,
+        stack_label=args.stack_label,
+        deliverable_kind=args.deliverable_kind,
+        finish_acceptance_signals=finish_acceptance_signals,
+    )
     ensure_state_directories(dest_root)
     apply_scaffold_profile_metadata(dest_root, scaffold_profile=args.scaffold_profile)
     write_bootstrap_provenance(
