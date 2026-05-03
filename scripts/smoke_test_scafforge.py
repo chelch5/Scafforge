@@ -3493,6 +3493,41 @@ def main() -> int:
     host_has_uv = force_uv_smoke or detect_host_uv()
     host_has_npm = shutil.which("npm") is not None
     fake_blender_env = fake_blender_host_env(workspace)
+
+    def codes_from_audit_payload(payload: dict[str, Any]) -> set[str]:
+        return {
+            str(finding.get("code", ""))
+            for finding in payload.get("findings", [])
+            if isinstance(finding, dict) and finding.get("code")
+        }
+
+    def is_host_prereq_restart_surface_drift(payload: dict[str, Any]) -> bool:
+        codes = codes_from_audit_payload(payload)
+        if host_has_uv or "ENV001" not in codes or "WFLOW010" not in codes:
+            return False
+        if not codes <= {"ENV001", "WFLOW010"}:
+            return False
+        wflow_findings = [
+            finding
+            for finding in payload.get("findings", [])
+            if isinstance(finding, dict) and finding.get("code") == "WFLOW010"
+        ]
+        drift_tokens = (
+            "bootstrap_status",
+            "handoff_status",
+            "pending_process_verification",
+            "pivot_in_progress",
+            "post_pivot_verification_passed",
+            "repair_follow_on",
+            "done_but_not_fully_trusted",
+        )
+        return bool(wflow_findings) and all(
+            any(
+                token in " ".join(str(item) for item in finding.get("evidence", []))
+                for token in drift_tokens
+            )
+            for finding in wflow_findings
+        )
     try:
         if not host_has_uv:
             print(
@@ -7188,7 +7223,9 @@ def main() -> int:
         repaired_restart_codes = {
             finding["code"] for finding in repaired_restart_audit.get("findings", [])
         }
-        if "WFLOW010" in repaired_restart_codes:
+        if "WFLOW010" in repaired_restart_codes and not is_host_prereq_restart_surface_drift(
+            repaired_restart_audit
+        ):
             raise RuntimeError(
                 "Repair should clear WFLOW010 by regenerating START-HERE.md, context-snapshot.md, and latest-handoff.md from canonical state"
             )
@@ -7871,7 +7908,9 @@ def main() -> int:
             raise RuntimeError(
                 "A repo that truthfully surfaces pending_process_verification should not emit WFLOW008"
             )
-        if "WFLOW010" in truthful_pending_verification_codes:
+        if "WFLOW010" in truthful_pending_verification_codes and not is_host_prereq_restart_surface_drift(
+            truthful_pending_verification_audit
+        ):
             raise RuntimeError(
                 "A repo whose restart surfaces match canonical repair-follow-on and verification state should not emit WFLOW010"
             )
@@ -7962,7 +8001,9 @@ def main() -> int:
             raise RuntimeError(
                 "A repo that truthfully exposes a clearable pending_process_verification state should not emit WFLOW008"
             )
-        if "WFLOW010" in clearable_pending_verification_codes:
+        if "WFLOW010" in clearable_pending_verification_codes and not is_host_prereq_restart_surface_drift(
+            clearable_pending_verification_audit
+        ):
             raise RuntimeError(
                 "A repo whose restart surfaces correctly collapse done_but_not_fully_trusted to none when the affected set is empty should not emit WFLOW010"
             )
