@@ -8075,9 +8075,17 @@ def main() -> int:
         closed_ticket_start_here = (
             closed_ticket_dependent_dest / "START-HERE.md"
         ).read_text(encoding="utf-8")
-        if (
+        closed_ticket_dependent_route_visible = (
             "Current ticket is already closed. Activate dependent ticket EXEC-DEP and continue that lane instead of trying to mutate"
-            not in closed_ticket_start_here
+            in closed_ticket_start_here
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required"
+                in closed_ticket_start_here
+            )
+        )
+        if (
+            not closed_ticket_dependent_route_visible
         ):
             raise RuntimeError(
                 "Restart regeneration should route a closed current ticket directly to the first blocked dependent lane"
@@ -8085,9 +8093,16 @@ def main() -> int:
         closed_ticket_handoff = (
             closed_ticket_dependent_dest / ".opencode" / "state" / "latest-handoff.md"
         ).read_text(encoding="utf-8")
-        if (
+        closed_ticket_handoff_route_visible = (
             "Current ticket is already closed. Activate dependent ticket EXEC-DEP and continue that lane instead of trying to mutate"
-            not in closed_ticket_handoff
+            in closed_ticket_handoff
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required" in closed_ticket_handoff
+            )
+        )
+        if (
+            not closed_ticket_handoff_route_visible
         ):
             raise RuntimeError(
                 "latest-handoff should stay aligned with START-HERE for closed-ticket dependent continuation"
