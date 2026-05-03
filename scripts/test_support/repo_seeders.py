@@ -579,6 +579,16 @@ def write_python_wrapper(path: Path, *, allow_pytest: bool) -> None:
                 f"ALLOW_PYTEST = {allow_pytest!r}",
                 'if not ALLOW_PYTEST and len(args) >= 2 and args[0] == "-m" and args[1] == "pytest":',
                 "    sys.exit(1)",
+                'if ALLOW_PYTEST and len(args) >= 2 and args[0] == "-m" and args[1] == "pytest":',
+                "    pytest_args = args[2:]",
+                '    if "--version" in pytest_args:',
+                '        print("pytest 8.1.0")',
+                "        raise SystemExit(0)",
+                '    if "--collect-only" in pytest_args:',
+                '        print("2 tests collected")',
+                "        raise SystemExit(0)",
+                '    print("1 failed, 1 passed in 0.10s")',
+                "    raise SystemExit(1)",
                 "raise SystemExit(subprocess.run([REAL_PYTHON, *args], check=False).returncode)",
             ]
         )
