@@ -34,7 +34,7 @@ Generated repos inherit OpenCode-oriented operating surfaces such as `.opencode/
 
 Scafforge now has two first-class greenfield profiles:
 
-- `minimal-operable` renders the managed scaffold surfaces needed for a durable restart: canonical brief, `START-HERE.md`, workflow state, ticket manifest and board, bootstrap provenance, validation hooks, and one legal next move (`environment_bootstrap`).
+- `minimal-operable` renders the managed scaffold surfaces needed for a durable restart: canonical brief, `START-HERE.md`, workflow state, ticket manifest and board, bootstrap provenance, validation hooks, stack bootstrap support surfaces when the target requires them, and one legal next move (`environment_bootstrap`).
 - `full-specialization` starts from the minimal-operable scaffold and continues through repo-local skills, project-specific agents, prompt hardening, backlog generation, final continuation verification, and handoff publication.
 
 The minimal profile lets an adjacent backend stop after bootstrap-lane proof when it needs a fast durable scaffold. The full profile remains the default human-facing one-shot path for a ready-to-develop generated repo.
@@ -91,7 +91,7 @@ An adjacent orchestration service may invoke `scaffold-kickoff` from a persisted
 - `minimal-operable-verified` means bootstrap-lane proof passed with specialization truthfully pending.
 - `scaffold-verified` means the full-specialization pass cleared VERIFY009 and has zero blocking VERIFY010 or VERIFY011 findings before downstream PR work begins.
 
-The backend-callable scaffold adapter is `scripts/run_scaffold_adapter.py`. It accepts a versioned JSON input containing an approved brief path, target generated-repo root, repo slug, lifecycle preference, scaffold profile, idempotency key, and operator identity. It returns `scafforge-core.scaffold-adapter.v1` JSON with generated repo path, repo id, scaffold profile, minimal-operable status, specialization status, proof refs, roadmap ref, ticket manifest ref, validation status, blockers, and idempotency key. The adapter initializes the generated repo as a git worktree, writes bootstrap-lane verification evidence into it, and returns an idempotent replay for repeated calls with the same key.
+The backend-callable scaffold adapter is `scripts/run_scaffold_adapter.py`. It accepts a versioned JSON input containing an approved brief path, target generated-repo root, repo slug, lifecycle preference, scaffold profile, optional explicit stack label, optional product finish contract, idempotency key, and operator identity. It returns `scafforge-core.scaffold-adapter.v1` JSON with generated repo path, repo id, scaffold profile, minimal-operable status, specialization status, proof refs, roadmap ref, ticket manifest ref, validation status, blockers, and idempotency key. The adapter initializes the generated repo as a git worktree, writes bootstrap-lane verification evidence into it, records strict finish requirements in generated truth surfaces when supplied, and returns an idempotent replay for repeated calls with the same key.
 
 ## Adjacent control plane
 

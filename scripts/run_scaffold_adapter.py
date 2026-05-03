@@ -20,6 +20,15 @@ BOOTSTRAP = ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "bootstrap_r
 VERIFY = ROOT / "skills" / "repo-scaffold-factory" / "scripts" / "verify_generated_scaffold.py"
 OUTPUT_RELATIVE = Path(".opencode") / "state" / "scaffold-adapter-output.json"
 VERIFY_RELATIVE = Path(".opencode") / "state" / "scaffold-adapter-verification.json"
+FINISH_CONTRACT_FIELDS = (
+    "deliverable_kind",
+    "placeholder_policy",
+    "visual_finish_target",
+    "audio_finish_target",
+    "content_source_plan",
+    "licensing_or_provenance_constraints",
+    "finish_acceptance_signals",
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -88,6 +97,25 @@ def validate_input(payload: dict[str, Any]) -> list[str]:
     approved_brief = Path(str(payload.get("approved_brief_path", ""))).expanduser()
     if not approved_brief.exists():
         blockers.append(f"approved_brief_path does not exist: {approved_brief}")
+    blockers.extend(validate_finish_contract(payload))
+    return blockers
+
+
+def validate_finish_contract(payload: dict[str, Any]) -> list[str]:
+    has_nested_contract = "product_finish_contract" in payload
+    has_top_level_contract = any(field in payload for field in FINISH_CONTRACT_FIELDS)
+    if not has_nested_contract and not has_top_level_contract:
+        return []
+
+    contract = payload.get("product_finish_contract")
+    if has_nested_contract and not isinstance(contract, dict):
+        return ["product_finish_contract must be an object when supplied"]
+
+    blockers: list[str] = []
+    for field in FINISH_CONTRACT_FIELDS:
+        value = finish_contract_value(payload, field)
+        if value is None:
+            blockers.append(f"product_finish_contract.{field} is required when a product finish contract is supplied")
     return blockers
 
 
@@ -259,8 +287,9 @@ def run_adapter(input_path: Path) -> tuple[int, dict[str, Any]]:
         "full",
         "--scaffold-profile",
         scaffold_profile,
-        "--force",
     ]
+    append_finish_contract_args(command, payload)
+    command.append("--force")
     bootstrap = run_command(command)
     if bootstrap.returncode != 0:
         return 2, blocked("Scaffold bootstrap failed.", payload, [bootstrap.stderr or bootstrap.stdout])
@@ -308,6 +337,34 @@ def run_adapter(input_path: Path) -> tuple[int, dict[str, Any]]:
     )
     write_adapter_output(repo_root, output)
     return 0, output
+
+
+def finish_contract_value(payload: dict[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        contract = payload.get("product_finish_contract")
+        if isinstance(contract, dict):
+            value = contract.get(key)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def append_finish_contract_args(command: list[str], payload: dict[str, Any]) -> None:
+    finish_args = {
+        "deliverable_kind": "--deliverable-kind",
+        "placeholder_policy": "--placeholder-policy",
+        "visual_finish_target": "--visual-finish-target",
+        "audio_finish_target": "--audio-finish-target",
+        "content_source_plan": "--content-source-plan",
+        "licensing_or_provenance_constraints": "--licensing-or-provenance-constraints",
+        "finish_acceptance_signals": "--finish-acceptance-signals",
+    }
+    for key in FINISH_CONTRACT_FIELDS:
+        value = finish_contract_value(payload, key)
+        if value is not None:
+            command.extend([finish_args[key], value])
 
 
 def main() -> int:

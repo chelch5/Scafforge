@@ -57,11 +57,11 @@ The script copies files from `assets/project-template/` and substitutes these pl
 - `__UTILITY_MODEL__` → utility agent model string
 - `__STACK_LABEL__` → stack/framework label
 
-Minimal-operable output includes: README.md, AGENTS.md, START-HERE.md, docs/, tickets/, opencode.jsonc, .opencode/ managed validation hooks, workflow state, and .opencode/meta/bootstrap-provenance.json with specialization marked pending.
+Minimal-operable output includes: README.md, AGENTS.md, START-HERE.md, docs/, tickets/, opencode.jsonc, .opencode/ managed validation hooks, workflow state, .opencode/meta/bootstrap-provenance.json with specialization marked pending, and stack bootstrap support surfaces when the explicit stack label requires them.
 
 Full-specialization output additionally keeps the same managed base ready for repo-local skill synthesis, project-specific agents, prompt hardening, backlog generation, final continuation verification, and handoff publication.
 
-For Godot Android game stacks in the full-specialization profile, the script also seeds the base asset-pipeline surfaces so later skills start from a real repo layout instead of prose-only guidance:
+For explicit Godot Android game stacks, the script also seeds the base asset-pipeline surfaces so later skills start from a real repo layout instead of prose-only guidance:
 - `assets/requirements.json`
 - `assets/pipeline.json`
 - `assets/manifest.json`

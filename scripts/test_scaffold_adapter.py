@@ -35,19 +35,27 @@ def adapter_input(
     project_name: str,
     scaffold_profile: str,
     idempotency_key: str,
+    project_family: str = "web-app",
+    stack_label: str | None = None,
+    finish_contract: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "adapter_contract_version": "scafforge-core.scaffold-adapter.v1",
         "approved_brief_path": str(brief_path),
         "target_repo_root": str(generated_root),
         "repo_slug": repo_slug,
         "project_name": project_name,
-        "project_family": "web-app",
+        "project_family": project_family,
         "lifecycle_preference": "durable",
         "scaffold_profile": scaffold_profile,
         "idempotency_key": idempotency_key,
         "operator_identity": "test",
     }
+    if stack_label is not None:
+        payload["stack_label"] = stack_label
+    if finish_contract is not None:
+        payload["product_finish_contract"] = finish_contract
+    return payload
 
 
 def assert_common_completed_payload(payload: dict[str, object]) -> Path:
@@ -114,6 +122,17 @@ def main() -> int:
                 project_name="Adapter Contract Minimal",
                 scaffold_profile="minimal-operable",
                 idempotency_key="idem_adapter_contract_minimal",
+                project_family="android_game",
+                stack_label="godot-android-game",
+                finish_contract={
+                    "deliverable_kind": "complete Android educational game",
+                    "placeholder_policy": "no_placeholders",
+                    "visual_finish_target": "ship-ready child-friendly Android UI with no placeholder visuals",
+                    "audio_finish_target": "spoken prompts, positive feedback, and looping music are present and validated",
+                    "content_source_plan": "local procedural content and generated assets, with provenance recorded",
+                    "licensing_or_provenance_constraints": "no external licensed assets required for this proof",
+                    "finish_acceptance_signals": "A child can launch the Android build, complete a playable learning round, hear voice/music/feedback, and reach a reward flow.",
+                },
             ),
         )
         minimal = run_adapter(minimal_input_path)
@@ -132,6 +151,61 @@ def main() -> int:
             (minimal_repo_root / ".opencode" / "meta" / "bootstrap-provenance.json").read_text(encoding="utf-8")
         )
         assert minimal_provenance["profile_contract"]["minimal_operable_next_move"] == "environment_bootstrap"
+        assert minimal_provenance["product_finish_contract"]["placeholder_policy"] == "no_placeholders"
+        assert minimal_provenance["product_finish_contract"]["requires_visual_proof"] is True
+        minimal_manifest = json.loads(
+            (minimal_repo_root / "tickets" / "manifest.json").read_text(encoding="utf-8")
+        )
+        minimal_ticket_ids = {
+            str(ticket.get("id"))
+            for ticket in minimal_manifest["tickets"]
+            if isinstance(ticket, dict)
+        }
+        assert {"VISUAL-001", "AUDIO-001", "ANDROID-001", "FINISH-VALIDATE-001", "RELEASE-001"} <= minimal_ticket_ids
+
+        malformed_contract_input = temp_root / "malformed-contract-input.json"
+        write_json(
+            malformed_contract_input,
+            adapter_input(
+                brief_path=brief_path,
+                generated_root=generated_root,
+                repo_slug="adapter-contract-malformed",
+                project_name="Adapter Contract Malformed",
+                scaffold_profile="minimal-operable",
+                idempotency_key="idem_adapter_contract_malformed",
+                stack_label="godot-android-game",
+                finish_contract={"placeholder_policy": "no_placeholders"},
+            ),
+        )
+        malformed_contract = run_adapter(malformed_contract_input)
+        assert malformed_contract.returncode == 2
+        malformed_payload = json.loads(malformed_contract.stdout)
+        assert malformed_payload["status"] == "blocked"
+        assert any(
+            "product_finish_contract.deliverable_kind" in blocker
+            for blocker in malformed_payload["blockers"]
+        )
+
+        invalid_contract_type_input = temp_root / "invalid-contract-type-input.json"
+        invalid_contract_payload = adapter_input(
+            brief_path=brief_path,
+            generated_root=generated_root,
+            repo_slug="adapter-contract-invalid",
+            project_name="Adapter Contract Invalid",
+            scaffold_profile="minimal-operable",
+            idempotency_key="idem_adapter_contract_invalid",
+            stack_label="godot-android-game",
+        )
+        invalid_contract_payload["product_finish_contract"] = "no_placeholders"
+        write_json(invalid_contract_type_input, invalid_contract_payload)
+        invalid_contract_type = run_adapter(invalid_contract_type_input)
+        assert invalid_contract_type.returncode == 2
+        invalid_contract_payload_out = json.loads(invalid_contract_type.stdout)
+        assert invalid_contract_payload_out["status"] == "blocked"
+        assert any(
+            "product_finish_contract must be an object" in blocker
+            for blocker in invalid_contract_payload_out["blockers"]
+        )
 
         invalid_input = temp_root / "invalid-input.json"
         write_json(invalid_input, {"repo_slug": "invalid", "scaffold_profile": "not-a-profile"})
