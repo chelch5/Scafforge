@@ -49,7 +49,7 @@ When the repo stack is finalized, rewrite this catalog so review and QA agents g
 - Prefer free/open tools by default when authoring or revising art direction inputs: Inkscape, Krita, GIMP, Blender, and similar FOSS tooling.
 
 ### Visual Proof In QA
-- When `.opencode/meta/bootstrap-provenance.json` says `requires_visual_proof: true`, QA must include a structured visual-proof block before the ticket can enter smoke-test.
+- When `.opencode/meta/bootstrap-provenance.json` says `requires_visual_proof: true`, `VISUAL-001`, `FINISH-VALIDATE-001`, finish-visual, finish-validation, and any ticket with explicit visual-proof acceptance criteria must include a structured visual-proof block before the ticket can enter smoke-test. Bootstrap, setup, and non-visual tickets still need real command evidence, but they do not have to fabricate screenshot proof before visual work exists.
 - The QA artifact should record:
   - `visual_proof_status: PASS|FAIL|BLOCKED|APPROVED|REJECT`
   - `visual_proof_evidence: <comma-separated screenshot/render paths>`
