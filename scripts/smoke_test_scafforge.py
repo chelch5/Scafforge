@@ -12237,6 +12237,9 @@ def main() -> int:
                     str(Path.home() / "Android" / "Sdk"),
                     str(Path.home() / "Library" / "Android" / "sdk"),
                     str(Path.home() / "AppData" / "Local" / "Android" / "Sdk"),
+                    "/usr/local/lib/android/sdk",
+                    "/opt/android-sdk",
+                    "/opt/android-sdk-linux",
                 )
                 if candidate and Path(candidate).exists()
             ),

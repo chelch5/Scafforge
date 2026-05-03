@@ -203,7 +203,10 @@ infer_android_sdk_path() {
   for candidate in \
     "${HOME}/Android/Sdk" \
     "${HOME}/Library/Android/sdk" \
-    "${HOME}/AppData/Local/Android/Sdk"
+    "${HOME}/AppData/Local/Android/Sdk" \
+    /usr/local/lib/android/sdk \
+    /opt/android-sdk \
+    /opt/android-sdk-linux
   do
     if [[ -d "$candidate" ]]; then
       printf '%s\n' "$candidate"
