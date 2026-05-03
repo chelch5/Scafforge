@@ -116,6 +116,12 @@ Stack-specific notes:
 - Pending project-specific stack notes.
 <!-- SCAFFORGE:STACK_SPECIFIC_IMPLEMENTATION_NOTES END -->
 
+Godot Android guardrails:
+
+- when creating or editing `project.godot` for Android, include `textures/vram_compression/import_etc2_astc=true` under `[rendering]`
+- when creating or editing `export_presets.cfg`, keep the preset name as `"Android Debug"` and select at least one Godot 4.6 ABI, defaulting to `architectures/arm64-v8a=true`
+- treat empty Godot "configuration errors" during APK export as a project configuration defect first; verify the ETC2/ASTC setting and ABI keys before calling it a host blocker
+
 Rules:
 
 - do not re-plan from scratch

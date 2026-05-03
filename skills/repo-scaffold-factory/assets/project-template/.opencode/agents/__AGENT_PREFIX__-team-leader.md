@@ -339,9 +339,18 @@ When this project targets Android (Godot game):
 
 2. **export_presets.cfg** preset name must be `"Android Debug"` (not just `"Android"`).
 
-3. Export command: `godot4 --headless --path . --export-debug "Android Debug" build/android/<slug>-debug.apk`
+3. **export_presets.cfg** must select at least one current Godot Android ABI. Default to:
+   ```
+   architectures/armeabi-v7a=false
+   architectures/arm64-v8a=true
+   architectures/x86=false
+   architectures/x86_64=false
+   ```
+   Without this, Godot 4.6 reports empty export "configuration errors".
 
-4. Environment discovery (use bash, not glob — glob is project-scoped):
+4. Export command: `godot4 --headless --path . --export-debug "Android Debug" build/android/<slug>-debug.apk`
+
+5. Environment discovery (use bash, not glob — glob is project-scoped):
    - `JAVA_HOME`: check `echo $JAVA_HOME` or `/etc/profile.d/java.sh`
    - `ANDROID_HOME`: check `echo $ANDROID_HOME`
    - Debug keystore: check editor settings at `~/.config/godot/editor_settings-*.tres`

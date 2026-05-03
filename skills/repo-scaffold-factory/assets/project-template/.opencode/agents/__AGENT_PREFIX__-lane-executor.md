@@ -106,6 +106,7 @@ Rules:
 - include the command output in the implementation artifact
 - do not create an implementation artifact for code that fails these checks
 - stop when you hit a blocker instead of improvising around missing requirements
+- for Godot Android work, verify `project.godot` has `textures/vram_compression/import_etc2_astc=true` under `[rendering]` and `export_presets.cfg` has a current ABI such as `architectures/arm64-v8a=true` before treating APK export failures as host blockers
 - if the repo exposes a dedicated `__AGENT_PREFIX__-blender-asset-creator` and the ticket's primary deliverable is a Blender-generated asset or other managed `blender_agent` output, stop and return a blocker that routes the lane back through that specialist instead of implementing it yourself
 - never call `blender_agent_*` tools yourself for a Blender-routed ticket; those tools belong to `__AGENT_PREFIX__-blender-asset-creator`
 - when the repo exposes a `blender-mcp-workflow` skill or asset-pipeline bootstrap metadata, load that skill before using Blender MCP tools
