@@ -5087,9 +5087,20 @@ def main() -> int:
                     "Skipping pivot post-verification pass assertion because `uv` is not available on this host."
                 )
             else:
+                pivot_finding_summary = [
+                    {
+                        "code": finding.get("code"),
+                        "files": finding.get("files", []),
+                        "evidence": finding.get("evidence", []),
+                    }
+                    for finding in pivot_status.get("findings", [])
+                    if isinstance(finding, dict)
+                    and finding.get("code") in {"ENV001", "WFLOW010"}
+                ]
                 raise RuntimeError(
                     "Pivot orchestration should pass verification on a clean generated repo; "
-                    f"observed codes: {', '.join(sorted(pivot_codes)) or 'none'}"
+                    f"observed codes: {', '.join(sorted(pivot_codes)) or 'none'}; "
+                    f"findings: {pivot_finding_summary}"
                 )
         if (
             pivot_payload["stale_surface_map"]["canonical_brief_and_truth_docs"][
