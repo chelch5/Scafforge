@@ -11263,6 +11263,75 @@ def main() -> int:
             raise RuntimeError(
                 "ticket_update should allow QA-to-smoke-test transitions when the latest QA artifact records `## Overall QA Verdict` followed by `**PASS**`"
             )
+        visual_required_setup_dest = workspace / "executed-visual-required-setup-qa"
+        shutil.copytree(full_dest, visual_required_setup_dest)
+        seed_ready_bootstrap(visual_required_setup_dest)
+        visual_required_provenance_path = (
+            visual_required_setup_dest
+            / ".opencode"
+            / "meta"
+            / "bootstrap-provenance.json"
+        )
+        visual_required_provenance = json.loads(
+            visual_required_provenance_path.read_text(encoding="utf-8")
+        )
+        visual_required_provenance["requires_visual_proof"] = True
+        visual_required_product_contract = visual_required_provenance.setdefault(
+            "product_finish_contract",
+            {},
+        )
+        visual_required_product_contract["requires_visual_proof"] = True
+        visual_required_provenance_path.write_text(
+            json.dumps(visual_required_provenance, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        visual_required_manifest_path = (
+            visual_required_setup_dest / "tickets" / "manifest.json"
+        )
+        visual_required_manifest = json.loads(
+            visual_required_manifest_path.read_text(encoding="utf-8")
+        )
+        visual_required_ticket = next(
+            ticket
+            for ticket in visual_required_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        visual_required_ticket["stage"] = "qa"
+        visual_required_ticket["status"] = "qa"
+        visual_required_manifest_path.write_text(
+            json.dumps(visual_required_manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        visual_required_workflow_path = (
+            visual_required_setup_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        visual_required_workflow = json.loads(
+            visual_required_workflow_path.read_text(encoding="utf-8")
+        )
+        visual_required_workflow["stage"] = "qa"
+        visual_required_workflow["status"] = "qa"
+        visual_required_workflow_path.write_text(
+            json.dumps(visual_required_workflow, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        register_current_ticket_artifact(
+            visual_required_setup_dest,
+            ticket_id="SETUP-001",
+            kind="qa",
+            stage="qa",
+            relative_path=".opencode/state/qa/setup-001-qa-no-visual-proof.md",
+            summary="Synthetic PASS QA artifact proving setup is not visual-proof scoped.",
+            content="# QA\n\n## Validation Command\n\n`npm test -- --runInBand`\n\n## Raw Command Output\n\n```text\nPASS tests/setup.test.ts\n  setup workflow\n    ✓ validates the bootstrap contract\n    ✓ confirms generated workflow state can continue\nEXIT_CODE: 0\nRESULT: PASS\n```\n\n## Setup Scope\n\nThis QA artifact intentionally has no visual-proof fields because SETUP-001 owns bootstrap readiness and command evidence. VISUAL-001 owns screenshot and visual-rubric evidence after setup unlocks the finish lane.\n\n## Overall QA Verdict\n\n**PASS**\n",
+        )
+        visual_required_update = run_generated_tool(
+            visual_required_setup_dest,
+            ".opencode/tools/ticket_update.ts",
+            {"ticket_id": "SETUP-001", "stage": "smoke-test", "activate": True},
+        )
+        if visual_required_update["updated_ticket"]["stage"] != "smoke-test":
+            raise RuntimeError(
+                "ticket_update should allow SETUP-001 to enter smoke-test without visual proof even when repo-level visual proof is required; finish-visual tickets own that proof."
+            )
         qa_compact_heading_dest = workspace / "executed-qa-compact-heading"
         shutil.copytree(full_dest, qa_compact_heading_dest)
         seed_ready_bootstrap(qa_compact_heading_dest)

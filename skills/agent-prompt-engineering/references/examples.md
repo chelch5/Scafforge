@@ -50,4 +50,4 @@ Before:
 
 After:
 
-- "if bootstrap provenance requires visual proof, keep the ticket in QA until the artifact includes `visual_proof_status`, evidence paths, reviewed surfaces, rubric blockers, and a style note that distinguishes intentional style from failure"
+- "if bootstrap provenance requires visual proof and the ticket is `VISUAL-001`, `FINISH-VALIDATE-001`, in a finish-visual or finish-validation lane, or explicitly has visual-proof acceptance criteria, keep the ticket in QA until the artifact includes `visual_proof_status`, evidence paths, reviewed surfaces, rubric blockers, and a style note that distinguishes intentional style from failure"

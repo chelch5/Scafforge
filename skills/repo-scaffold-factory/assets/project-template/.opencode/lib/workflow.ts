@@ -1594,8 +1594,16 @@ async function repoRequiresVisualProof(root = rootPath()): Promise<boolean> {
   if (provenance.requires_visual_proof === true) return true
   return provenance.product_finish_contract?.requires_visual_proof === true
 }
+export function ticketRequiresVisualProof(ticket: Ticket): boolean {
+  const normalizedId = ticket.id.trim().toUpperCase()
+  const normalizedLane = ticket.lane.trim().toLowerCase()
+  if (normalizedId === "VISUAL-001" || normalizedId === "FINISH-VALIDATE-001") return true
+  if (normalizedLane === "finish-visual" || normalizedLane === "finish-validation") return true
+  return ticket.acceptance.some((item) => /\bstructured\s+visual\s+proof\b|\bvisual[-\s]?proof\b/i.test(item))
+}
 export async function validateVisualProofRequirement(ticket: Ticket, root = rootPath()): Promise<string | null> {
   if (!(await repoRequiresVisualProof(root))) return null
+  if (!ticketRequiresVisualProof(ticket)) return null
   const artifact = latestArtifact(ticket, { stage: "qa", trust_state: "current" })
   if (!artifact) return "Visual-proof repos require a QA artifact before smoke-test."
   const content = await readArtifactContent(artifact, root)
