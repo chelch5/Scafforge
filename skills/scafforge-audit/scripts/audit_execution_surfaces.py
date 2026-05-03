@@ -1853,8 +1853,24 @@ def audit_godot_execution(root: Path, findings: list[Finding], ctx: ExecutionSur
             root=root,
         )
 
+    skip_godot_runtime = False
+    main_scene = _normalize_godot_scalar(project_settings.get("application.run/main_scene"))
+    if not main_scene:
+        _add_execution_finding(
+            findings,
+            ctx,
+            code="EXEC-GODOT-004",
+            severity="error",
+            problem="Godot project has no configured main scene.",
+            root_cause="Godot cannot complete a deterministic headless load when `application/run/main_scene` is absent, and the engine may open host-native warning dialogs instead of exiting cleanly.",
+            files=[project_file],
+            safer_pattern="Set `application/run/main_scene` to a real `res://...` scene before running or treating Godot validation as meaningful.",
+            evidence=["project.godot is missing application/run/main_scene"],
+            root=root,
+        )
+        skip_godot_runtime = True
     godot_cmd = next((candidate for candidate in ("godot4", "godot") if _command_available(candidate)), None)
-    if godot_cmd:
+    if godot_cmd and not skip_godot_runtime:
         rc, output = ctx.run_command([godot_cmd, "--headless", "--path", ".", "--quit"], root, 120)
         if rc != 0:
             _add_execution_finding(findings, ctx, code="EXEC-GODOT-004", severity="error", problem="Godot headless validation fails.", root_cause="The project cannot complete a deterministic headless Godot load pass on the current host, indicating broken project configuration or scripts.", files=[project_file], safer_pattern="Run a deterministic `godot --headless --path . --quit` validation during audit and keep the repo blocked until it succeeds or returns an explicit environment blocker instead.", evidence=_collect_first_error_lines(output), root=root)

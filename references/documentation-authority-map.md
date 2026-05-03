@@ -32,8 +32,8 @@ This is the current source-of-truth map for Scafforge package documentation. Sta
 | Surface | Class | Owns | Sweep decision |
 | --- | --- | --- | --- |
 | bootstrap `docs/plans/active-plans-index.md` | portfolio index | Plan ordering, portfolio shape, and plan-document expectations | Updated as a reminder, not a second policy source |
-| bootstrap `docs/plans/active-plans-docs-policy.md` | planning-format policy | Placement and naming rules for planning docs | Keeps plan formatting aligned to the standing rule from `AGENTS.md` |
-| bootstrap `docs/plans/README.md` | active-plan index | Current workspace plan status and archival routing | Use to confirm whether workspace-level plan folders are active, archived, or intentionally empty |
+| bootstrap `docs/plans/README.md` | plan-set overview | Current workspace plan status and archival routing | Use to confirm which workspace-level plan folders are active or archived |
+| bootstrap `docs/plans/verification-register.md` | evidence register | Historical completion claims and fresh-validation status | Use to prevent archived claims from becoming current proof |
 
 ## Generated-template docs
 
