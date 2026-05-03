@@ -12626,8 +12626,20 @@ def main() -> int:
             json.dumps(smoke_from_qa_manifest, indent=2) + "\n",
             encoding="utf-8",
         )
+        (smoke_from_qa_dest / "package.json").write_text(
+            json.dumps(
+                {
+                    "scripts": {
+                        "test": "SMOKE_TOKEN=phase5 python3 scripts/mock_smoke.py"
+                    }
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         seed_ready_bootstrap(smoke_from_qa_dest)
-        smoke_from_qa_command = "python3 -m pytest --version"
+        smoke_from_qa_command = "npm run test"
         (
             smoke_from_qa_dest / ".opencode" / "state" / "qa" / "setup-001-qa-report.md"
         ).write_text(
