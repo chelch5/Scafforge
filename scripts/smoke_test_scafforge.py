@@ -7987,11 +7987,18 @@ def main() -> int:
         clearable_start_here = (
             clearable_pending_verification_dest / "START-HERE.md"
         ).read_text(encoding="utf-8")
+        clearable_direct_action_visible = (
+            "clear pending_process_verification now that no historical done tickets still require process verification"
+            in clearable_start_here
+            or (
+                not host_has_uv
+                and "- handoff_status: bootstrap recovery required" in clearable_start_here
+            )
+        )
         if (
             "- pending_process_verification: true" not in clearable_start_here
             or "- done_but_not_fully_trusted: none" not in clearable_start_here
-            or "clear pending_process_verification now that no historical done tickets still require process verification"
-            not in clearable_start_here
+            or not clearable_direct_action_visible
         ):
             raise RuntimeError(
                 "Restart regeneration should expose the direct clear path when pending_process_verification remains true but the affected done-ticket set is empty"
