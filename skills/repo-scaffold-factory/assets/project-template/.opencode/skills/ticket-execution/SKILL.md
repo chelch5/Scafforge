@@ -66,8 +66,8 @@ Transition contract:
 - `smoke-test`:
   - required proof before exit: a current smoke-test artifact produced by `smoke_test`
   - next legal transition: `ticket_update stage=closeout status=done`
-  - **DEFERRED smoke test**: if the acceptance commands require functionality from a later ticket that is not yet done, use `smoke_test(smoke_deferred_until=[ticket_ids])` to emit a DEFERRED artifact. The ticket stays in smoke-test stage. Do NOT use `command_override` to scope-narrow around missing functionality. Do NOT close the ticket while smoke is DEFERRED. Re-run `smoke_test` for this ticket after all `deferred_until` tickets reach done status.
-  - **command_override scope constraint**: `command_override` is rejected if the ticket's acceptance criteria specify commands whose executables are not covered by the override. This is a configuration error, not a test failure. Resolution: either include the required executables in `command_override`, or use `smoke_deferred_until` if the required functionality does not exist yet.
+  - **DEFERRED smoke test**: if the acceptance commands require functionality from another ticket that is not yet done, use `smoke_test(smoke_deferred_until=[ticket_ids])` only when every deferred ticket can be claimed before the current ticket reaches `done`. Never defer to a ticket that directly or transitively depends on the current ticket; that is a circular closeout blocker and must be fixed in the current ticket or moved to a separate prerequisite ticket. The ticket stays in smoke-test stage. Do NOT use `command_override` to scope-narrow around missing functionality. Do NOT close the ticket while smoke is DEFERRED. Re-run `smoke_test` for this ticket after all `deferred_until` tickets reach done status.
+  - **command_override scope constraint**: `command_override` is rejected if the ticket's acceptance criteria specify commands whose executables are not covered by the override. This is a configuration error, not a test failure. Resolution: either include the required executables in `command_override`, or use `smoke_deferred_until` only when the missing functionality belongs to a claimable ticket that does not depend on the current ticket.
 - `closeout`:
   - required proof before exit: a passing smoke-test artifact
   - expected final state: `status=done`
@@ -82,6 +82,7 @@ Failure recovery paths:
 - Smoke-test FAIL with `failure_classification: missing_executable` or host-surface `runtime_setup`: run `environment_bootstrap` and treat the failure as an environment blocker first
 - Smoke-test FAIL with `failure_classification: syntax_error` or `configuration_error`: treat the smoke tool surface as the blocker; do not route that failure straight to implementation
 - Smoke-test DEFERRED (`passed: null, deferred: true`): the smoke test is explicitly waiting on other tickets. Continue working on other ready tickets in parallel. Re-run `smoke_test` for this ticket after all `deferred_until` tickets close. Do not treat this as an error or block all other work.
+- `smoke_test` rejects `smoke_deferred_until` as a circular closeout blocker: route the current ticket back to implementation and fix the missing surface in the current ticket, even if the approved plan previously claimed the gap was deferred. Re-run review, QA, and smoke-test after the implementation fix.
 - repeated downstream review rejection caused by workflow contradiction, missing legal-next-move guidance, or repo/package boundary confusion: stop phase retry churn and request `scafforge-audit`
 
 Remediation ticket closeout:

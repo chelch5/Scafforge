@@ -12806,6 +12806,189 @@ Overall Result: PASS
                 "ticket_update should accept the guided closeout payload after a passing smoke test"
             )
 
+        smoke_defer_guard_dest = workspace / "executed-smoke-defer-cycle-guard"
+        shutil.copytree(full_dest, smoke_defer_guard_dest)
+        seed_ready_bootstrap(smoke_defer_guard_dest)
+        register_current_ticket_artifact(
+            smoke_defer_guard_dest,
+            ticket_id="SETUP-001",
+            kind="qa",
+            stage="qa",
+            relative_path=".opencode/state/artifacts/setup-001-qa-defer-guard.md",
+            summary="Synthetic QA artifact for smoke deferral dependency guard coverage.",
+            content="# QA\n\nCommand: python3 -m py_compile scripts/smoke_test_scafforge.py\n\nQA evidence is current.\n",
+        )
+        smoke_defer_manifest_path = smoke_defer_guard_dest / "tickets" / "manifest.json"
+        smoke_defer_manifest = json.loads(
+            smoke_defer_manifest_path.read_text(encoding="utf-8")
+        )
+        setup_for_defer = next(
+            ticket
+            for ticket in smoke_defer_manifest["tickets"]
+            if ticket["id"] == "SETUP-001"
+        )
+        setup_for_defer["stage"] = "smoke-test"
+        setup_for_defer["status"] = "smoke_test"
+        smoke_defer_manifest["active_ticket"] = "SETUP-001"
+        smoke_defer_manifest["tickets"].append(
+            {
+                "id": "VISUAL-001",
+                "title": "Synthetic visual follow-on",
+                "wave": 1,
+                "lane": "finish-visual",
+                "parallel_safe": False,
+                "overlap_risk": "medium",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": ["SETUP-001"],
+                "summary": "Synthetic visual ticket that depends on SETUP-001.",
+                "acceptance": [],
+                "decision_blockers": [],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+        smoke_defer_manifest["tickets"].append(
+            {
+                "id": "RELEASE-001",
+                "title": "Synthetic transitive visual follow-on",
+                "wave": 1,
+                "lane": "finish-release",
+                "parallel_safe": False,
+                "overlap_risk": "medium",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": ["VISUAL-001"],
+                "summary": "Synthetic ticket that transitively depends on SETUP-001 through VISUAL-001.",
+                "acceptance": [],
+                "decision_blockers": [],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+        smoke_defer_manifest["tickets"].append(
+            {
+                "id": "BLOCKED-001",
+                "title": "Synthetic blocked independent ticket",
+                "wave": 1,
+                "lane": "blocked-lane",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "blocked",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": [],
+                "summary": "Synthetic independent ticket that cannot be claimed yet.",
+                "acceptance": [],
+                "decision_blockers": ["Synthetic decision blocker."],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+        smoke_defer_manifest["tickets"].append(
+            {
+                "id": "PREREQ-001",
+                "title": "Synthetic claimable prerequisite",
+                "wave": 1,
+                "lane": "repo-foundation",
+                "parallel_safe": True,
+                "overlap_risk": "low",
+                "stage": "planning",
+                "status": "todo",
+                "resolution_state": "open",
+                "verification_state": "suspect",
+                "depends_on": [],
+                "summary": "Synthetic independent ticket that can be completed before SETUP-001.",
+                "acceptance": [],
+                "decision_blockers": [],
+                "artifacts": [],
+                "follow_up_ticket_ids": [],
+            }
+        )
+        smoke_defer_manifest_path.write_text(
+            json.dumps(smoke_defer_manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        smoke_defer_workflow_path = (
+            smoke_defer_guard_dest / ".opencode" / "state" / "workflow-state.json"
+        )
+        smoke_defer_workflow = json.loads(
+            smoke_defer_workflow_path.read_text(encoding="utf-8")
+        )
+        smoke_defer_workflow["active_ticket"] = "SETUP-001"
+        smoke_defer_workflow["stage"] = "smoke-test"
+        smoke_defer_workflow["status"] = "smoke_test"
+        smoke_defer_workflow_path.write_text(
+            json.dumps(smoke_defer_workflow, indent=2) + "\n", encoding="utf-8"
+        )
+        valid_deferred_smoke = run_generated_tool(
+            smoke_defer_guard_dest,
+            ".opencode/tools/smoke_test.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "smoke_deferred_until": ["PREREQ-001"],
+            },
+        )
+        if (
+            valid_deferred_smoke.get("deferred") is not True
+            or valid_deferred_smoke.get("deferred_until") != ["PREREQ-001"]
+        ):
+            raise RuntimeError(
+                "smoke_test should still allow deferral to an independent claimable prerequisite ticket"
+            )
+        cyclic_deferred_error = run_generated_tool_error(
+            smoke_defer_guard_dest,
+            ".opencode/tools/smoke_test.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "smoke_deferred_until": ["VISUAL-001"],
+            },
+        )
+        if (
+            "Cannot defer smoke test for SETUP-001 to VISUAL-001" not in cyclic_deferred_error
+            or "circular closeout blocker" not in cyclic_deferred_error
+        ):
+            raise RuntimeError(
+                "smoke_test should reject deferral to tickets that depend on the current ticket:\n"
+                + cyclic_deferred_error
+            )
+        transitive_deferred_error = run_generated_tool_error(
+            smoke_defer_guard_dest,
+            ".opencode/tools/smoke_test.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "smoke_deferred_until": ["RELEASE-001"],
+            },
+        )
+        if (
+            "Cannot defer smoke test for SETUP-001 to RELEASE-001" not in transitive_deferred_error
+            or "circular closeout blocker" not in transitive_deferred_error
+        ):
+            raise RuntimeError(
+                "smoke_test should reject deferral to tickets that transitively depend on the current ticket:\n"
+                + transitive_deferred_error
+            )
+        blocked_deferred_error = run_generated_tool_error(
+            smoke_defer_guard_dest,
+            ".opencode/tools/smoke_test.ts",
+            {
+                "ticket_id": "SETUP-001",
+                "smoke_deferred_until": ["BLOCKED-001"],
+            },
+        )
+        if (
+            "Cannot defer smoke test for SETUP-001 to unclaimable ticket(s): BLOCKED-001" not in blocked_deferred_error
+            or "ticket is blocked" not in blocked_deferred_error
+        ):
+            raise RuntimeError(
+                "smoke_test should reject deferral to independent tickets that cannot be claimed:\n"
+                + blocked_deferred_error
+            )
+
         executed_smoke_fatal_stderr_dest = workspace / "executed-smoke-test-fatal-stderr"
         shutil.copytree(full_dest, executed_smoke_fatal_stderr_dest)
         seed_ready_bootstrap(executed_smoke_fatal_stderr_dest)
