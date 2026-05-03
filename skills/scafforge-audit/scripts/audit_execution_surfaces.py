@@ -1062,6 +1062,12 @@ def audit_environment_prerequisites(root: Path, findings: list[Finding], ctx: Ex
                 ),
             )
             return
+        if (
+            uv_repo
+            and not uv_available
+            and existing_repo_venv_executable(root, "python") is None
+        ):
+            return
 
         ctx.add_finding(
             findings,

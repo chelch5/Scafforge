@@ -5067,7 +5067,8 @@ def main() -> int:
                 )
             else:
                 raise RuntimeError(
-                    "Pivot orchestration should pass verification on a clean generated repo"
+                    "Pivot orchestration should pass verification on a clean generated repo; "
+                    f"observed codes: {', '.join(sorted(pivot_codes)) or 'none'}"
                 )
         if (
             pivot_payload["stale_surface_map"]["canonical_brief_and_truth_docs"][
