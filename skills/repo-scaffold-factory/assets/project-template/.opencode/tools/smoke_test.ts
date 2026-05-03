@@ -8,6 +8,7 @@ import {
   defaultArtifactPath,
   findExistingRepoVenvExecutable,
   getTicket,
+  getTicketWorkflowState,
   latestArtifact,
   loadArtifactRegistry,
   loadManifest,
@@ -22,6 +23,7 @@ import {
   saveWorkflowBundle,
   writeText,
 } from "../lib/workflow"
+import type { Manifest, Ticket, WorkflowState } from "../lib/workflow"
 
 type PackageJson = {
   packageManager?: string
@@ -70,6 +72,11 @@ type SmokeCheckpoint = {
   passed: boolean | null
   updated_at: string
   commands: CommandResult[]
+}
+type ManifestTicketRef = {
+  id: string
+  status?: string
+  depends_on?: string[]
 }
 
 const SMOKE_STAGE = "smoke-test"
@@ -971,6 +978,38 @@ function renderDeferredArtifact(ticketId: string, deferredUntil: string[], note:
   return `# Smoke Test\n\n## Ticket\n\n- ${ticketId}\n\n## Overall Result\n\nOverall Result: DEFERRED\n\n## Deferred Until\n\n${deferredUntil.map((id) => `- ${id}`).join("\n")}\n\n## Notes\n\n${note}\n\nThis smoke test has been explicitly deferred. Re-run smoke_test for this ticket after all listed tickets reach \`done\` status.\n`
 }
 
+function ticketTransitivelyDependsOn(tickets: ManifestTicketRef[], ticketId: string, dependencyId: string, seen = new Set<string>()): boolean {
+  if (ticketId === dependencyId) return true
+  if (seen.has(ticketId)) return false
+  seen.add(ticketId)
+  const ticket = tickets.find((item) => item.id === ticketId)
+  if (!ticket) return false
+  return (ticket.depends_on || []).some((nextId) => ticketTransitivelyDependsOn(tickets, nextId, dependencyId, seen))
+}
+
+function deferredTicketClaimBlocker(manifest: Manifest, workflow: WorkflowState, deferredTicket: Ticket): string | null {
+  if (deferredTicket.status === "done") {
+    return null
+  }
+  if (deferredTicket.resolution_state === "superseded") {
+    return "ticket is superseded"
+  }
+  if (deferredTicket.status === "blocked") {
+    const blockers = deferredTicket.decision_blockers.length > 0 ? `: ${deferredTicket.decision_blockers.join("; ")}` : ""
+    return `ticket is blocked${blockers}`
+  }
+  for (const dependencyId of deferredTicket.depends_on) {
+    const dependencyTicket = getTicket(manifest, dependencyId)
+    if (dependencyTicket.status !== "done") {
+      return `dependency ${dependencyTicket.id} is ${dependencyTicket.status}, not done`
+    }
+    if (dependencyTicket.verification_state === "invalidated" || getTicketWorkflowState(workflow, dependencyTicket.id).needs_reverification) {
+      return `dependency ${dependencyTicket.id} is no longer trusted`
+    }
+  }
+  return null
+}
+
 function classifyCommandKind(command: CommandResult): "build_or_quality_gate" | "test_or_runtime" | "other" {
   const rendered = `${command.label} ${renderCommand(command)}`.toLowerCase()
   if (/(build|check|lint|clippy|vet|typecheck|tsc|compile|analy[sz]e)/.test(rendered)) {
@@ -1052,7 +1091,7 @@ export default tool({
     scope: tool.schema.string().describe("Optional smoke-test scope hint such as full-suite or ticket.").optional(),
     test_paths: tool.schema.array(tool.schema.string()).describe("Optional scoped pytest paths to run instead of the full detected Python suite.").optional(),
     command_override: tool.schema.array(tool.schema.string()).describe("Optional explicit smoke-test command override. Accepts tokenized argv for one command, one shell-style command string, or multiple shell-style command strings executed in order. Leading KEY=VALUE entries are treated as environment overrides. NOTE: if the ticket has acceptance-criteria commands, those executables must be represented in this override or smoke_test will fail with a configuration error. Use smoke_deferred_until instead of scope-narrowing.").optional(),
-    smoke_deferred_until: tool.schema.array(tool.schema.string()).describe("Optional list of ticket IDs that must reach 'done' status before this smoke test runs. When provided and any listed ticket is not yet done, the smoke test emits a DEFERRED artifact and exits without running any commands. The ticket remains in smoke-test stage. Re-run smoke_test after the listed tickets complete. Use this instead of command_override scope-narrowing when the acceptance test requires functionality from a later ticket.").optional(),
+    smoke_deferred_until: tool.schema.array(tool.schema.string()).describe("Optional list of ticket IDs that must reach 'done' status before this smoke test runs. Use only for independent or prerequisite tickets that can be claimed and completed before the current ticket reaches done. Do not defer to tickets that directly or transitively depend on the current ticket; that circular closeout blocker is rejected. When valid and any listed ticket is not yet done, the smoke test emits a DEFERRED artifact and exits without running commands. Re-run smoke_test after the listed tickets complete.").optional(),
   },
   async execute(args) {
     const manifest = await loadManifest()
@@ -1063,9 +1102,33 @@ export default tool({
 
     // Handle smoke_deferred_until: check if any referenced tickets are not yet done.
     if (Array.isArray(args.smoke_deferred_until) && args.smoke_deferred_until.length > 0) {
-      const blockingTickets = args.smoke_deferred_until.filter((id) => {
-        const dep = manifest.tickets?.find((t: { id: string }) => t.id === id)
-        return !dep || dep.status !== "done"
+      const referencedTickets = args.smoke_deferred_until.map((id) => manifest.tickets.find((t: ManifestTicketRef) => t.id === id) || null)
+      const unknownTickets = args.smoke_deferred_until.filter((_id, index) => !referencedTickets[index])
+      if (unknownTickets.length > 0) {
+        throw new Error(`Cannot defer smoke test for ${ticket.id} to unknown ticket(s): ${unknownTickets.join(", ")}.`)
+      }
+      const circularTickets = args.smoke_deferred_until.filter((id) =>
+        ticketTransitivelyDependsOn(manifest.tickets || [], id, ticket.id),
+      )
+      if (circularTickets.length > 0) {
+        throw new Error(
+          `Cannot defer smoke test for ${ticket.id} to ${circularTickets.join(", ")} because those ticket(s) depend on ${ticket.id}. ` +
+            "This would create a circular closeout blocker. Fix the current ticket's smoke failure or defer to a claimable prerequisite ticket that does not depend on the current ticket.",
+        )
+      }
+      const unclaimableTickets = referencedTickets.flatMap((deferredTicket) => {
+        if (!deferredTicket || deferredTicket.status === "done") return []
+        const blocker = deferredTicketClaimBlocker(manifest, workflow, deferredTicket)
+        return blocker ? [`${deferredTicket.id} (${blocker})`] : []
+      })
+      if (unclaimableTickets.length > 0) {
+        throw new Error(
+          `Cannot defer smoke test for ${ticket.id} to unclaimable ticket(s): ${unclaimableTickets.join(", ")}. ` +
+            "Use only tickets that are already done or can be legally claimed and completed before the current ticket reaches done.",
+        )
+      }
+      const blockingTickets = referencedTickets.flatMap((deferredTicket) => {
+        return deferredTicket && deferredTicket.status !== "done" ? [deferredTicket.id] : []
       })
       if (blockingTickets.length > 0) {
         const note =

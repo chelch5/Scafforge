@@ -76,7 +76,7 @@ Do not claim project-specific skills, agents, prompts, or backlog expansion are 
 - Use `ticket_reconcile` to repair stale or contradictory ticket lineage from evidence instead of editing `tickets/manifest.json` directly.
 - Treat `.opencode/meta/bootstrap-provenance.json` as provenance only, not as a mutable resume or queue surface.
 - Use `smoke_test` to generate smoke-test proof. Do not fabricate smoke-test PASS artifacts through generic artifact tools.
-- Use `smoke_test(smoke_deferred_until=[ticket_ids])` when a ticket's acceptance smoke test requires functionality from a later ticket that is not yet done. Do NOT use `command_override` to scope-narrow around missing functionality.
+- Use `smoke_test(smoke_deferred_until=[ticket_ids])` only when the deferred tickets can be claimed before the current ticket reaches `done`. Do not defer to tickets that directly or transitively depend on the current ticket, and do not use `command_override` to scope-narrow around missing functionality.
 
 ## Machine / Clone Check
 
