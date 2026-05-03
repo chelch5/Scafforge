@@ -5067,10 +5067,12 @@ def main() -> int:
                 for finding in pivot_status.get("findings", [])
                 if isinstance(finding, dict) and finding.get("code") == "WFLOW010"
             ]
-            pivot_wflow010_is_post_verify_drift = all(
+            pivot_wflow010_is_host_prereq_drift = all(
                 any(
                     token in " ".join(str(item) for item in finding.get("evidence", []))
                     for token in (
+                        "bootstrap_status",
+                        "handoff_status",
                         "pivot_in_progress",
                         "post_pivot_verification_passed",
                     )
@@ -5081,7 +5083,7 @@ def main() -> int:
                 (not host_has_uv)
                 and "ENV001" in pivot_codes
                 and pivot_codes <= {"ENV001", "WFLOW010"}
-                and pivot_wflow010_is_post_verify_drift
+                and pivot_wflow010_is_host_prereq_drift
             ):
                 print(
                     "Skipping pivot post-verification pass assertion because `uv` is not available on this host."
