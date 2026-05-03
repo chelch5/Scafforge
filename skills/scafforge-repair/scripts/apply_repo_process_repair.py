@@ -168,6 +168,11 @@ GAMEPLAY_FINISH_PROOF_ACCEPTANCE = (
     "Gameplay finish proof demonstrates the current build's core loop starts, one primary progression path advances, "
     "a fail-state or critical end-state is reachable, and any player-facing state reporting required by the shipped UI is exercised with current evidence."
 )
+REAL_VOICE_FINISH_ACCEPTANCE = (
+    "When the audio finish target requires voice, speech, spoken prompts, narration, or TTS, finish evidence must name the "
+    "recorded/generated/TTS audio files or generation commands and prove they are wired into the current build; abstract tone "
+    "sequences or melodic cues alone are not acceptable proof for a voice requirement."
+)
 WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
     {
         "release-facing milestones must keep the toy-box flow coherent, maintain immediate touch feedback, and ensure any shipped visual or audio content matches the toddler-safe direction recorded in this brief.",
@@ -177,6 +182,7 @@ WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
 _MANAGED_FINISH_VALIDATION_PREFIXES = (
     "Finish proof artifact explicitly maps current evidence to the declared acceptance signals:",
     INTERACTIVE_FINISH_PROOF_ACCEPTANCE,
+    REAL_VOICE_FINISH_ACCEPTANCE,
     "`godot4 --headless --path . --quit` succeeds so finish validation is based on a loadable product, not just exported artifacts",
     "All finish-direction, visual, audio, or content ownership tickets required by the contract are completed before closeout",
 )
@@ -238,6 +244,15 @@ def brief_requires_gameplay_finish_proof(brief_text: str) -> bool:
     return any(marker in lowered for marker in ("game", "godot", "playable", "toddler", "toy"))
 
 
+def brief_requires_real_voice_finish_proof(brief_text: str) -> bool:
+    audio_finish_target = _finish_contract_field(brief_text, "audio_finish_target") or ""
+    finish_acceptance_signals = _finish_contract_field(brief_text, "finish_acceptance_signals") or ""
+    lowered = _normalize_finish_contract_value(f"{audio_finish_target} {finish_acceptance_signals}")
+    if any(marker in lowered for marker in ("procedural-only", "tone-only", "non-speech")):
+        return False
+    return any(marker in lowered for marker in ("voice", "speech", "spoken", "narration", "tts"))
+
+
 def build_finish_validation_acceptance(*, brief_text: str, finish_acceptance_signals: str) -> list[str]:
     acceptance = [
         f"Finish proof artifact explicitly maps current evidence to the declared acceptance signals: {finish_acceptance_signals}",
@@ -248,6 +263,11 @@ def build_finish_validation_acceptance(*, brief_text: str, finish_acceptance_sig
         acceptance.insert(1, INTERACTIVE_FINISH_PROOF_ACCEPTANCE)
     if brief_requires_gameplay_finish_proof(brief_text):
         acceptance.insert(2 if brief_requires_interactive_finish_proof(brief_text) else 1, GAMEPLAY_FINISH_PROOF_ACCEPTANCE)
+    if brief_requires_real_voice_finish_proof(brief_text):
+        acceptance.insert(
+            3 if brief_requires_interactive_finish_proof(brief_text) or brief_requires_gameplay_finish_proof(brief_text) else 1,
+            REAL_VOICE_FINISH_ACCEPTANCE,
+        )
     return acceptance
 
 
@@ -564,6 +584,12 @@ def ensure_finish_contract_tickets(manifest: dict[str, Any], brief_text: str) ->
             audio_finish_target,
             absent_marker="no audio bar applies",
         ):
+            audio_acceptance = [
+                f"The audio finish target is met: {audio_finish_target}",
+                "No placeholder, missing, or temporary user-facing audio remains where the finish contract requires audio delivery",
+            ]
+            if brief_requires_real_voice_finish_proof(brief_text):
+                audio_acceptance.append(REAL_VOICE_FINISH_ACCEPTANCE)
             tickets.append(
                 {
                     "id": "AUDIO-001",
@@ -578,10 +604,7 @@ def ensure_finish_contract_tickets(manifest: dict[str, Any], brief_text: str) ->
                     "verification_state": "suspect",
                     "depends_on": ["SETUP-001"],
                     "summary": f"Deliver the declared user-facing audio bar: {audio_finish_target}.",
-                    "acceptance": [
-                        f"The audio finish target is met: {audio_finish_target}",
-                        "No placeholder, missing, or temporary user-facing audio remains where the finish contract requires audio delivery",
-                    ],
+                    "acceptance": audio_acceptance,
                     "decision_blockers": [],
                     "artifacts": [],
                     "follow_up_ticket_ids": [],

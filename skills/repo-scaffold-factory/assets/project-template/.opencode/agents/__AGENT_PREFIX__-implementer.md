@@ -120,6 +120,8 @@ Godot Android guardrails:
 
 - when creating or editing `project.godot` for Android, include `textures/vram_compression/import_etc2_astc=true` under `[rendering]`
 - when creating or editing `export_presets.cfg`, keep the preset name as `"Android Debug"` and select at least one Godot 4.6 ABI, defaulting to `architectures/arm64-v8a=true`
+- use `res://...` only inside Godot config/resource references; tool calls and shell commands must use filesystem paths such as `icon.svg` or `assets/icons/icon.png`, not a literal `res:/` or `res://` directory
+- if Android export logs mention `No project icon specified`, `Error opening file 'res://res:/...'`, or `Can't open file from path 'res://res:/...'`, treat that as a project defect even when the command exits 0 and writes an APK
 - treat empty Godot "configuration errors" during APK export as a project configuration defect first; verify the ETC2/ASTC setting and ABI keys before calling it a host blocker
 
 Rules:

@@ -1089,6 +1089,72 @@ def greenfield_integration(workspace: Path) -> None:
             "Finish-contract greenfield integration should pass continuation verification after seeding explicit finish ownership."
         )
 
+    voice_finish_dest = workspace / "greenfield-voice-finish-contract"
+    bootstrap_scaffold(
+        voice_finish_dest,
+        project_name="Voice Finish Probe",
+        project_slug="voice-finish-probe",
+        agent_prefix="voice-finish-probe",
+        stack_label="godot-android-game",
+        deliverable_kind="complete Android educational game",
+        placeholder_policy="no_placeholders",
+        visual_finish_target="ship-ready child-friendly Android UI with no placeholder visuals",
+        audio_finish_target=(
+            "real recorded, generated, or TTS speech prompts are present for words and numbers; "
+            "abstract tone sequences alone do not satisfy voice or spoken-prompt requirements"
+        ),
+        content_source_plan="generated child-safe words, numbers, objects, voice prompts, and music with provenance",
+        finish_acceptance_signals="A child can complete a learning round and hear real TTS voice prompts, music, and feedback on Android.",
+    )
+    make_stack_skill_non_placeholder(voice_finish_dest)
+    voice_manifest = read_json(voice_finish_dest / "tickets" / "manifest.json")
+    voice_tickets = voice_manifest.get("tickets") if isinstance(voice_manifest, dict) else []
+    voice_audio_ticket = next(
+        (
+            ticket
+            for ticket in voice_tickets
+            if isinstance(ticket, dict) and str(ticket.get("id", "")).strip() == "AUDIO-001"
+        ),
+        None,
+    )
+    if not isinstance(voice_audio_ticket, dict):
+        raise RuntimeError("Voice finish integration expected AUDIO-001 to be seeded.")
+    voice_audio_acceptance = "\n".join(
+        item for item in voice_audio_ticket.get("acceptance", []) if isinstance(item, str)
+    )
+    if "abstract tone sequences or melodic cues alone are not acceptable proof" not in voice_audio_acceptance:
+        raise RuntimeError(
+            "Voice finish integration should prevent tone-only evidence from satisfying AUDIO-001."
+        )
+    voice_finish_ticket = next(
+        (
+            ticket
+            for ticket in voice_tickets
+            if isinstance(ticket, dict) and str(ticket.get("id", "")).strip() == "FINISH-VALIDATE-001"
+        ),
+        None,
+    )
+    if not isinstance(voice_finish_ticket, dict):
+        raise RuntimeError("Voice finish integration expected FINISH-VALIDATE-001 to be seeded.")
+    voice_finish_acceptance = "\n".join(
+        item for item in voice_finish_ticket.get("acceptance", []) if isinstance(item, str)
+    )
+    if "recorded/generated/TTS audio files or generation commands" not in voice_finish_acceptance:
+        raise RuntimeError(
+            "Voice finish integration should require real voice evidence in final finish validation."
+        )
+    voice_verify = run_json(
+        [sys.executable, str(VERIFY_GENERATED), str(voice_finish_dest), "--format", "json"],
+        ROOT,
+    )
+    if (
+        voice_verify.get("immediately_continuable") is not True
+        or voice_verify.get("finding_count") != 0
+    ):
+        raise RuntimeError(
+            "Voice finish integration should pass continuation verification after seeding real-voice acceptance gates."
+        )
+
     asset_pipeline_dest = workspace / "greenfield-asset-pipeline"
     blender_host_env = fake_blender_host_env(workspace)
     bootstrap_scaffold(

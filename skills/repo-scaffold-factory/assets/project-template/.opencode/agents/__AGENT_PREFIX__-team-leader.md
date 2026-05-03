@@ -350,7 +350,11 @@ When this project targets Android (Godot game):
 
 4. Export command: `godot4 --headless --path . --export-debug "Android Debug" build/android/<slug>-debug.apk`
 
-5. Environment discovery (use bash, not glob — glob is project-scoped):
+5. Godot resource paths such as `res://icon.svg` belong inside Godot config only. When reading, writing, or checking files through tools or shell commands, use repo-relative filesystem paths such as `icon.svg` or `assets/icons/icon.png`; never create a literal `res:/` or `res://` directory.
+
+6. Android export logs that mention `No project icon specified`, `Error opening file 'res://res:/...'`, or `Can't open file from path 'res://res:/...'` are project defects even when Godot exits 0 and writes an APK. Fix the icon file/path and rerun export before approving release or final validation.
+
+7. Environment discovery (use bash, not glob — glob is project-scoped):
    - `JAVA_HOME`: check `echo $JAVA_HOME` or `/etc/profile.d/java.sh`
    - `ANDROID_HOME`: check `echo $ANDROID_HOME`
    - Debug keystore: check editor settings at `~/.config/godot/editor_settings-*.tres`

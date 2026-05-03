@@ -1173,6 +1173,11 @@ GAMEPLAY_FINISH_PROOF_ACCEPTANCE = (
     "Gameplay finish proof demonstrates the current build's core loop starts, one primary progression path advances, "
     "a fail-state or critical end-state is reachable, and any player-facing state reporting required by the shipped UI is exercised with current evidence."
 )
+REAL_VOICE_FINISH_ACCEPTANCE = (
+    "When the audio finish target requires voice, speech, spoken prompts, narration, or TTS, finish evidence must name the "
+    "recorded/generated/TTS audio files or generation commands and prove they are wired into the current build; abstract tone "
+    "sequences or melodic cues alone are not acceptable proof for a voice requirement."
+)
 WEAK_GENERATED_FINISH_SIGNAL_VALUES = frozenset(
     {
         "release-facing milestones must keep the toy-box flow coherent, maintain immediate touch feedback, and ensure any shipped visual or audio content matches the toddler-safe direction recorded in this brief.",
@@ -1245,6 +1250,15 @@ def _consumer_repo_requires_gameplay_finish_proof(
     )
 
 
+def _consumer_repo_requires_real_voice_finish_proof(brief_text: str) -> bool:
+    audio_finish_target = _finish_contract_field(brief_text, "audio_finish_target") or ""
+    finish_acceptance_signals = _finish_contract_field(brief_text, "finish_acceptance_signals") or ""
+    lowered = " ".join(f"{audio_finish_target} {finish_acceptance_signals}".lower().split())
+    if any(marker in lowered for marker in ("procedural-only", "tone-only", "non-speech")):
+        return False
+    return any(marker in lowered for marker in ("voice", "speech", "spoken", "narration", "tts"))
+
+
 def _ticket_acceptance_lines(ticket: dict[str, Any] | None) -> list[str]:
     if not isinstance(ticket, dict):
         return []
@@ -1285,6 +1299,23 @@ def _gameplay_finish_artifact_gaps(root: Path, ctx: ContractSurfaceAuditContext,
     for label, markers in checks:
         if not any(marker in combined for marker in markers):
             gaps.append(f"Current FINISH-VALIDATE-001 artifacts do not mention {label} proof.")
+    return gaps
+
+
+def _real_voice_finish_artifact_gaps(ctx: ContractSurfaceAuditContext, artifact_paths: list[Path]) -> list[str]:
+    combined = "\n".join(ctx.read_text(path).lower() for path in artifact_paths if path.exists())
+    if not combined.strip():
+        return ["Current FINISH-VALIDATE-001 artifacts do not contain readable real-voice proof content."]
+    proof_markers = ("tts", "text-to-speech", "voice", "speech", "narration", "recorded", "generated audio")
+    wiring_markers = (".wav", ".ogg", ".mp3", "audiosample", "audiostream", "narration_player", "audio file", "asset path")
+    tone_only_markers = ("tone sequence", "tone sequences", "musical name", "abstract tone", "melodic cue")
+    gaps: list[str] = []
+    if not any(marker in combined for marker in proof_markers):
+        gaps.append("Current FINISH-VALIDATE-001 artifacts do not mention recorded/generated/TTS voice proof.")
+    if not any(marker in combined for marker in wiring_markers):
+        gaps.append("Current FINISH-VALIDATE-001 artifacts do not name voice asset paths, generation commands, or current-build audio wiring proof.")
+    if any(marker in combined for marker in tone_only_markers) and not any(marker in combined for marker in (".wav", ".ogg", ".mp3", "tts", "text-to-speech", "recorded")):
+        gaps.append("Current FINISH-VALIDATE-001 artifacts appear to rely on tone or melodic prompt evidence without real voice proof.")
     return gaps
 
 
@@ -1546,6 +1577,42 @@ def audit_product_finish_contract(root: Path, findings: list[Finding], ctx: Cont
                         files=[brief_rel, "tickets/manifest.json", *[ctx.normalize_path(path, root) for path in gameplay_artifact_paths if path.exists()]],
                         safer_pattern="Keep FINISH-VALIDATE-001 current with artifact evidence that names controls/input exercised, one primary progression path advanced, a fail-state or critical end-state reached, and the player-facing state reporting checked on the current build.",
                         evidence=gameplay_gaps[:4],
+                        provenance="script",
+                    ),
+                )
+
+    if repo_claims_completion and _consumer_repo_requires_real_voice_finish_proof(brief_text):
+        voice_artifact_paths = _current_ticket_artifact_paths(root, finish_validation_ticket)
+        if not voice_artifact_paths:
+            ctx.add_finding(
+                findings,
+                Finding(
+                    code="FINISH006",
+                    severity="error",
+                    problem="Repo claims completion without a current finish-validation artifact that proves the required real voice or speech audio.",
+                    root_cause="The finish contract requires voice, speech, spoken prompts, narration, or TTS, but the repo can still appear complete without durable evidence that real voice assets or generated speech are wired into the current build.",
+                    files=[brief_rel, "tickets/manifest.json"],
+                    safer_pattern="Before claiming completion, publish FINISH-VALIDATE-001 evidence that names the recorded/generated/TTS audio files or generation commands and proves those assets are wired into the current build. Tone sequences or melodic cues alone are not acceptable for a voice requirement.",
+                    evidence=[
+                        "Repo claims completion or ready state.",
+                        "FINISH-VALIDATE-001 has no current artifact proving real voice/speech audio.",
+                    ],
+                    provenance="script",
+                ),
+            )
+        else:
+            voice_gaps = _real_voice_finish_artifact_gaps(ctx, voice_artifact_paths)
+            if voice_gaps:
+                ctx.add_finding(
+                    findings,
+                    Finding(
+                        code="FINISH006",
+                        severity="error",
+                        problem="Repo claims completion, but the current finish-validation artifact does not prove the required real voice or speech audio.",
+                        root_cause="The finish contract requires voice, speech, spoken prompts, narration, or TTS, but the published evidence stops short of proving that real voice assets or generated speech are present and wired into the current build.",
+                        files=[brief_rel, "tickets/manifest.json", *[ctx.normalize_path(path, root) for path in voice_artifact_paths if path.exists()]],
+                        safer_pattern="Keep FINISH-VALIDATE-001 current with artifact evidence that names voice asset paths or generation commands, explains how they were produced, and verifies current-build playback wiring. Tone sequences or melodic cues alone are not acceptable for a voice requirement.",
+                        evidence=voice_gaps[:4],
                         provenance="script",
                     ),
                 )
