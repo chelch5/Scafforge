@@ -26,6 +26,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install host validation prerequisites
+        run: |
+          python -m pip install --upgrade uv
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+          uv --version
+          rg --version
+
       - name: Validate contract
         run: npm run validate:contract
 
