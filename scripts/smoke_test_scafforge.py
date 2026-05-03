@@ -5059,6 +5059,7 @@ def main() -> int:
             raise RuntimeError(
                 "Pivot orchestration should record a post_pivot verification result"
             )
+        pivot_post_verify_host_prereq_blocked = False
         if not pivot_payload["verification_status"]["verification_passed"]:
             pivot_status = pivot_payload["verification_status"]
             pivot_codes = set(pivot_status.get("codes", []))
@@ -5085,6 +5086,7 @@ def main() -> int:
                 and pivot_codes <= {"ENV001", "WFLOW010"}
                 and pivot_wflow010_is_host_prereq_drift
             ):
+                pivot_post_verify_host_prereq_blocked = True
                 print(
                     "Skipping pivot post-verification pass assertion because `uv` is not available on this host."
                 )
@@ -5386,10 +5388,18 @@ def main() -> int:
         regenerated_pivot_context_snapshot = (
             pivot_dest / ".opencode" / "state" / "context-snapshot.md"
         ).read_text(encoding="utf-8")
+        regenerated_start_here_preserves_pivot = (
+            "- pivot_in_progress: true" in regenerated_pivot_start_here
+        )
+        regenerated_start_here_preserves_handoff = (
+            "- handoff_status: pivot follow-up required" in regenerated_pivot_start_here
+        )
         if (
-            "- handoff_status: pivot follow-up required"
-            not in regenerated_pivot_start_here
-            or "- pivot_in_progress: true" not in regenerated_pivot_start_here
+            not regenerated_start_here_preserves_pivot
+            or (
+                not pivot_post_verify_host_prereq_blocked
+                and not regenerated_start_here_preserves_handoff
+            )
         ):
             raise RuntimeError(
                 "Repair-side restart regeneration should not erase pivot state from START-HERE while pivot follow-on remains pending"
